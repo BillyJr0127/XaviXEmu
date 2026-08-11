@@ -15,7 +15,7 @@ when the stated milestone has been reproduced from an exact supported image.
 - **Not working**: the title is recognized but cannot currently reach a useful
   interactive milestone.
 
-No accepted title is classified **Working** in v0.1.0-alpha. No accepted title
+No accepted title is classified **Working** in v0.2.0-alpha. No accepted title
 is currently classified **Not working**; unknown ROMs are unsupported and are
 rejected rather than assigned a compatibility status.
 

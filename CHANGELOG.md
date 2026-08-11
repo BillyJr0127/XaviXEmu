@@ -3,7 +3,7 @@
 All notable public changes will be documented in this file. The project uses
 semantic versioning while experimental releases carry a pre-release suffix.
 
-## Unreleased
+## 0.2.0-alpha - 2026-08-10
 
 ### Fixed
 

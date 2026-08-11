@@ -8,7 +8,7 @@ behaviour, motion-input emulation, reproducible tests, and preservation of
 research for systems whose original optical accessories are difficult to use
 on modern displays.
 
-The first public release is **v0.1.0-alpha**. The project is not a
+The current public release is **v0.2.0-alpha**. The project is not a
 general-purpose XaviX emulator and does not claim cycle-accurate optical
 sensor emulation.
 
@@ -99,7 +99,7 @@ For supported XaviX 2000 profiles, EEPROM and F5/F7 runtime states are stored
 beside the executable. F8 writes a PNG under a local `snap` directory. These
 files are runtime output and must not be committed or attached to bug reports.
 
-XaviX 2 EEPROM and runtime states are not implemented in v0.1.0-alpha.
+XaviX 2 EEPROM and runtime states are not implemented in v0.2.0-alpha.
 
 ## Known limitations
 
