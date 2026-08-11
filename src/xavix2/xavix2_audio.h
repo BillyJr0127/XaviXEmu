@@ -29,7 +29,8 @@ enum
 typedef struct xavix2_audio_voice
 {
 	uint64_t position;
-	uint32_t loop_address;
+	uint32_t start_address;
+	uint32_t end_address;
 	uint8_t active;
 	uint8_t loop;
 } xavix2_audio_voice;

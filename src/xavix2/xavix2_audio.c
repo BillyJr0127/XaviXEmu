@@ -33,7 +33,8 @@ static int16_t clamp16(int64_t sample)
 static void stop_voice(xavix2_audio_voice *voice)
 {
 	voice->position = 0;
-	voice->loop_address = 0;
+	voice->start_address = 0;
+	voice->end_address = 0;
 	voice->active = 0;
 	voice->loop = 0;
 }
@@ -56,6 +57,7 @@ void xavix2_audio_command(xavix2_audio *audio, uint16_t command,
 	const uint8_t *descriptor;
 	xavix2_audio_voice *voice;
 	uint32_t start;
+	uint32_t end;
 
 	if (!audio || !descriptors)
 		return;
@@ -81,10 +83,11 @@ void xavix2_audio_command(xavix2_audio *audio, uint16_t command,
 		return;
 	}
 	voice->position = (uint64_t)start << 32;
-	voice->loop_address = descriptor_address(descriptor, 0x0e, 0x12);
+	voice->start_address = start;
 	voice->loop = operation == 0x240;
-	if (voice->loop && voice->loop_address >= audio->rom_size)
-		voice->loop_address = start;
+	end = descriptor_address(descriptor, 0x0e, 0x12);
+	voice->end_address = voice->loop && end > start && end <= audio->rom_size ?
+		end : 0;
 	voice->active = 1;
 }
 
@@ -95,6 +98,11 @@ static int current_sample(xavix2_audio *audio, xavix2_audio_voice *voice,
 	uint8_t value;
 
 	address = (uint32_t)(voice->position >> 32);
+	if (voice->loop && voice->end_address && address >= voice->end_address)
+	{
+		voice->position = (uint64_t)voice->start_address << 32;
+		address = voice->start_address;
+	}
 	if (address >= audio->rom_size)
 	{
 		stop_voice(voice);
@@ -103,13 +111,13 @@ static int current_sample(xavix2_audio *audio, xavix2_audio_voice *voice,
 	value = audio->rom[address];
 	if (value == 0x80)
 	{
-		if (!voice->loop || voice->loop_address >= audio->rom_size)
+		if (!voice->loop || voice->start_address >= audio->rom_size)
 		{
 			stop_voice(voice);
 			return 0;
 		}
-		voice->position = (uint64_t)voice->loop_address << 32;
-		value = audio->rom[voice->loop_address];
+		voice->position = (uint64_t)voice->start_address << 32;
+		value = audio->rom[voice->start_address];
 		if (value == 0x80)
 		{
 			stop_voice(voice);
@@ -138,9 +146,9 @@ static int32_t interpolated_sample(xavix2_audio *audio,
 	next = audio->rom[address + 1];
 	if (next == 0x80)
 	{
-		if (voice->loop && voice->loop_address < audio->rom_size &&
-			audio->rom[voice->loop_address] != 0x80)
-			second = (int8_t)audio->rom[voice->loop_address];
+		if (voice->loop && voice->start_address < audio->rom_size &&
+			audio->rom[voice->start_address] != 0x80)
+			second = (int8_t)audio->rom[voice->start_address];
 		else
 			second = 0;
 	}

@@ -3,6 +3,22 @@
 All notable public changes will be documented in this file. The project uses
 semantic versioning while experimental releases carry a pre-release suffix.
 
+## Unreleased
+
+### Fixed
+
+- Preserve XaviX 2 command-list submission order when GPU objects have equal
+  priority, restoring the hidden `はじめから` and `つづきから` menu layers in
+  `ban_naru`.
+- Loop XaviX 2 PCM voices to their primary sample address instead of treating
+  the descriptor's end pointer as a loop address, preventing playback from
+  continuing into unrelated ROM data.
+
+### Added
+
+- Opt-in XaviX 2 WAV capture and per-frame hit/audio diagnostics in the
+  ROM-dependent boot probe.
+
 ## 0.1.0-alpha - 2026-08-10
 
 Initial public source release, imported from the real pre-Git local

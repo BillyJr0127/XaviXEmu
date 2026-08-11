@@ -528,7 +528,13 @@ static int compare_gpu_order(const void *left, const void *right)
 {
 	uint32_t a = *(const uint32_t *)left;
 	uint32_t b = *(const uint32_t *)right;
-	return a < b ? 1 : a > b ? -1 : 0;
+	uint32_t a_priority = a & UINT32_C(0x1fe00000);
+	uint32_t b_priority = b & UINT32_C(0x1fe00000);
+	if (a_priority != b_priority)
+		return a_priority < b_priority ? 1 : -1;
+	/* Preserve command-list submission order when priorities are equal. */
+	return (a & UINT32_C(0xffff)) < (b & UINT32_C(0xffff)) ? -1 :
+		(a & UINT32_C(0xffff)) > (b & UINT32_C(0xffff)) ? 1 : 0;
 }
 
 static void render_gpu(xavix2_machine_t *machine, uint16_t count, uint16_t address)

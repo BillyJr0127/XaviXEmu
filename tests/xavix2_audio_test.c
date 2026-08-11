@@ -53,8 +53,12 @@ int main(void)
 	rom[0x21] = 20;
 	rom[0x22] = 0x80;
 	store_address(voice0, 0x02, 0x06, 0x20);
-	store_address(voice0, 0x0e, 0x12, 0x20);
+	/* Firmware descriptors put the looping sample end (one byte beyond the
+	 * terminator) here; playback loops to the primary start address. */
+	store_address(voice0, 0x0e, 0x12, 0x23);
 	xavix2_audio_command(&audio, 0x240, descriptors);
+	assert(audio.voice[0].start_address == 0x20);
+	assert(audio.voice[0].end_address == 0x23);
 	xavix2_audio_render(&audio, descriptors, 96000);
 	frame = xavix2_audio_frame(&audio);
 	assert(frame[0] == 10 * 255);

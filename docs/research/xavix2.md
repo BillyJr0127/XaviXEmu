@@ -240,3 +240,42 @@ so the GUI crops that area before applying its optional 4:3 presentation.
 Opcode `$ff`, gameplay gesture classification, exact audio envelopes and
 filtering, EEPROM persistence, and save states remain later milestones; XaviX 2
 support is therefore experimental rather than claimed complete.
+
+## Equal-priority GPU layers and PCM loop endpoints
+
+- Observed symptom: after entering Story Battle, the prompt
+  `はじめから？つづきから？` and its hit targets existed, but both visible
+  choice panels were absent.
+- GPU data involved: the recorded command list at low RAM `$7480` contains the
+  two 92x36 choice objects at command indices 17 and 18.  They share priority
+  `$1f400000` with the background objects at indices 0 and 1.
+- Hypothesis: sorting equal-priority commands by descending list index draws
+  the choices before the opaque background, which then covers them.
+- Experiment: replay the recorded command list using descending priority but
+  stable ascending submission order for ties.  The two choice panels appear at
+  the same positions as the real-hardware recording around 00:45.
+- Result: equal-priority list order is now preserved.  No crop, palette, input,
+  or game-specific drawing hack is involved.
+- Code changed: `src/xavix2/xavix2_machine.c` GPU ordering only.
+
+- Observed symptom: title/menu music eventually retained harsh unrelated
+  noise, and the noise accumulated while navigating.
+- Audio data involved: looping voices use samples such as `$79b280-$7a197f`,
+  `$7dac80-$7dc5ff`, and `$7bca00-$7bfeff`.  In every inspected case the
+  descriptor address at `+$0e/+$12` points one byte beyond the `$80` PCM end
+  marker, not back into the sample.
+- Hypothesis: treating that descriptor value as the loop destination enters
+  unrelated ROM data immediately after the sample ends.
+- Experiment: preserve the descriptor value as an optional end boundary and
+  restart a `$240|channel` looping voice from its primary start address.
+- Result: looping voices remain inside their evidenced PCM ranges.  A
+  ROM-independent regression uses a descriptor end pointer after the marker
+  and verifies that playback returns to the primary start.
+- Code changed: `src/xavix2/xavix2_audio.c`, its voice state, audio test, and
+  opt-in WAV/voice diagnostics in the boot probe.
+
+The pitch conversion itself remains unchanged: recorded firmware values still
+resolve to nominal rates near 12, 16, 24, and 32 kHz through
+`pitch * engine_rate / 65536`.  Exact envelopes, filtering, opcode `$ff`, and
+the remaining user-reported timing difference still require separate evidence;
+no arbitrary global speed or pitch multiplier was added.
