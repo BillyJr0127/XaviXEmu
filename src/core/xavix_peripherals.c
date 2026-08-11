@@ -15,7 +15,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define XAVIX_STATE_VERSION UINT16_C(1)
+#define XAVIX_STATE_VERSION UINT16_C(2)
+#define XAVIX_STATE_LEGACY_VERSION UINT16_C(1)
 
 typedef struct state_writer
 {
@@ -112,7 +113,9 @@ static void eeprom_receive_byte(xavix_eeprom24c08 *eeprom,
 		break;
 
 	case XAVIX_I2C_RECEIVE_ADDRESS:
-		eeprom->address = ((((uint16_t)eeprom->control & UINT16_C(0x06)) << 7) | eeprom->shift) &
+		eeprom->address = ((((uint16_t)eeprom->control &
+			(uint16_t)((uint8_t)~control_mask & UINT8_C(0xfe))) << 7) |
+			eeprom->shift) &
 			address_mask;
 		eeprom->page_base = eeprom->address & (uint16_t)~(uint16_t)page_mask;
 		eeprom->page_position = eeprom->address & page_mask;
@@ -267,10 +270,18 @@ void xavix_eeprom24c08_reset_bus(xavix_eeprom24c08 *eeprom)
 
 int xavix_eeprom24c08_load_image(xavix_eeprom24c08 *eeprom, const uint8_t *data, size_t size)
 {
-	if (!eeprom || !data || size != XAVIX_EEPROM24C08_SIZE)
+	if (size != XAVIX_EEPROM24C08_SIZE)
+		return 0;
+	return xavix_eeprom_load_image(eeprom, data, size);
+}
+
+int xavix_eeprom_load_image(xavix_eeprom24c08 *eeprom, const uint8_t *data,
+	size_t size)
+{
+	if (!eeprom || !data || !size || size > sizeof(eeprom->data))
 		return 0;
 
-	memcpy(eeprom->data, data, XAVIX_EEPROM24C08_SIZE);
+	memcpy(eeprom->data, data, size);
 	eeprom->dirty = 0;
 	eeprom->write_generation = 0;
 	xavix_eeprom24c08_reset_bus(eeprom);
@@ -279,8 +290,14 @@ int xavix_eeprom24c08_load_image(xavix_eeprom24c08 *eeprom, const uint8_t *data,
 
 void xavix_eeprom24c08_copy_image(const xavix_eeprom24c08 *eeprom, uint8_t output[XAVIX_EEPROM24C08_SIZE])
 {
-	if (eeprom && output)
-		memcpy(output, eeprom->data, XAVIX_EEPROM24C08_SIZE);
+	xavix_eeprom_copy_image(eeprom, output, XAVIX_EEPROM24C08_SIZE);
+}
+
+void xavix_eeprom_copy_image(const xavix_eeprom24c08 *eeprom, uint8_t *output,
+	size_t size)
+{
+	if (eeprom && output && size <= sizeof(eeprom->data))
+		memcpy(output, eeprom->data, size);
 }
 
 void xavix_eeprom24c08_set_write_protect(xavix_eeprom24c08 *eeprom, int enabled)
@@ -349,6 +366,15 @@ void xavix_eeprom24c02_set_lines(xavix_eeprom24c08 *eeprom, int scl,
 		UINT8_C(0x07));
 }
 
+void xavix_eeprom24c16_set_lines(xavix_eeprom24c08 *eeprom, int scl,
+	int master_sda)
+{
+	/* A 24C16 uses control-byte bits 1-3 as address bits 8-10 and a
+	 * 16-byte page. */
+	eeprom_set_lines(eeprom, scl, master_sda, UINT16_C(0x07ff), 0xf0,
+		XAVIX_EEPROM24C08_PAGE_SIZE - 1);
+}
+
 int xavix_eeprom24c08_read_sda(const xavix_eeprom24c08 *eeprom)
 {
 	return eeprom ? (eeprom->master_sda & eeprom->device_sda) : 1;
@@ -394,7 +420,7 @@ void xavix_cu5501a_reset(xavix_cu5501a *sensor)
 	sensor->illuminated = 0;
 	sensor->scan_x = sensor->host_x;
 	sensor->scan_y = sensor->host_y;
-	sensor->scan_mode = sensor->host_mode & 7;
+	sensor->scan_mode = sensor->host_mode & 0x0f;
 }
 
 void xavix_cu5501a_set_input(xavix_cu5501a *sensor, uint8_t x, uint8_t y, uint8_t mode)
@@ -404,7 +430,7 @@ void xavix_cu5501a_set_input(xavix_cu5501a *sensor, uint8_t x, uint8_t y, uint8_
 
 	sensor->host_x = x;
 	sensor->host_y = y;
-	sensor->host_mode = mode & 7;
+	sensor->host_mode = mode & 0x0f;
 }
 
 void xavix_cu5501a_begin_scan(xavix_cu5501a *sensor, int illuminated)
@@ -418,7 +444,7 @@ void xavix_cu5501a_begin_scan(xavix_cu5501a *sensor, int illuminated)
 	sensor->illuminated = !!illuminated;
 	sensor->scan_x = sensor->host_x;
 	sensor->scan_y = sensor->host_y;
-	sensor->scan_mode = sensor->host_mode & 7;
+	sensor->scan_mode = sensor->host_mode & 0x0f;
 }
 
 void xavix_cu5501a_write_io1(xavix_cu5501a *sensor, uint8_t data, uint8_t direction)
@@ -454,12 +480,18 @@ uint8_t xavix_cu5501a_pixel_at(const xavix_cu5501a *sensor, unsigned column, uns
 	int delta_x;
 	int delta_y;
 
-	if (!sensor || column >= XAVIX_CU5501A_WIDTH || row >= XAVIX_CU5501A_HEIGHT || !sensor->illuminated)
+	if (!sensor || column >= XAVIX_CU5501A_WIDTH || row >= XAVIX_CU5501A_HEIGHT ||
+		!sensor->illuminated || sensor->scan_mode == XAVIX_SENSOR_NONE)
 		return 0;
 
 	sword_x = sensor_coordinate(sensor->scan_x, XAVIX_CU5501A_WIDTH, 1);
 	sword_y = sensor_coordinate(sensor->scan_y, XAVIX_CU5501A_HEIGHT, 0);
-	if (sensor->scan_mode >= XAVIX_SENSOR_VERTICAL)
+	if (sensor->scan_mode == XAVIX_SENSOR_POINT)
+	{
+		radius_x = 0;
+		radius_y = 0;
+	}
+	else if (sensor->scan_mode >= XAVIX_SENSOR_VERTICAL)
 	{
 		radius_x = (sensor->scan_mode == XAVIX_SENSOR_HORIZONTAL) ? 6 :
 			(sensor->scan_mode == XAVIX_SENSOR_VERTICAL) ? 2 : 5;
@@ -1061,11 +1093,14 @@ int xavix_peripherals_deserialize(
 	uint16_t reserved;
 	uint32_t encoded_size;
 	const size_t expected_size = xavix_peripherals_serialized_size();
+	const size_t legacy_size = expected_size - XAVIX_EEPROM24C08_SIZE;
 
-	if (!peripherals || !input || !expected_size || input_size != expected_size)
+	if (!peripherals || !input || !expected_size ||
+		(input_size != expected_size && input_size != legacy_size))
 		return 0;
 
 	memset(&restored, 0, sizeof(restored));
+	memset(restored.eeprom.data, 0xff, sizeof(restored.eeprom.data));
 	reader.input = input;
 	reader.size = input_size;
 	reader.position = 0;
@@ -1074,11 +1109,17 @@ int xavix_peripherals_deserialize(
 	version = reader_u16(&reader);
 	reserved = reader_u16(&reader);
 	encoded_size = reader_u32(&reader);
-	if (!reader.valid || memcmp(magic, expected_magic, sizeof(magic)) || version != XAVIX_STATE_VERSION ||
-		reserved || encoded_size != expected_size)
+	if (!reader.valid || memcmp(magic, expected_magic, sizeof(magic)) ||
+		(version != XAVIX_STATE_VERSION &&
+		 version != XAVIX_STATE_LEGACY_VERSION) ||
+		(version == XAVIX_STATE_VERSION && input_size != expected_size) ||
+		(version == XAVIX_STATE_LEGACY_VERSION && input_size != legacy_size) ||
+		reserved || encoded_size != input_size)
 		return 0;
 
-	reader_bytes(&reader, restored.eeprom.data, sizeof(restored.eeprom.data));
+	reader_bytes(&reader, restored.eeprom.data,
+		version == XAVIX_STATE_LEGACY_VERSION ?
+		XAVIX_EEPROM24C08_SIZE : sizeof(restored.eeprom.data));
 	reader_bytes(&reader, restored.eeprom.page, sizeof(restored.eeprom.page));
 	restored.eeprom.page_dirty_mask = reader_u16(&reader);
 	restored.eeprom.address = reader_u16(&reader);
@@ -1132,8 +1173,8 @@ int xavix_peripherals_deserialize(
 	restored.dma.irq_pending = reader_u8(&reader);
 
 	if (!reader.valid || reader.position != reader.size ||
-		restored.eeprom.address >= XAVIX_EEPROM24C08_SIZE ||
-		restored.eeprom.page_base >= XAVIX_EEPROM24C08_SIZE ||
+		restored.eeprom.address >= XAVIX_EEPROM24C16_SIZE ||
+		restored.eeprom.page_base >= XAVIX_EEPROM24C16_SIZE ||
 		(restored.eeprom.page_base & UINT16_C(0x0007)) ||
 		restored.eeprom.page_position >= XAVIX_EEPROM24C08_PAGE_SIZE ||
 		restored.eeprom.protocol_state > XAVIX_I2C_IGNORE ||
@@ -1144,8 +1185,8 @@ int xavix_peripherals_deserialize(
 		!valid_boolean(restored.eeprom.write_protect) || !valid_boolean(restored.eeprom.dirty) ||
 		restored.sensor.pixel >= XAVIX_CU5501A_PIXELS || restored.sensor.adc_phase > XAVIX_CU5501A_WIDTH ||
 		!valid_boolean(restored.sensor.sync_phase) || !valid_boolean(restored.sensor.illuminated) ||
-		restored.sensor.host_mode > XAVIX_SENSOR_DIAGONAL_UP ||
-		restored.sensor.scan_mode > XAVIX_SENSOR_DIAGONAL_UP ||
+		restored.sensor.host_mode > XAVIX_SENSOR_POINT ||
+		restored.sensor.scan_mode > XAVIX_SENSOR_POINT ||
 		!restored.timer.master_clock_hz || restored.timer.frequency > 0x0f ||
 		restored.timer.prescale_cycles >= (UINT64_C(1) << (restored.timer.frequency + 1)) ||
 		!valid_boolean(restored.timer.running) || !valid_boolean(restored.timer.irq_pending) ||

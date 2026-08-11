@@ -15,7 +15,7 @@ when the stated milestone has been reproduced from an exact supported image.
 - **Not working**: the title is recognized but cannot currently reach a useful
   interactive milestone.
 
-No accepted title is classified **Working** in v0.2.0-alpha. No accepted title
+No accepted title is classified **Working** in v0.3.0-alpha. No accepted title
 is currently classified **Not working**; unknown ROMs are unsupported and are
 rejected rather than assigned a compatibility status.
 
@@ -29,6 +29,8 @@ rejected rather than assigned a compatibility status.
 | `ttv_lotr` | XaviX 2000 | Playable | Maintainer-verified gameplay using synthesized CU5501 sword input and 24C02 persistence | Synthetic sensor geometry; host crosshair is shown only when the game-owned cursor is absent |
 | `ttv_sw` | XaviX 2000 | Playable | Maintainer-verified gameplay using synthesized CU5501A input and 24C02 persistence | Synthetic sensor geometry; host crosshair is shown only when the game-owned cursor is absent |
 | `ttv_swj` | XaviX 2000 | Playable | Maintainer-verified Japanese gameplay using synthesized CU5501A input and 24C02 persistence | Synthetic sensor geometry; host crosshair is shown only when the game-owned cursor is absent |
+| `epo_hamd` | XaviX | Experimental | Verified two-chip ROM assembly, boot, animated title, decoded left/right wireless shake packets, activity-menu entry, and digital menu confirmation | Shake intensity fields and a complete play-through remain unverified |
+| `tvpc_dor` | XaviX | Experimental | Boot, title, main menu, cumulative mouse counters, mouse button, cursor-key matrix, 24C16 EEPROM, F5/F7 states, and the take-copter flight input | Most keyboard keys, later programs, and a complete play-through remain unverified |
 | `ban_naru` | XaviX 2 | Experimental | Boot, title, menu hit testing, character selection, story/tutorial path, native 320x240 crop, provisional signed 8-bit PCM | Unknown opcode behaviour, incomplete gestures/GPU/audio, no EEPROM, no F5/F7 state |
 
 ## Reporting results

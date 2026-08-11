@@ -228,11 +228,35 @@ void xavix_machine_set_sword_input(xavix_machine *machine, uint8_t x, uint8_t y,
 		xavix_cu5501a_set_input(&machine->state.peripherals.sensor, x, y, (uint8_t)mode);
 }
 
+void xavix_machine_trigger_ioevent(xavix_machine *machine, uint8_t bits)
+{
+	xavix_machine_state *state;
+	if (!machine)
+		return;
+	state = &machine->state;
+	bits &= state->ioevent_enable;
+	if (!bits)
+		return;
+	state->ioevent_active |= bits;
+	if (state->ioevent_active & 0x0f)
+		state->irq_source |= 0x08;
+	update_irq(state);
+}
+
 uint8_t xavix_machine_read_external(void *context, uint32_t address)
 {
 	const xavix_machine *machine = (const xavix_machine *)context;
+	int handled = 0;
+	uint8_t value;
 	if (!machine || !machine->rom || machine->rom_size == 0)
 		return 0xff;
+	if (machine->hooks.read_external)
+	{
+		value = machine->hooks.read_external(machine->hooks.context,
+			address & 0x7fffff, &handled);
+		if (handled)
+			return value;
+	}
 	return machine->rom[(address & 0x7fffff) % machine->rom_size];
 }
 

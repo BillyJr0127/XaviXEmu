@@ -12,7 +12,9 @@ enum
 	DRGQST_ROM_SIZE = 0x800000,
 	BAN_OMT_ROM_SIZE = 0x400000,
 	TTV_ROM_SIZE = 0x800000,
-	BAN_NARU_ROM_SIZE = 0x800000
+	BAN_NARU_ROM_SIZE = 0x800000,
+	EPO_HAMD_ROM_SIZE = 0x800000,
+	TVPC_DOR_ROM_SIZE = 0x400000
 };
 
 #define DRGQST_ROM_CRC32 UINT32_C(0x3d24413f)
@@ -22,6 +24,7 @@ enum
 #define TTV_SW_ROM_CRC32 UINT32_C(0x51cae5fd)
 #define TTV_SWJ_ROM_CRC32 UINT32_C(0xa5c22ed0)
 #define BAN_NARU_ROM_CRC32 UINT32_C(0xe3465ad2)
+#define TVPC_DOR_ROM_CRC32 UINT32_C(0x6f2edbb2)
 
 enum drgqst_rom_kind
 {
@@ -33,7 +36,10 @@ enum drgqst_rom_kind
 	DRGQST_ROM_TTV_SW,
 	DRGQST_ROM_TTV_SWJ,
 	/* Experimental XaviX 2 support. */
-	DRGQST_ROM_BAN_NARU
+	DRGQST_ROM_BAN_NARU,
+	/* Experimental original-generation XaviX support. */
+	DRGQST_ROM_EPO_HAMD,
+	DRGQST_ROM_TVPC_DOR
 };
 
 typedef struct drgqst_rom_image

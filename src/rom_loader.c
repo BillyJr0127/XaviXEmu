@@ -15,7 +15,23 @@
 
 enum
 {
-	MAXIMUM_ZIP_SIZE = 64 * 1024 * 1024
+	MAXIMUM_ZIP_SIZE = 64 * 1024 * 1024,
+	EPO_HAMD_U2_SIZE = 0x100000,
+	EPO_HAMD_U3_SIZE = 0x200000,
+	EPO_HAMD_U3_OFFSET = 0x400000
+};
+
+#define EPO_HAMD_U2_CRC32 UINT32_C(0x6c2d9d98)
+#define EPO_HAMD_U3_CRC32 UINT32_C(0xe437c8d0)
+
+static const uint8_t EPO_HAMD_U2_SHA1[20] = {
+	0x89, 0xa8, 0xe6, 0xd2, 0x36, 0xea, 0x3d, 0xad, 0xb8, 0x82,
+	0xe3, 0xec, 0xf1, 0x2e, 0x41, 0xbd, 0x50, 0x22, 0x27, 0x10
+};
+
+static const uint8_t EPO_HAMD_U3_SHA1[20] = {
+	0xf5, 0x7c, 0x54, 0xa7, 0x3e, 0xd3, 0x88, 0x26, 0xf4, 0xb9,
+	0x86, 0x10, 0xa0, 0xaa, 0x1f, 0x15, 0xcf, 0x95, 0x61, 0x4d
 };
 
 typedef struct supported_rom
@@ -89,6 +105,15 @@ static const supported_rom SUPPORTED_ROMS[] = {
 			0x13, 0xe3, 0xd2, 0xde, 0x5d, 0x5a, 0x08, 0x46, 0x35, 0xca,
 			0xb1, 0x58, 0xf3, 0x63, 0x9a, 0x1e, 0xa7, 0x32, 0x65, 0xdc
 		}
+	},
+	{
+		DRGQST_ROM_TVPC_DOR,
+		TVPC_DOR_ROM_SIZE,
+		TVPC_DOR_ROM_CRC32,
+		{
+			0x98, 0xfa, 0x86, 0xf8, 0x5e, 0x00, 0xaa, 0x40, 0xe7, 0xa5,
+			0x85, 0xff, 0x0b, 0xc9, 0x30, 0xcb, 0x5c, 0xa8, 0x83, 0x62
+		}
 	}
 };
 
@@ -110,6 +135,10 @@ const char *drgqst_rom_short_name(enum drgqst_rom_kind kind)
 		return "ttv_swj";
 	case DRGQST_ROM_BAN_NARU:
 		return "ban_naru";
+	case DRGQST_ROM_EPO_HAMD:
+		return "epo_hamd";
+	case DRGQST_ROM_TVPC_DOR:
+		return "tvpc_dor";
 	case DRGQST_ROM_UNKNOWN:
 	default:
 		return "unknown";
@@ -209,6 +238,8 @@ int drgqst_rom_load_zip(
 	size_t zip_length = 0;
 	mz_uint file_count;
 	int selected_file = -1;
+	int epo_hamd_u2_file = -1;
+	int epo_hamd_u3_file = -1;
 	const supported_rom *selected_rom = NULL;
 	uint8_t *rom_data = NULL;
 	uint32_t crc32;
@@ -240,6 +271,12 @@ int drgqst_rom_load_zip(
 
 		if (!mz_zip_reader_file_stat(&archive, index, &stat) || stat.m_is_directory)
 			continue;
+		if (stat.m_uncomp_size == EPO_HAMD_U2_SIZE &&
+			stat.m_crc32 == EPO_HAMD_U2_CRC32)
+			epo_hamd_u2_file = (int)index;
+		else if (stat.m_uncomp_size == EPO_HAMD_U3_SIZE &&
+			stat.m_crc32 == EPO_HAMD_U3_CRC32)
+			epo_hamd_u3_file = (int)index;
 		unsigned candidate;
 		for (candidate = 0; candidate < sizeof(SUPPORTED_ROMS) / sizeof(SUPPORTED_ROMS[0]); ++candidate)
 		{
@@ -255,7 +292,8 @@ int drgqst_rom_load_zip(
 			break;
 	}
 
-	if (selected_file < 0)
+	if (selected_file < 0 &&
+		(epo_hamd_u2_file < 0 || epo_hamd_u3_file < 0))
 	{
 		set_error(
 			error,
@@ -264,6 +302,49 @@ int drgqst_rom_load_zip(
 		mz_zip_reader_end(&archive);
 		HeapFree(GetProcessHeap(), 0, zip_data);
 		return 0;
+	}
+	if (selected_file < 0)
+	{
+		uint8_t component_sha1[20];
+		rom_data = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY,
+			EPO_HAMD_ROM_SIZE);
+		if (!rom_data)
+		{
+			set_error(error, error_length,
+				L"There is not enough memory to assemble the ROM set.");
+			mz_zip_reader_end(&archive);
+			HeapFree(GetProcessHeap(), 0, zip_data);
+			return 0;
+		}
+		if (!mz_zip_reader_extract_to_mem(&archive,
+			(mz_uint)epo_hamd_u2_file, rom_data, EPO_HAMD_U2_SIZE, 0) ||
+			!sha1_matches(rom_data, EPO_HAMD_U2_SIZE,
+				EPO_HAMD_U2_SHA1, component_sha1) ||
+			!mz_zip_reader_extract_to_mem(&archive,
+				(mz_uint)epo_hamd_u3_file,
+				rom_data + EPO_HAMD_U3_OFFSET, EPO_HAMD_U3_SIZE, 0) ||
+			!sha1_matches(rom_data + EPO_HAMD_U3_OFFSET,
+				EPO_HAMD_U3_SIZE, EPO_HAMD_U3_SHA1, component_sha1))
+		{
+			set_error(error, error_length,
+				L"The multi-chip ROM set failed extraction or SHA1 verification.");
+			HeapFree(GetProcessHeap(), 0, rom_data);
+			mz_zip_reader_end(&archive);
+			HeapFree(GetProcessHeap(), 0, zip_data);
+			return 0;
+		}
+		crc32 = (uint32_t)mz_crc32(MZ_CRC32_INIT, rom_data,
+			EPO_HAMD_ROM_SIZE);
+		mz_zip_reader_end(&archive);
+		HeapFree(GetProcessHeap(), 0, zip_data);
+		drgqst_rom_release(image);
+		image->data = rom_data;
+		image->size = EPO_HAMD_ROM_SIZE;
+		image->crc32 = crc32;
+		image->kind = DRGQST_ROM_EPO_HAMD;
+		if (error && error_length)
+			error[0] = L'\0';
+		return 1;
 	}
 
 	rom_data = HeapAlloc(GetProcessHeap(), 0, selected_rom->size);

@@ -2,13 +2,13 @@
 
 [![Windows CI](https://github.com/BillyJr0127/XaviXEmu/actions/workflows/windows-ci.yml/badge.svg?branch=main)](https://github.com/BillyJr0127/XaviXEmu/actions/workflows/windows-ci.yml)
 
-XaviXEmu is an experimental, open-source Windows emulator for selected XaviX
-2000 and XaviX 2 television games. The project focuses on documented hardware
-behaviour, motion-input emulation, reproducible tests, and preservation of
-research for systems whose original optical accessories are difficult to use
-on modern displays.
+XaviXEmu is an experimental, open-source Windows emulator for selected XaviX,
+XaviX 2000, and XaviX 2 television games. The project focuses on documented
+hardware behaviour, motion-input emulation, reproducible tests, and
+preservation of research for systems whose original optical accessories are
+difficult to use on modern displays.
 
-The current public release is **v0.2.0-alpha**. The project is not a
+The current public release is **v0.3.0-alpha**. The project is not a
 general-purpose XaviX emulator and does not claim cycle-accurate optical
 sensor emulation.
 
@@ -33,6 +33,8 @@ holders or MAMEdev. See [the legal notes](docs/legal.md).
 | XaviX 2000 | `ttv_lotr` | Playable | Maintainer-verified gameplay with synthetic CU5501 sword input |
 | XaviX 2000 | `ttv_sw` | Playable | Maintainer-verified gameplay with synthetic CU5501A input |
 | XaviX 2000 | `ttv_swj` | Playable | Maintainer-verified Japanese gameplay with synthetic CU5501A input |
+| XaviX | `epo_hamd` | Experimental | Animated title, decoded dual wireless controllers, activity-menu entry, and menu confirmation |
+| XaviX | `tvpc_dor` | Experimental | Title, main menu, mouse, cursor-key matrix, 24C16 EEPROM, and verified flight-game input |
 | XaviX 2 | `ban_naru` | Experimental | Title, menus, character selection, story path, and provisional PCM audio |
 
 The status terms and known limitations are defined in
@@ -44,9 +46,11 @@ does not mean that a game is fully playable.
 - Native Win32 front end with Traditional Chinese and English interfaces.
 - Nearest-neighbour output, window scaling, maximized mode, optional 4:3
   presentation, and borderless fullscreen.
-- Mouse-driven virtual optical input for sword, boxing, and motion profiles.
-- 24C02, 24C04, and 24C08 EEPROM models.
-- Per-game EEPROM and runtime-state files for supported XaviX 2000 profiles.
+- Mouse-driven virtual optical input for sword, boxing, and motion profiles,
+  plus early wireless-controller and TV-PC keyboard models.
+- 24C02, 24C04, 24C08, and 24C16 EEPROM models.
+- Per-game EEPROM and runtime-state files for supported original XaviX and
+  XaviX 2000 profiles.
 - PNG screenshots generated locally by the user.
 - Strict ROM size, CRC32, and SHA-1 verification.
 - ROM-independent automated CPU, video, audio, peripheral, persistence,
@@ -95,11 +99,12 @@ modify, or add files to the selected ZIP.
 
 ## Saves and screenshots
 
-For supported XaviX 2000 profiles, EEPROM and F5/F7 runtime states are stored
-beside the executable. F8 writes a PNG under a local `snap` directory. These
-files are runtime output and must not be committed or attached to bug reports.
+For supported original XaviX and XaviX 2000 profiles, EEPROM (where present)
+and F5/F7 runtime states are stored beside the executable. F8 writes a PNG
+under a local `snap` directory. These files are runtime output and must not be
+committed or attached to bug reports.
 
-XaviX 2 EEPROM and runtime states are not implemented in v0.2.0-alpha.
+XaviX 2 EEPROM and runtime states are not implemented in v0.3.0-alpha.
 
 ## Known limitations
 

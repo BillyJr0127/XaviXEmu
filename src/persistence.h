@@ -16,6 +16,7 @@ enum
 {
 	DRGQST_PERSISTENCE_ROM_SHA1_SIZE = 20,
 	DRGQST_PERSISTENCE_EEPROM_SIZE = 1024,
+	DRGQST_PERSISTENCE_EEPROM24C16_SIZE = 2048,
 	DRGQST_PERSISTENCE_HEADER_SIZE = 40,
 	DRGQST_PERSISTENCE_MAX_STATE_SIZE = 128 * 1024 * 1024
 };
@@ -33,7 +34,10 @@ enum drgqst_persistence_kind
 	DRGQST_PERSISTENCE_TTV_SW_EEPROM = 9,
 	DRGQST_PERSISTENCE_TTV_SW_RUNTIME_STATE = 10,
 	DRGQST_PERSISTENCE_TTV_SWJ_EEPROM = 11,
-	DRGQST_PERSISTENCE_TTV_SWJ_RUNTIME_STATE = 12
+	DRGQST_PERSISTENCE_TTV_SWJ_RUNTIME_STATE = 12,
+	DRGQST_PERSISTENCE_EPO_HAMD_RUNTIME_STATE = 13,
+	DRGQST_PERSISTENCE_TVPC_DOR_EEPROM = 14,
+	DRGQST_PERSISTENCE_TVPC_DOR_RUNTIME_STATE = 15
 };
 
 /*
@@ -66,8 +70,9 @@ int drgqst_persistence_get_path(
 	size_t error_length);
 
 /*
- * Save accepts an opaque caller-owned blob.  EEPROM payloads must be exactly
- * 1024 bytes; runtime states are opaque and independent of core structures.
+ * Save accepts an opaque caller-owned blob.  EEPROM payloads must match the
+ * capacity selected by their kind; runtime states are opaque and independent
+ * of core structures.
  */
 int drgqst_persistence_save(
 	const wchar_t *directory_override,

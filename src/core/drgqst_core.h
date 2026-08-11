@@ -23,7 +23,9 @@ enum drgqst_core_profile
 	DRGQST_CORE_BAN_ONEP = 1,
 	DRGQST_CORE_BAN_OMT = 2,
 	DRGQST_CORE_TTV_CU5501_24C02 = 3,
-	DRGQST_CORE_TTV_CU5501A_24C02 = 4
+	DRGQST_CORE_TTV_CU5501A_24C02 = 4,
+	DRGQST_CORE_XAVIX_BASE = 5,
+	DRGQST_CORE_XAVIX_I2C_24C16 = 6
 };
 
 typedef struct drgqst_core
@@ -50,6 +52,12 @@ typedef struct drgqst_core
 	uint8_t ban_onep_aim_y;
 	uint8_t ban_onep_bazooka_phase;
 	uint8_t ttv_exposure_pending;
+	uint8_t epo_hamd_packet;
+	uint8_t epo_hamd_packet_mask;
+	uint8_t epo_hamd_packet_queue[4];
+	uint8_t epo_hamd_packet_queue_head;
+	uint8_t epo_hamd_packet_queue_count;
+	uint8_t tvpc_keyboard_rows[8];
 } drgqst_core;
 
 int drgqst_core_init(drgqst_core *core, const uint8_t *rom, size_t rom_size);
@@ -84,5 +92,12 @@ void drgqst_core_set_mouse(drgqst_core *core, uint8_t x, uint8_t y,
 
 /* Emit one two-reflector forward-thrust gesture for the One Piece game. */
 void drgqst_core_trigger_bazooka(drgqst_core *core);
+
+/* Queue one eight-bit wireless reflector packet for Ham-chans. */
+void drgqst_core_trigger_hamd_packet(drgqst_core *core, uint8_t packet);
+
+/* Set one raw active-high row returned by the TV-PC keyboard controller. */
+void drgqst_core_set_tvpc_keyboard_row(drgqst_core *core, unsigned row,
+	uint8_t keys);
 
 #endif

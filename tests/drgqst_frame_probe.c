@@ -13,6 +13,123 @@
 #include <stdlib.h>
 #include <string.h>
 
+typedef struct io_probe_counter
+{
+	uint16_t address;
+	uint64_t reads;
+	uint64_t nonzero;
+	uint32_t last_pc;
+	uint32_t last_nonzero_pc;
+	uint8_t last_value;
+	uint8_t last_nonzero_value;
+} io_probe_counter;
+
+typedef struct io_probe
+{
+	xavix_cpu_read8_fn original_read;
+	xavix_cpu_write8_fn original_write;
+	void *original_opaque;
+	drgqst_core *core;
+	unsigned input_read_logs;
+	unsigned external_read_logs;
+	unsigned tvpc_key_read_logs;
+	int trace_tvpc_keyboard;
+	io_probe_counter counters[24];
+	io_probe_counter writes[18];
+} io_probe;
+
+static void probe_cpu_write(void *opaque, xavix_cpu_bus_t bus,
+	uint32_t address, uint8_t data)
+{
+	io_probe *probe = (io_probe *)opaque;
+	if (bus == XAVIX_CPU_BUS_LOW)
+	{
+		unsigned index;
+		for (index = 0; index < sizeof(probe->writes) /
+			sizeof(probe->writes[0]); ++index)
+		{
+			if (probe->writes[index].address == address)
+			{
+				probe->writes[index].reads++;
+				probe->writes[index].last_pc =
+					xavix_cpu_linear_pc(&probe->core->cpu);
+				probe->writes[index].last_value = data;
+				if (data)
+				{
+					probe->writes[index].nonzero++;
+					probe->writes[index].last_nonzero_pc =
+						xavix_cpu_linear_pc(&probe->core->cpu);
+					probe->writes[index].last_nonzero_value = data;
+				}
+				break;
+			}
+		}
+	}
+	probe->original_write(probe->original_opaque, bus, address, data);
+}
+
+static uint8_t probe_cpu_read(void *opaque, xavix_cpu_bus_t bus,
+	uint32_t address)
+{
+	io_probe *probe = (io_probe *)opaque;
+	uint8_t value = probe->original_read(probe->original_opaque, bus, address);
+	if (probe->trace_tvpc_keyboard && bus == XAVIX_CPU_BUS_EXTERNAL &&
+		xavix_cpu_linear_pc(&probe->core->cpu) >= 0x028000 &&
+		xavix_cpu_linear_pc(&probe->core->cpu) < 0x028200 &&
+		address != xavix_cpu_linear_pc(&probe->core->cpu) &&
+		probe->external_read_logs < 256)
+	{
+		printf("tvpc-external-read pc=%06lX address=%06lX value=%02X\n",
+			(unsigned long)xavix_cpu_linear_pc(&probe->core->cpu),
+			(unsigned long)address, value);
+		++probe->external_read_logs;
+	}
+	if (bus == XAVIX_CPU_BUS_LOW)
+	{
+		unsigned index;
+		if (probe->trace_tvpc_keyboard &&
+			address >= 0x00ac && address <= 0x00b0 && value &&
+			(xavix_cpu_linear_pc(&probe->core->cpu) < 0x028000 ||
+			xavix_cpu_linear_pc(&probe->core->cpu) >= 0x028200) &&
+			probe->tvpc_key_read_logs < 256)
+		{
+			printf("tvpc-key-read address=%04lX pc=%06lX value=%02X\n",
+				(unsigned long)address,
+				(unsigned long)xavix_cpu_linear_pc(&probe->core->cpu), value);
+			++probe->tvpc_key_read_logs;
+		}
+		if ((address == 0x002e || address == 0x0030 ||
+			address == 0x00a4 || address == 0x00a5) && value &&
+			probe->input_read_logs < 128)
+		{
+			printf("input-read address=%04lX pc=%06lX value=%02X\n",
+				(unsigned long)address,
+				(unsigned long)xavix_cpu_linear_pc(&probe->core->cpu), value);
+			++probe->input_read_logs;
+		}
+		for (index = 0; index < sizeof(probe->counters) /
+			sizeof(probe->counters[0]); ++index)
+		{
+			if (probe->counters[index].address == address)
+			{
+				probe->counters[index].reads++;
+				probe->counters[index].last_pc =
+					xavix_cpu_linear_pc(&probe->core->cpu);
+				probe->counters[index].last_value = value;
+				if (value)
+				{
+					probe->counters[index].nonzero++;
+					probe->counters[index].last_nonzero_pc =
+						xavix_cpu_linear_pc(&probe->core->cpu);
+					probe->counters[index].last_nonzero_value = value;
+				}
+				break;
+			}
+		}
+	}
+	return value;
+}
+
 static uint64_t framebuffer_hash(const uint32_t *pixels)
 {
 	uint64_t hash = UINT64_C(1469598103934665603);
@@ -116,7 +233,7 @@ static void write_ram_snapshot(const char *bmp_path, const uint8_t *ram)
 
 static int persistence_profile(enum drgqst_rom_kind rom_kind,
 	const uint8_t **sha1, enum drgqst_persistence_kind *eeprom_kind,
-	enum drgqst_persistence_kind *state_kind)
+	enum drgqst_persistence_kind *state_kind, size_t *eeprom_size)
 {
 	static const uint8_t ban_onep_sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
 	{
@@ -138,6 +255,18 @@ static int persistence_profile(enum drgqst_rom_kind rom_kind,
 		0x40, 0x6f, 0x0b, 0xcc, 0xb0, 0x1c, 0xd4, 0xa2, 0x6f, 0xe4,
 		0xa5, 0x67, 0x5d, 0x7e, 0xbe, 0xcc, 0x78, 0xc5, 0x81, 0x47
 	};
+	static const uint8_t hamd_sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+	{
+		0xc6, 0x1d, 0x43, 0x6d, 0x6b, 0x80, 0x37, 0x17, 0xb8, 0xc8,
+		0x4d, 0x20, 0x22, 0x49, 0x93, 0x80, 0xf7, 0x1c, 0xce, 0xd8
+	};
+	static const uint8_t dor_sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+	{
+		0x98, 0xfa, 0x86, 0xf8, 0x5e, 0x00, 0xaa, 0x40, 0xe7, 0xa5,
+		0x85, 0xff, 0x0b, 0xc9, 0x30, 0xcb, 0x5c, 0xa8, 0x83, 0x62
+	};
+
+	*eeprom_size = DRGQST_PERSISTENCE_EEPROM_SIZE;
 
 	switch (rom_kind)
 	{
@@ -160,6 +289,18 @@ static int persistence_profile(enum drgqst_rom_kind rom_kind,
 		*sha1 = swj_sha1;
 		*eeprom_kind = DRGQST_PERSISTENCE_TTV_SWJ_EEPROM;
 		*state_kind = DRGQST_PERSISTENCE_TTV_SWJ_RUNTIME_STATE;
+		return 1;
+	case DRGQST_ROM_EPO_HAMD:
+		*sha1 = hamd_sha1;
+		*eeprom_kind = DRGQST_PERSISTENCE_EEPROM;
+		*state_kind = DRGQST_PERSISTENCE_EPO_HAMD_RUNTIME_STATE;
+		*eeprom_size = 0;
+		return 1;
+	case DRGQST_ROM_TVPC_DOR:
+		*sha1 = dor_sha1;
+		*eeprom_kind = DRGQST_PERSISTENCE_TVPC_DOR_EEPROM;
+		*state_kind = DRGQST_PERSISTENCE_TVPC_DOR_RUNTIME_STATE;
+		*eeprom_size = DRGQST_PERSISTENCE_EEPROM24C16_SIZE;
 		return 1;
 	default:
 		return 0;
@@ -188,8 +329,38 @@ int main(int argc, char **argv)
 	unsigned last_cursor_visible = UINT_MAX;
 	int state_loaded = 0;
 	int durable_eeprom_loaded = 0;
-	uint8_t initial_eeprom[DRGQST_PERSISTENCE_EEPROM_SIZE];
+	uint8_t initial_eeprom[DRGQST_PERSISTENCE_EEPROM24C16_SIZE];
+	size_t eeprom_size;
 	const uint32_t *pixels = NULL;
+	io_probe io_trace =
+	{
+		NULL, NULL, NULL, NULL, 0, 0, 0, 0,
+		{
+			{ .address = 0x7a00 }, { .address = 0x7a01 },
+			{ .address = 0x7a02 }, { .address = 0x7a03 },
+			{ .address = 0x7a80 }, { .address = 0x7a81 },
+			{ .address = 0x7b00 }, { .address = 0x7b01 },
+			{ .address = 0x7b10 }, { .address = 0x7b11 },
+			{ .address = 0x7b80 }, { .address = 0x7b81 },
+			{ .address = 0x0037 }, { .address = 0x003e },
+			{ .address = 0x003f }, { .address = 0x0040 },
+			{ .address = 0x0041 }, { .address = 0x0044 },
+			{ .address = 0x0048 }, { .address = 0x00ac },
+			{ .address = 0x00ad }, { .address = 0x00ae },
+			{ .address = 0x00af }, { .address = 0x00b0 }
+		},
+		{
+			{ .address = 0x00a4 }, { .address = 0x00a5 },
+			{ .address = 0x002e }, { .address = 0x0030 },
+			{ .address = 0x0037 }, { .address = 0x003e },
+			{ .address = 0x003f }, { .address = 0x0040 },
+			{ .address = 0x0041 }, { .address = 0x0044 },
+			{ .address = 0x0048 }, { .address = 0x00ac },
+			{ .address = 0x00ad }, { .address = 0x00ae },
+			{ .address = 0x00af }, { .address = 0x00b0 },
+			{ .address = 0x009e }, { .address = 0x009f }
+		}
+	};
 
 	if (argc < 3 || !MultiByteToWideChar(CP_ACP, 0, argv[1], -1, path,
 		(int)(sizeof(path) / sizeof(path[0]))))
@@ -210,53 +381,80 @@ int main(int argc, char **argv)
 		image.kind == DRGQST_ROM_TTV_LOTR ? DRGQST_CORE_TTV_CU5501_24C02 :
 		(image.kind == DRGQST_ROM_TTV_SW ||
 		 image.kind == DRGQST_ROM_TTV_SWJ) ? DRGQST_CORE_TTV_CU5501A_24C02 :
+		image.kind == DRGQST_ROM_EPO_HAMD ? DRGQST_CORE_XAVIX_BASE :
+		image.kind == DRGQST_ROM_TVPC_DOR ? DRGQST_CORE_XAVIX_I2C_24C16 :
 		DRGQST_CORE_DRAGON_QUEST))
 	{
 		free(core);
 		drgqst_rom_release(&image);
 		return 2;
 	}
-	if (argc >= 5)
+	eeprom_size = image.kind == DRGQST_ROM_EPO_HAMD ? 0 :
+		image.kind == DRGQST_ROM_TVPC_DOR ?
+		DRGQST_PERSISTENCE_EEPROM24C16_SIZE :
+		DRGQST_PERSISTENCE_EEPROM_SIZE;
+	io_trace.original_read = core->cpu.read8;
+	io_trace.original_write = core->cpu.write8;
+	io_trace.original_opaque = core->cpu.opaque;
+	io_trace.core = core;
+	core->cpu.read8 = probe_cpu_read;
+	core->cpu.write8 = probe_cpu_write;
+	core->cpu.opaque = &io_trace;
+	if (argc >= 6)
+		input_bit = (unsigned)strtoul(argv[5], NULL, 0) & 0xff;
+	if (argc >= 7)
+		punch_mask = (unsigned)strtoul(argv[6], NULL, 0) & 3;
+	if (argc >= 8)
+		sync_period = (unsigned)strtoul(argv[7], NULL, 0);
+	if (sync_period > 255)
+		sync_period = 255;
+	if (argc >= 9)
+		trajectory = (unsigned)strtoul(argv[8], NULL, 0);
+	if (argc >= 10)
+		trajectory_start = (unsigned)strtoul(argv[9], NULL, 0);
+	if (argc >= 11)
+		load_state = !!strtoul(argv[10], NULL, 0);
+	if (argc >= 12)
+		fixed_x = (unsigned)strtoul(argv[11], NULL, 0) & 0xff;
+	if (argc >= 13)
+		fixed_y = (unsigned)strtoul(argv[12], NULL, 0) & 0xff;
+	if (argc >= 14)
+		input_pulses = (unsigned)strtoul(argv[13], NULL, 0);
+	if (argc >= 15)
+		guard_hold = (unsigned)strtoul(argv[14], NULL, 0);
+	if (argc >= 16)
+		trajectory_interval = (unsigned)strtoul(argv[15], NULL, 0);
+	io_trace.trace_tvpc_keyboard = trajectory == 25;
+	if (argc >= 5 && strcmp(argv[4], "-"))
 	{
 		const uint8_t *rom_sha1 = NULL;
 		enum drgqst_persistence_kind eeprom_kind;
 		enum drgqst_persistence_kind state_kind;
 		wchar_t save_directory[32768];
 		uint8_t *state = NULL;
-		uint8_t durable_eeprom[DRGQST_PERSISTENCE_EEPROM_SIZE];
+		uint8_t durable_eeprom[DRGQST_PERSISTENCE_EEPROM24C16_SIZE];
 		size_t state_size = drgqst_state_serialized_size();
 		size_t loaded_size = 0;
 		if (!MultiByteToWideChar(CP_ACP, 0, argv[4], -1, save_directory,
 			(int)(sizeof(save_directory) / sizeof(save_directory[0]))))
 			return 2;
 		if (!persistence_profile(image.kind, &rom_sha1, &eeprom_kind,
-			&state_kind))
+			&state_kind, &eeprom_size))
 		{
 			fprintf(stderr, "no persistence profile for ROM kind %u\n",
 				(unsigned)image.kind);
 			return 2;
 		}
-		xavix_eeprom24c08_copy_image(&core->machine.state.peripherals.eeprom,
-			durable_eeprom);
-		if (argc >= 11)
-			load_state = !!strtoul(argv[10], NULL, 0);
-		if (argc >= 12)
-			fixed_x = (unsigned)strtoul(argv[11], NULL, 0) & 0xff;
-		if (argc >= 13)
-			fixed_y = (unsigned)strtoul(argv[12], NULL, 0) & 0xff;
-		if (argc >= 14)
-			input_pulses = (unsigned)strtoul(argv[13], NULL, 0);
-		if (argc >= 15)
-			guard_hold = (unsigned)strtoul(argv[14], NULL, 0);
-		if (argc >= 16)
-			trajectory_interval = (unsigned)strtoul(argv[15], NULL, 0);
+		if (eeprom_size)
+			xavix_eeprom_copy_image(&core->machine.state.peripherals.eeprom,
+				durable_eeprom, eeprom_size);
 		loaded_size = 0;
-		if (drgqst_persistence_load(save_directory, eeprom_kind, rom_sha1,
-			durable_eeprom, sizeof(durable_eeprom), &loaded_size, error,
-			sizeof(error) / sizeof(error[0])) && loaded_size == sizeof(durable_eeprom))
+		if (eeprom_size && drgqst_persistence_load(save_directory, eeprom_kind,
+			rom_sha1, durable_eeprom, eeprom_size, &loaded_size, error,
+			sizeof(error) / sizeof(error[0])) && loaded_size == eeprom_size)
 		{
-			xavix_eeprom24c08_load_image(&core->machine.state.peripherals.eeprom,
-				durable_eeprom, sizeof(durable_eeprom));
+			xavix_eeprom_load_image(&core->machine.state.peripherals.eeprom,
+				durable_eeprom, eeprom_size);
 			durable_eeprom_loaded = 1;
 		}
 		if (load_state)
@@ -266,7 +464,7 @@ int main(int argc, char **argv)
 			if (!state || !drgqst_persistence_load(save_directory,
 				state_kind, rom_sha1,
 				state, state_size, &loaded_size, error,
-				sizeof(error) / sizeof(error[0])) || loaded_size != state_size ||
+				sizeof(error) / sizeof(error[0])) ||
 				!drgqst_state_load(core, state, loaded_size))
 			{
 				fwprintf(stderr, L"state load error: %ls\n", error);
@@ -277,34 +475,75 @@ int main(int argc, char **argv)
 			}
 			/* Match the GUI: F7 restores the machine checkpoint but never
 			 * rewinds the game's durable EEPROM contents. */
-			memcpy(core->machine.state.peripherals.eeprom.data,
-				durable_eeprom, sizeof(durable_eeprom));
+			if (eeprom_size)
+				memcpy(core->machine.state.peripherals.eeprom.data,
+					durable_eeprom, eeprom_size);
 			core->machine.state.peripherals.eeprom.dirty = 0;
 			core->machine.state.peripherals.eeprom.write_generation = 0;
 			state_loaded = 1;
 		}
 		free(state);
-		if (argc >= 6)
-			input_bit = (unsigned)strtoul(argv[5], NULL, 0) & 0xff;
-		if (argc >= 7)
-			punch_mask = (unsigned)strtoul(argv[6], NULL, 0) & 3;
-		if (argc >= 8)
-			sync_period = (unsigned)strtoul(argv[7], NULL, 0);
-		if (sync_period > 255)
-			sync_period = 255;
 		if (sync_period)
 			core->ban_onep_sync_period = (uint8_t)sync_period;
-		if (argc >= 9)
-			trajectory = (unsigned)strtoul(argv[8], NULL, 0) & 0xff;
-		if (argc >= 10)
-			trajectory_start = (unsigned)strtoul(argv[9], NULL, 0);
 	}
-	xavix_eeprom24c08_copy_image(&core->machine.state.peripherals.eeprom,
-		initial_eeprom);
+	if (eeprom_size)
+		xavix_eeprom_copy_image(&core->machine.state.peripherals.eeprom,
+			initial_eeprom, eeprom_size);
 	for (frame = 1; frame <= frames && !core->cpu.stopped; ++frame)
 	{
 		if (!uses_glove_sensor(image.kind))
 			apply_calibration_sequence(core, frame - 1);
+		if (image.kind == DRGQST_ROM_TVPC_DOR)
+		{
+			const int apply_delta = (trajectory < 25 || trajectory > 28) &&
+				(trajectory != 17 ||
+				(frame >= trajectory_start && frame < trajectory_start + 4));
+			if (apply_delta && fixed_x != UINT_MAX)
+				core->machine.state.anport_regs[2] = (uint8_t)fixed_x;
+			if (apply_delta && fixed_y != UINT_MAX)
+				core->machine.state.anport_regs[3] = (uint8_t)fixed_y;
+			if ((trajectory == 22 || trajectory == 23) &&
+				frame >= trajectory_start)
+			{
+				const unsigned phase = (frame - trajectory_start) & 15;
+				const int delta = phase < 8 ? 8 : -8;
+				const unsigned port = trajectory == 22 ? 3 : 2;
+				core->machine.state.anport_regs[port] = (uint8_t)(
+					core->machine.state.anport_regs[port] + delta);
+			}
+			if (trajectory == 24 && frame >= trajectory_start)
+			{
+				if (((frame - trajectory_start) & 7) < 3)
+					core->machine.state.input0 |= 0x80;
+				else
+					core->machine.state.input0 &= (uint8_t)~0x80;
+			}
+			if (trajectory == 25 && frame >= trajectory_start)
+			{
+				const unsigned key = (frame - trajectory_start) / 3;
+				unsigned row;
+				for (row = 0; row < 8; ++row)
+					drgqst_core_set_tvpc_keyboard_row(core, row, 0);
+				if (key < 64)
+					drgqst_core_set_tvpc_keyboard_row(core, key / 8,
+						(uint8_t)(1U << (key & 7)));
+			}
+			if ((trajectory == 27 || trajectory == 28) &&
+				frame >= trajectory_start)
+			{
+				const unsigned phase = (frame - trajectory_start) & 3;
+				unsigned row;
+				for (row = 0; row < 8; ++row)
+					drgqst_core_set_tvpc_keyboard_row(core, row, 0);
+				if (fixed_x < 64 &&
+					(trajectory == 27 ? phase < 2 : phase == 0))
+					drgqst_core_set_tvpc_keyboard_row(core, fixed_x / 8,
+						(uint8_t)(1U << (fixed_x & 7)));
+				if (trajectory == 28 && fixed_y < 64 && phase == 2)
+					drgqst_core_set_tvpc_keyboard_row(core, fixed_y / 8,
+						(uint8_t)(1U << (fixed_y & 7)));
+			}
+		}
 		if (uses_glove_sensor(image.kind))
 		{
 			int left_pressed = (frame >= 1500 && frame < 1504) ||
@@ -442,6 +681,29 @@ int main(int argc, char **argv)
 				right_pressed = !!(punch_mask & 2);
 			}
 			drgqst_core_set_mouse(core, x, y, left_pressed, right_pressed);
+			if (trajectory == 18 && frame >= trajectory_start)
+				xavix_machine_set_sword_input(&core->machine, x, y,
+					XAVIX_SENSOR_NONE);
+			if (trajectory >= 30 && trajectory <= 33 &&
+				frame >= trajectory_start)
+			{
+				static const enum xavix_sensor_mode modes[4] =
+				{
+					XAVIX_SENSOR_VERTICAL,
+					XAVIX_SENSOR_HORIZONTAL,
+					XAVIX_SENSOR_DIAGONAL_DOWN,
+					XAVIX_SENSOR_DIAGONAL_UP
+				};
+				xavix_machine_set_sword_input(&core->machine, x, y,
+					modes[trajectory - 30]);
+			}
+			if (trajectory == 34 && frame >= trajectory_start)
+				xavix_machine_set_sword_input(&core->machine, x, y,
+					XAVIX_SENSOR_POINT);
+			if (trajectory == 35 && frame >= trajectory_start)
+				xavix_machine_set_sword_input(&core->machine, x, y,
+					frame == trajectory_start ?
+					XAVIX_SENSOR_POINT : XAVIX_SENSOR_NONE);
 			if (trajectory == 13 && frame >= trajectory_start &&
 				frame < trajectory_start + (guard_hold ? guard_hold : 120))
 				xavix_machine_set_sword_input(&core->machine, x, y,
@@ -496,7 +758,113 @@ int main(int argc, char **argv)
 					core->machine.state.input0 &= (uint8_t)~input_bit;
 			}
 		}
+		if (!uses_glove_sensor(image.kind) && input_bit)
+		{
+			const unsigned offset = frame >= trajectory_start ?
+				frame - trajectory_start : UINT_MAX;
+			if (guard_hold && frame >= trajectory_start &&
+				frame < trajectory_start + guard_hold)
+				core->machine.state.input0 |= (uint8_t)input_bit;
+			else if (offset != UINT_MAX && offset / 40 < input_pulses &&
+				offset % 40 < 4)
+				core->machine.state.input0 |= (uint8_t)input_bit;
+			else
+				core->machine.state.input0 &= (uint8_t)~input_bit;
+		}
+		if (image.kind == DRGQST_ROM_EPO_HAMD && trajectory == 21)
+		{
+			static const uint8_t patterns[] =
+				{ 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x81 };
+			const unsigned offset = frame >= trajectory_start ?
+				frame - trajectory_start : UINT_MAX;
+			core->machine.state.input0 = 0;
+			if (offset != UINT_MAX && offset / 60 < sizeof(patterns) &&
+				offset % 60 < 4)
+				core->machine.state.input0 = patterns[offset / 60];
+		}
+		if (image.kind == DRGQST_ROM_EPO_HAMD && trajectory == 19 &&
+			frame >= trajectory_start)
+		{
+			const unsigned period = trajectory_interval ?
+				trajectory_interval : 2;
+			const unsigned packet_index =
+				(frame - trajectory_start) / period;
+			if (packet_index < 64 &&
+				(frame - trajectory_start) % period == 0)
+					drgqst_core_trigger_hamd_packet(core,
+						(uint8_t)(packet_index * 2 + 1));
+		}
+		if (image.kind == DRGQST_ROM_EPO_HAMD && trajectory == 20 &&
+			frame >= trajectory_start)
+		{
+			const uint8_t first = fixed_x != UINT_MAX ?
+				(uint8_t)fixed_x : 0x15;
+			const uint8_t second = fixed_y != UINT_MAX ?
+				(uint8_t)fixed_y : first;
+			drgqst_core_trigger_hamd_packet(core, first);
+			if (second != first)
+				drgqst_core_trigger_hamd_packet(core, second);
+		}
+		if (image.kind == DRGQST_ROM_EPO_HAMD && trajectory == 29 &&
+			frame >= trajectory_start && frame < trajectory_start +
+				(guard_hold ? guard_hold : 4))
+		{
+			const uint8_t first = fixed_x != UINT_MAX ?
+				(uint8_t)fixed_x : 0x15;
+			const uint8_t second = fixed_y != UINT_MAX ?
+				(uint8_t)fixed_y : first;
+			drgqst_core_trigger_hamd_packet(core, first);
+			if (second != first)
+				drgqst_core_trigger_hamd_packet(core, second);
+		}
 		pixels = drgqst_core_run_frame(core);
+		if (image.kind == DRGQST_ROM_TVPC_DOR && trajectory == 25 &&
+			frame >= trajectory_start &&
+			(frame - trajectory_start) % 3 == 1)
+		{
+			const unsigned key = (frame - trajectory_start) / 3;
+			if (key < 64)
+				printf("tvpc-key row=%u bit=%02X decoded=%02X/%02X/%02X/%02X/%02X/%02X/%02X/%02X\n",
+					key / 8, 1U << (key & 7),
+					core->machine.state.main_ram[0xac],
+					core->machine.state.main_ram[0xad],
+					core->machine.state.main_ram[0xae],
+					core->machine.state.main_ram[0xaf],
+					core->machine.state.main_ram[0xb0],
+					core->machine.state.main_ram[0xb1],
+					core->machine.state.main_ram[0xb2],
+					core->machine.state.main_ram[0xb3]);
+		}
+		if (image.kind == DRGQST_ROM_EPO_HAMD && trajectory == 19 &&
+			frame >= trajectory_start)
+		{
+			const unsigned period = trajectory_interval ?
+				trajectory_interval : 2;
+			const unsigned packet_index =
+				(frame - trajectory_start) / period;
+			if (packet_index < 64 &&
+				(frame - trajectory_start) % period == 0)
+				printf("hamd-packet=%02X decoded=%02X/%02X previous=%02X/%02X raw=%02X/%02X shift=%02X\n",
+					packet_index * 2 + 1,
+					core->machine.state.main_ram[0xa4],
+					core->machine.state.main_ram[0xa5],
+					core->machine.state.main_ram[0xa0],
+					core->machine.state.main_ram[0xa1],
+					core->machine.state.main_ram[0x9e],
+					core->machine.state.main_ram[0x9f],
+					core->machine.state.main_ram[0x9c]);
+		}
+		if (image.kind == DRGQST_ROM_EPO_HAMD && trajectory == 20 &&
+			frame >= trajectory_start && frame < trajectory_start + 16)
+			printf("hamd-repeat frame=%u decoded=%02X/%02X previous=%02X/%02X raw=%02X/%02X mask=%02X\n",
+				frame,
+				core->machine.state.main_ram[0xa4],
+				core->machine.state.main_ram[0xa5],
+				core->machine.state.main_ram[0xa0],
+				core->machine.state.main_ram[0xa1],
+				core->machine.state.main_ram[0x9e],
+				core->machine.state.main_ram[0x9f],
+				core->epo_hamd_packet_mask);
 		{
 			const unsigned cursor_visible =
 				drgqst_core_internal_cursor_visible(core);
@@ -544,6 +912,33 @@ int main(int argc, char **argv)
 		(unsigned)core->machine.state.peripherals.sensor.scan_y,
 		(unsigned)core->machine.state.peripherals.eeprom.dirty,
 		(unsigned long)core->machine.state.peripherals.eeprom.write_generation);
+	{
+		unsigned index;
+		for (index = 0; index < sizeof(io_trace.counters) /
+			sizeof(io_trace.counters[0]); ++index)
+		{
+			const io_probe_counter *counter = &io_trace.counters[index];
+			if (counter->reads)
+				printf("io-read %04X count=%llu nonzero=%llu last-pc=%06lX value=%02X last-nonzero=%06lX/%02X\n",
+					counter->address, (unsigned long long)counter->reads,
+					(unsigned long long)counter->nonzero,
+					(unsigned long)counter->last_pc, counter->last_value,
+					(unsigned long)counter->last_nonzero_pc,
+					counter->last_nonzero_value);
+		}
+		for (index = 0; index < sizeof(io_trace.writes) /
+			sizeof(io_trace.writes[0]); ++index)
+		{
+			const io_probe_counter *counter = &io_trace.writes[index];
+			if (counter->reads)
+				printf("ram-write %04X count=%llu nonzero=%llu last-pc=%06lX value=%02X last-nonzero=%06lX/%02X\n",
+					counter->address, (unsigned long long)counter->reads,
+					(unsigned long long)counter->nonzero,
+					(unsigned long)counter->last_pc, counter->last_value,
+					(unsigned long)counter->last_nonzero_pc,
+					counter->last_nonzero_value);
+		}
+	}
 	if (state_loaded)
 	{
 		printf("detect bf=%02X c0=%02X 0840=%02X 0841=%02X\n",
@@ -564,7 +959,7 @@ int main(int argc, char **argv)
 	{
 		unsigned changed = 0;
 		unsigned address;
-		for (address = 0; address < DRGQST_PERSISTENCE_EEPROM_SIZE; ++address)
+		for (address = 0; address < eeprom_size; ++address)
 		{
 			const uint8_t value = core->machine.state.peripherals.eeprom.data[address];
 			if (value != initial_eeprom[address])

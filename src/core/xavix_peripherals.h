@@ -22,6 +22,7 @@ extern "C" {
 enum
 {
 	XAVIX_EEPROM24C08_SIZE = 1024,
+	XAVIX_EEPROM24C16_SIZE = 2048,
 	XAVIX_EEPROM24C08_PAGE_SIZE = 16,
 	XAVIX_CU5501A_WIDTH = 32,
 	XAVIX_CU5501A_HEIGHT = 31,
@@ -38,7 +39,9 @@ enum xavix_sensor_mode
 	XAVIX_SENSOR_VERTICAL = 4,     /* broad face held upright: 5 by 13 */
 	XAVIX_SENSOR_DIAGONAL_DOWN = 5,
 	XAVIX_SENSOR_HORIZONTAL = 6,
-	XAVIX_SENSOR_DIAGONAL_UP = 7
+	XAVIX_SENSOR_DIAGONAL_UP = 7,
+	XAVIX_SENSOR_NONE = 8,         /* no reflective target in view */
+	XAVIX_SENSOR_POINT = 9         /* one-pixel moving edge reflection */
 };
 
 enum xavix_i2c_protocol_state
@@ -62,7 +65,9 @@ enum xavix_i2c_protocol_state
  */
 typedef struct xavix_eeprom24c08
 {
-	uint8_t data[XAVIX_EEPROM24C08_SIZE];
+	/* The shared implementation reserves the largest supported device.  The
+	 * 24C02/04/08 helpers mask addresses to their physical capacity. */
+	uint8_t data[XAVIX_EEPROM24C16_SIZE];
 	uint8_t page[XAVIX_EEPROM24C08_PAGE_SIZE];
 	uint16_t page_dirty_mask;
 	uint16_t address;
@@ -152,10 +157,13 @@ void xavix_eeprom24c08_init(xavix_eeprom24c08 *eeprom, const uint8_t *initial, s
 void xavix_eeprom24c08_reset_bus(xavix_eeprom24c08 *eeprom);
 int xavix_eeprom24c08_load_image(xavix_eeprom24c08 *eeprom, const uint8_t *data, size_t size);
 void xavix_eeprom24c08_copy_image(const xavix_eeprom24c08 *eeprom, uint8_t output[XAVIX_EEPROM24C08_SIZE]);
+int xavix_eeprom_load_image(xavix_eeprom24c08 *eeprom, const uint8_t *data, size_t size);
+void xavix_eeprom_copy_image(const xavix_eeprom24c08 *eeprom, uint8_t *output, size_t size);
 void xavix_eeprom24c08_set_write_protect(xavix_eeprom24c08 *eeprom, int enabled);
 void xavix_eeprom24c02_set_lines(xavix_eeprom24c08 *eeprom, int scl, int master_sda);
 void xavix_eeprom24c08_set_lines(xavix_eeprom24c08 *eeprom, int scl, int master_sda);
 void xavix_eeprom24c04_set_lines(xavix_eeprom24c08 *eeprom, int scl, int master_sda);
+void xavix_eeprom24c16_set_lines(xavix_eeprom24c08 *eeprom, int scl, int master_sda);
 int xavix_eeprom24c08_read_sda(const xavix_eeprom24c08 *eeprom);
 int xavix_eeprom24c08_is_dirty(const xavix_eeprom24c08 *eeprom);
 void xavix_eeprom24c08_clear_dirty(xavix_eeprom24c08 *eeprom);

@@ -115,3 +115,28 @@ blue target is now drawn only on frames where those sprites are absent.
 - Code changed: four synthetic reflection orientations and the host Space-key
   sequencer. The shapes model observable optical input rather than bypassing a
   tutorial result.
+
+## Star Wars US host-input parity
+
+- Observed symptom: the US game appeared to lack the Space-key spin gesture and
+  could remain in its defensive posture without the mouse button being held.
+- PC/address: the supplied US checkpoint idles around `$00387f-$003890`.
+- I/O/register: the shared CU5501A host reflection mode; no firmware status or
+  result address is patched.
+- Hypothesis: the US program interprets a stationary narrow reflection as a
+  defensive pose. On the real accessory the saber leaves the camera field when
+  the player is idle, but the original mouse model always left one reflector
+  visible.
+- Experiment: load the same checkpoint and compare the old 3-by-3 narrow
+  reflection, a completely dark sensor image, a one-pixel moving-edge sample,
+  held broadside, and the rotating elongated image. The old narrow and held
+  broadside images drew the large defensive saber. Both the dark image and the
+  one-pixel sample left the defensive saber hidden.
+- Result: the issue was synthetic sensor presence, not a stuck Windows button.
+  The US profile now supplies no reflection while idle, a one-pixel reflection
+  for one video frame after movement, broadside only while left mouse is held,
+  and the rotating image only while Space is held. The Japanese profile is
+  unchanged.
+- Code changed: add no-target and one-pixel CU5501A images and an US-only
+  one-frame motion window. Runtime restore still re-samples physical mouse
+  buttons, and deactivating the window releases all held gestures.

@@ -150,6 +150,9 @@ static void remove_test_tree(const wchar_t *root)
 	wchar_t sw_state_path[MAX_PATH];
 	wchar_t swj_eeprom_path[MAX_PATH];
 	wchar_t swj_state_path[MAX_PATH];
+	wchar_t hamd_state_path[MAX_PATH];
+	wchar_t dor_eeprom_path[MAX_PATH];
+	wchar_t dor_state_path[MAX_PATH];
 	wchar_t directory[MAX_PATH];
 
 	if (drgqst_persistence_get_path(root, DRGQST_PERSISTENCE_EEPROM,
@@ -172,6 +175,17 @@ static void remove_test_tree(const wchar_t *root)
 		DRGQST_PERSISTENCE_BAN_OMT_RUNTIME_STATE,
 		omt_state_path, MAX_PATH, error, sizeof(error) / sizeof(error[0])))
 		DeleteFileW(omt_state_path);
+	if (drgqst_persistence_get_path(root,
+		DRGQST_PERSISTENCE_EPO_HAMD_RUNTIME_STATE,
+		hamd_state_path, MAX_PATH, error, sizeof(error) / sizeof(error[0])))
+		DeleteFileW(hamd_state_path);
+	if (drgqst_persistence_get_path(root, DRGQST_PERSISTENCE_TVPC_DOR_EEPROM,
+		dor_eeprom_path, MAX_PATH, error, sizeof(error) / sizeof(error[0])))
+		DeleteFileW(dor_eeprom_path);
+	if (drgqst_persistence_get_path(root,
+		DRGQST_PERSISTENCE_TVPC_DOR_RUNTIME_STATE,
+		dor_state_path, MAX_PATH, error, sizeof(error) / sizeof(error[0])))
+		DeleteFileW(dor_state_path);
 	if (drgqst_persistence_get_directory(root, directory, MAX_PATH,
 		error, sizeof(error) / sizeof(error[0])))
 	{
@@ -217,11 +231,16 @@ static void test_persistence(void)
 	wchar_t sw_state_path[MAX_PATH];
 	wchar_t swj_eeprom_path[MAX_PATH];
 	wchar_t swj_state_path[MAX_PATH];
+	wchar_t hamd_state_path[MAX_PATH];
+	wchar_t dor_eeprom_path[MAX_PATH];
+	wchar_t dor_state_path[MAX_PATH];
 	wchar_t error[512];
 	uint8_t rom_sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE];
 	uint8_t wrong_sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE];
 	uint8_t eeprom[DRGQST_PERSISTENCE_EEPROM_SIZE];
 	uint8_t eeprom_output[DRGQST_PERSISTENCE_EEPROM_SIZE];
+	uint8_t eeprom24c16[DRGQST_PERSISTENCE_EEPROM24C16_SIZE];
+	uint8_t eeprom24c16_output[DRGQST_PERSISTENCE_EEPROM24C16_SIZE];
 	uint8_t state[733];
 	uint8_t second_state[733];
 	uint8_t state_output[733];
@@ -241,6 +260,8 @@ static void test_persistence(void)
 	wrong_sha1[9] ^= 0x80;
 	for (index = 0; index < sizeof(eeprom); index++)
 		eeprom[index] = (uint8_t)(index ^ (index >> 4));
+	for (index = 0; index < sizeof(eeprom24c16); index++)
+		eeprom24c16[index] = (uint8_t)(index * 5 + (index >> 7));
 	for (index = 0; index < sizeof(state); index++)
 	{
 		state[index] = (uint8_t)(index * 13 + 0x31);
@@ -272,7 +293,13 @@ static void test_persistence(void)
 		!drgqst_persistence_get_path(root, DRGQST_PERSISTENCE_TTV_SWJ_EEPROM,
 		swj_eeprom_path, MAX_PATH, error, sizeof(error) / sizeof(error[0])) ||
 		!drgqst_persistence_get_path(root, DRGQST_PERSISTENCE_TTV_SWJ_RUNTIME_STATE,
-		swj_state_path, MAX_PATH, error, sizeof(error) / sizeof(error[0])))
+		swj_state_path, MAX_PATH, error, sizeof(error) / sizeof(error[0])) ||
+		!drgqst_persistence_get_path(root, DRGQST_PERSISTENCE_EPO_HAMD_RUNTIME_STATE,
+		hamd_state_path, MAX_PATH, error, sizeof(error) / sizeof(error[0])) ||
+		!drgqst_persistence_get_path(root, DRGQST_PERSISTENCE_TVPC_DOR_EEPROM,
+		dor_eeprom_path, MAX_PATH, error, sizeof(error) / sizeof(error[0])) ||
+		!drgqst_persistence_get_path(root, DRGQST_PERSISTENCE_TVPC_DOR_RUNTIME_STATE,
+		dor_state_path, MAX_PATH, error, sizeof(error) / sizeof(error[0])))
 	{
 		CHECK(0 && "resolve persistence paths");
 		remove_test_tree(root);
@@ -292,6 +319,9 @@ static void test_persistence(void)
 	CHECK(!wcscmp(sw_state_path + wcslen(root), L"\\ttv_sw-runtime-state.sav"));
 	CHECK(!wcscmp(swj_eeprom_path + wcslen(root), L"\\ttv_swj-eeprom.sav"));
 	CHECK(!wcscmp(swj_state_path + wcslen(root), L"\\ttv_swj-runtime-state.sav"));
+	CHECK(!wcscmp(hamd_state_path + wcslen(root), L"\\epo_hamd-runtime-state.sav"));
+	CHECK(!wcscmp(dor_eeprom_path + wcslen(root), L"\\tvpc_dor-eeprom.sav"));
+	CHECK(!wcscmp(dor_state_path + wcslen(root), L"\\tvpc_dor-runtime-state.sav"));
 	CHECK(wcscmp(eeprom_path, ban_eeprom_path) != 0);
 	CHECK(wcscmp(state_path, ban_state_path) != 0);
 	CHECK(wcscmp(ban_eeprom_path, omt_eeprom_path) != 0);
@@ -318,10 +348,25 @@ static void test_persistence(void)
 	CHECK(drgqst_persistence_save(root, DRGQST_PERSISTENCE_BAN_OMT_RUNTIME_STATE,
 		rom_sha1, second_state, sizeof(second_state), error,
 		sizeof(error) / sizeof(error[0])));
+	CHECK(drgqst_persistence_save(root, DRGQST_PERSISTENCE_EPO_HAMD_RUNTIME_STATE,
+		rom_sha1, state, sizeof(state), error,
+		sizeof(error) / sizeof(error[0])));
+	CHECK(!drgqst_persistence_save(root, DRGQST_PERSISTENCE_TVPC_DOR_EEPROM,
+		rom_sha1, eeprom24c16, sizeof(eeprom24c16) - 1, error,
+		sizeof(error) / sizeof(error[0])));
+	CHECK(drgqst_persistence_save(root, DRGQST_PERSISTENCE_TVPC_DOR_EEPROM,
+		rom_sha1, eeprom24c16, sizeof(eeprom24c16), error,
+		sizeof(error) / sizeof(error[0])));
+	CHECK(drgqst_persistence_save(root, DRGQST_PERSISTENCE_TVPC_DOR_RUNTIME_STATE,
+		rom_sha1, second_state, sizeof(second_state), error,
+		sizeof(error) / sizeof(error[0])));
 	CHECK(GetFileAttributesW(eeprom_path) != INVALID_FILE_ATTRIBUTES);
 	CHECK(GetFileAttributesW(state_path) != INVALID_FILE_ATTRIBUTES);
 	CHECK(GetFileAttributesW(omt_eeprom_path) != INVALID_FILE_ATTRIBUTES);
 	CHECK(GetFileAttributesW(omt_state_path) != INVALID_FILE_ATTRIBUTES);
+	CHECK(GetFileAttributesW(hamd_state_path) != INVALID_FILE_ATTRIBUTES);
+	CHECK(GetFileAttributesW(dor_eeprom_path) != INVALID_FILE_ATTRIBUTES);
+	CHECK(GetFileAttributesW(dor_state_path) != INVALID_FILE_ATTRIBUTES);
 	CHECK(!(GetFileAttributesW(eeprom_path) & FILE_ATTRIBUTE_TEMPORARY));
 	CHECK(!(GetFileAttributesW(state_path) & FILE_ATTRIBUTE_TEMPORARY));
 	CHECK(!has_temporary_files(directory));
@@ -342,6 +387,12 @@ static void test_persistence(void)
 		sizeof(error) / sizeof(error[0])));
 	CHECK(loaded_size == sizeof(second_state));
 	CHECK(!memcmp(second_state, state_output, sizeof(second_state)));
+	memset(eeprom24c16_output, 0, sizeof(eeprom24c16_output));
+	CHECK(drgqst_persistence_load(root, DRGQST_PERSISTENCE_TVPC_DOR_EEPROM,
+		rom_sha1, eeprom24c16_output, sizeof(eeprom24c16_output), &loaded_size,
+		error, sizeof(error) / sizeof(error[0])));
+	CHECK(loaded_size == sizeof(eeprom24c16));
+	CHECK(!memcmp(eeprom24c16, eeprom24c16_output, sizeof(eeprom24c16)));
 	memset(state_output, 0xcc, sizeof(state_output));
 	loaded_size = 99;
 	CHECK(!drgqst_persistence_load(root, DRGQST_PERSISTENCE_RUNTIME_STATE, rom_sha1,

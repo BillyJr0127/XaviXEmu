@@ -250,17 +250,16 @@ static void writer_peripherals(state_writer *writer, const xavix_peripherals *pe
 
 static int reader_peripherals(state_reader *reader, xavix_peripherals *peripherals)
 {
-	const size_t expected = xavix_peripherals_serialized_size();
 	const uint32_t encoded = reader_u32(reader);
-	if (!reader->valid || encoded != expected || reader->position > reader->size ||
-		expected > reader->size - reader->position ||
+	if (!reader->valid || !encoded || reader->position > reader->size ||
+		encoded > reader->size - reader->position ||
 		!xavix_peripherals_deserialize(peripherals,
-			reader->input + reader->position, expected))
+			reader->input + reader->position, encoded))
 	{
 		reader->valid = 0;
 		return 0;
 	}
-	reader->position += expected;
+	reader->position += encoded;
 	return 1;
 }
 
@@ -604,7 +603,7 @@ int drgqst_state_load(drgqst_core *core, const uint8_t *input,
 	xavix_machine_hooks hooks;
 	const size_t expected_size = drgqst_state_serialized_size();
 
-	if (!core || !input || !expected_size || input_size != expected_size)
+	if (!core || !input || !expected_size || input_size < STATE_HEADER_SIZE)
 		return 0;
 	memset(&restored_cpu, 0, sizeof(restored_cpu));
 	memset(&restored_machine, 0, sizeof(restored_machine));
@@ -621,7 +620,7 @@ int drgqst_state_load(drgqst_core *core, const uint8_t *input,
 	reserved = reader_u32(&reader);
 	if (!reader.valid || memcmp(magic, s_magic, sizeof(magic)) ||
 		version != DRGQST_STATE_FORMAT_VERSION || header_size != STATE_HEADER_SIZE ||
-		encoded_size != expected_size || reserved ||
+		encoded_size != input_size || reserved ||
 		encoded_crc != crc32_bytes(input + STATE_HEADER_SIZE,
 			input_size - STATE_HEADER_SIZE) ||
 		!deserialize_cpu(&reader, &restored_cpu) ||
@@ -681,5 +680,12 @@ int drgqst_state_load(drgqst_core *core, const uint8_t *input,
 		core->ban_onep_right_punch = 0;
 		core->ban_onep_bazooka_phase = 0;
 	}
+	core->epo_hamd_packet = 0;
+	core->epo_hamd_packet_mask = 0;
+	memset(core->epo_hamd_packet_queue, 0,
+		sizeof(core->epo_hamd_packet_queue));
+	core->epo_hamd_packet_queue_head = 0;
+	core->epo_hamd_packet_queue_count = 0;
+	memset(core->tvpc_keyboard_rows, 0, sizeof(core->tvpc_keyboard_rows));
 	return 1;
 }

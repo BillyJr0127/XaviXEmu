@@ -153,9 +153,21 @@ static int test_internal_cursor_watch_profiles(void)
 		watch->second_last_address != UINT32_C(0xf02160) ||
 		watch->second_address_stride != 0x80)
 		goto done;
+	drgqst_core_set_mouse(core, 0x80, 0x80, 1, 0);
+	if (core->machine.state.peripherals.sensor.host_mode !=
+		XAVIX_SENSOR_BROADSIDE)
+		goto done;
+	drgqst_core_set_mouse(core, 0x80, 0x80, 0, 0);
+	if (core->machine.state.peripherals.sensor.host_mode !=
+		XAVIX_SENSOR_NARROW)
+		goto done;
 	drgqst_core_set_mouse(core, 0x80, 0x80, 0, 1);
 	if (core->machine.state.peripherals.sensor.host_mode !=
 		XAVIX_SENSOR_STEP_FORWARD)
+		goto done;
+	drgqst_core_set_mouse(core, 0x80, 0x80, 0, 0);
+	if (core->machine.state.peripherals.sensor.host_mode !=
+		XAVIX_SENSOR_NARROW)
 		goto done;
 
 	if (!drgqst_core_init_profile(core, rom, TEST_ROM_SIZE,
@@ -526,6 +538,44 @@ done:
 	return ok;
 }
 
+static int test_early_xavix_profiles(void)
+{
+	uint8_t *rom = (uint8_t *)malloc(TEST_ROM_SIZE);
+	drgqst_core *core = (drgqst_core *)malloc(sizeof(*core));
+	int ok = 0;
+
+	if (!rom || !core)
+		goto done;
+	make_test_rom(rom);
+	if (!drgqst_core_init_profile(core, rom, TEST_ROM_SIZE,
+		DRGQST_CORE_XAVIX_BASE))
+		goto done;
+	core->machine.state.input0 = 0x5a;
+	if (xavix_machine_read_low(&core->machine, 0x7a00) != 0x5a)
+		goto done;
+
+	if (!drgqst_core_init_profile(core, rom, TEST_OMT_ROM_SIZE,
+		DRGQST_CORE_XAVIX_I2C_24C16))
+		goto done;
+	core->machine.state.input0 = 0x80;
+	core->machine.state.anport_regs[2] = 0x17;
+	core->machine.state.anport_regs[3] = 0xe9;
+	drgqst_core_set_tvpc_keyboard_row(core, 1, 0x03);
+	if (xavix_machine_read_low(&core->machine, 0x7a00) != 0x80 ||
+		xavix_machine_read_low(&core->machine, 0x7b10) != 0x17 ||
+		xavix_machine_read_low(&core->machine, 0x7b11) != 0xe9 ||
+		xavix_machine_read_external(&core->machine, 0x600001) != 0 ||
+		xavix_machine_read_external(&core->machine, 0x600002) != 0x03 ||
+		xavix_machine_read_external(&core->machine, 0x610002) !=
+			rom[0x210002])
+		goto done;
+	ok = 1;
+done:
+	free(core);
+	free(rom);
+	return ok;
+}
+
 int main(void)
 {
 	CHECK(test_firmware_cursor_position());
@@ -535,6 +585,7 @@ int main(void)
 	CHECK(test_repeated_one_piece_load_resets_host_input());
 	CHECK(test_one_piece_bazooka_gesture());
 	CHECK(test_onmyou_4mb_sensor_profile());
+	CHECK(test_early_xavix_profiles());
 	printf("drgqst_state_test: all tests passed (%llu-byte state)\n",
 		(unsigned long long)drgqst_state_serialized_size());
 	return 0;

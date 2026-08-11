@@ -101,6 +101,71 @@ static void sound_write(void *opaque, unsigned offset, uint8_t data)
 	sync_audio_irq(core);
 }
 
+static uint8_t xavix_base_io1_read(void *opaque, uint8_t direction)
+{
+	drgqst_core *core = (drgqst_core *)opaque;
+	uint8_t input = core->machine.state.input1;
+	(void)direction;
+	if (core->game_profile == DRGQST_CORE_XAVIX_BASE &&
+		core->epo_hamd_packet_mask)
+	{
+		input &= (uint8_t)~0x01;
+		if (core->epo_hamd_packet & core->epo_hamd_packet_mask)
+			input |= 0x01;
+		core->epo_hamd_packet_mask >>= 1;
+	}
+	return input;
+}
+
+static void xavix_base_io1_write(void *opaque, uint8_t data,
+	uint8_t direction)
+{
+	(void)opaque;
+	(void)data;
+	(void)direction;
+}
+
+static uint8_t xavix_i2c_io1_read(void *opaque, uint8_t direction)
+{
+	drgqst_core *core = (drgqst_core *)opaque;
+	uint8_t input = core->machine.state.input1 & (uint8_t)~0x08;
+	(void)direction;
+	if (xavix_eeprom24c08_read_sda(
+		&core->machine.state.peripherals.eeprom))
+		input |= 0x08;
+	return input;
+}
+
+static void xavix_i2c24c16_io1_write(void *opaque, uint8_t data,
+	uint8_t direction)
+{
+	drgqst_core *core = (drgqst_core *)opaque;
+	const int scl = (direction & 0x10) ? !!(data & 0x10) : 0;
+	const int sda = (direction & 0x08) ? !!(data & 0x08) : 1;
+	xavix_eeprom24c16_set_lines(
+		&core->machine.state.peripherals.eeprom, scl, sda);
+}
+
+static uint8_t tvpc_external_read(void *opaque, uint32_t address,
+	int *handled)
+{
+	drgqst_core *core = (drgqst_core *)opaque;
+	uint8_t select;
+	unsigned row;
+
+	if ((address & 0x7fff00) != 0x600000)
+		return 0xff;
+	select = (uint8_t)address;
+	if (!select || (select & (uint8_t)(select - 1)))
+		return 0xff;
+	for (row = 0; row < 8 && select != (uint8_t)(1U << row); ++row)
+		;
+	if (row >= 8)
+		return 0xff;
+	*handled = 1;
+	return core->tvpc_keyboard_rows[row];
+}
+
 static uint8_t ban_onep_io1_read(void *opaque, uint8_t direction)
 {
 	static const uint8_t phase_bits[4] = { 0x00, 0x02, 0x06, 0x04 };
@@ -253,6 +318,8 @@ static void configure_internal_cursor_watch(drgqst_core *core)
 		break;
 	case DRGQST_CORE_BAN_ONEP:
 	case DRGQST_CORE_BAN_OMT:
+	case DRGQST_CORE_XAVIX_BASE:
+	case DRGQST_CORE_XAVIX_I2C_24C16:
 	default:
 		watch.enabled = 0;
 		break;
@@ -277,7 +344,20 @@ int drgqst_core_init_profile(drgqst_core *core, const uint8_t *rom,
 	hooks.context = core;
 	hooks.read_sound = sound_read;
 	hooks.write_sound = sound_write;
-	if (profile == DRGQST_CORE_BAN_ONEP ||
+	if (profile == DRGQST_CORE_XAVIX_BASE)
+	{
+		/* Baseline XaviX boards expose plain digital input on P1.  Do not
+		 * attach the 24C08/CU5501 devices used by Dragon Quest. */
+		hooks.read_io1 = xavix_base_io1_read;
+		hooks.write_io1 = xavix_base_io1_write;
+	}
+	else if (profile == DRGQST_CORE_XAVIX_I2C_24C16)
+	{
+		hooks.read_io1 = xavix_i2c_io1_read;
+		hooks.write_io1 = xavix_i2c24c16_io1_write;
+		hooks.read_external = tvpc_external_read;
+	}
+	else if (profile == DRGQST_CORE_BAN_ONEP ||
 		profile == DRGQST_CORE_BAN_OMT ||
 		profile == DRGQST_CORE_TTV_CU5501_24C02 ||
 		profile == DRGQST_CORE_TTV_CU5501A_24C02)
@@ -330,6 +410,13 @@ void drgqst_core_reset(drgqst_core *core)
 	core->ban_onep_aim_x = 0x80;
 	core->ban_onep_aim_y = 0x80;
 	core->ban_onep_bazooka_phase = 0;
+	core->epo_hamd_packet = 0;
+	core->epo_hamd_packet_mask = 0;
+	memset(core->epo_hamd_packet_queue, 0,
+		sizeof(core->epo_hamd_packet_queue));
+	core->epo_hamd_packet_queue_head = 0;
+	core->epo_hamd_packet_queue_count = 0;
+	memset(core->tvpc_keyboard_rows, 0, sizeof(core->tvpc_keyboard_rows));
 	memset(core->frame_audio, 0, sizeof(core->frame_audio));
 }
 
@@ -364,6 +451,22 @@ int drgqst_core_step(drgqst_core *core)
 	if (cycles > 0)
 	{
 		xavix_machine_advance(&core->machine, (unsigned)cycles);
+		if (core->game_profile == DRGQST_CORE_XAVIX_BASE &&
+			!(core->machine.state.ioevent_active & 0x01))
+		{
+			if (!core->epo_hamd_packet_mask &&
+				core->epo_hamd_packet_queue_count)
+			{
+				core->epo_hamd_packet = core->epo_hamd_packet_queue[
+					core->epo_hamd_packet_queue_head];
+				core->epo_hamd_packet_queue_head =
+					(core->epo_hamd_packet_queue_head + 1) & 3;
+				--core->epo_hamd_packet_queue_count;
+				core->epo_hamd_packet_mask = 0x80;
+			}
+			if (core->epo_hamd_packet_mask)
+				xavix_machine_trigger_ioevent(&core->machine, 0x01);
+		}
 		sync_frame_audio(core, core->machine.state.frame_cycles);
 		sync_interrupt_lines(core);
 	}
@@ -636,4 +739,34 @@ void drgqst_core_trigger_bazooka(drgqst_core *core)
 	core->ban_onep_bazooka_phase = 1;
 	core->ban_onep_left_punch = 1;
 	core->ban_onep_right_punch = 1;
+}
+
+void drgqst_core_trigger_hamd_packet(drgqst_core *core, uint8_t packet)
+{
+	unsigned tail;
+	if (!core || core->game_profile != DRGQST_CORE_XAVIX_BASE)
+		return;
+	if (!core->epo_hamd_packet_mask && !core->epo_hamd_packet_queue_count)
+	{
+		core->epo_hamd_packet = packet;
+		core->epo_hamd_packet_mask = 0x80;
+		xavix_machine_trigger_ioevent(&core->machine, 0x01);
+		return;
+	}
+	if (core->epo_hamd_packet_queue_count >=
+		sizeof(core->epo_hamd_packet_queue))
+		return;
+	tail = (core->epo_hamd_packet_queue_head +
+		core->epo_hamd_packet_queue_count) & 3;
+	core->epo_hamd_packet_queue[tail] = packet;
+	++core->epo_hamd_packet_queue_count;
+}
+
+void drgqst_core_set_tvpc_keyboard_row(drgqst_core *core, unsigned row,
+	uint8_t keys)
+{
+	if (!core || core->game_profile != DRGQST_CORE_XAVIX_I2C_24C16 ||
+		row >= sizeof(core->tvpc_keyboard_rows))
+		return;
+	core->tvpc_keyboard_rows[row] = keys;
 }

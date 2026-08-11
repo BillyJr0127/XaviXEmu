@@ -46,9 +46,11 @@ do not provide one.
 
 - `ttv_lotr`: hold right mouse for the upright broad-face defensive posture
   used to prepare Fire of Arnor. Ordinary mouse strokes remain attacks.
-- `ttv_sw` / `ttv_swj`: hold Space for the lightsaber spin gesture. This
-  rotates an elongated optical reflection through vertical, diagonal, and
-  horizontal orientations; release Space to return to normal mouse input.
+- `ttv_sw` / `ttv_swj`: hold left mouse for the broadside defensive posture.
+  The US program receives a one-pixel, one-frame moving-edge sample for an
+  ordinary mouse stroke; this avoids confusing motion with a held defense.
+  Hold Space for the lightsaber spin gesture; this rotates an elongated
+  optical reflection through vertical, diagonal, and horizontal orientations.
 
 ## `ban_naru` (experimental)
 
@@ -59,3 +61,35 @@ do not provide one.
 
 Independent two-hand positions and later gameplay gestures are not yet
 implemented.
+
+## `epo_hamd` (experimental)
+
+The original accessory has two wireless bell-shaped controllers with vibration
+sensors. XaviXEmu sends a short shake packet for each hand through the
+firmware's real I/O-event and serial receive path.
+
+- Left mouse: shake the left controller once.
+- Right mouse: shake the right controller once.
+- Space: shake both controllers once.
+- Enter or middle mouse: confirm the current menu option through the separate
+  digital input used by the firmware.
+
+The remaining motion fields and complete activities are still experimental.
+F5/F7 runtime states are available.
+
+## `tvpc_dor` (experimental)
+
+- Mouse movement: update the two cumulative hardware mouse counters. The game
+  draws its own cursor, so XaviXEmu does not overlay the blue target.
+- Left mouse: hardware mouse button.
+- Up/Down/Left/Right or W/S/A/D: the TV-PC cursor keys.
+- Vertical mouse movement: emit short Up/Down cursor-key pulses. Alternating
+  upward and downward motion operates the take-copter flight exercise in the
+  supplied diagnostic checkpoint.
+- Escape: the TV-PC Escape key while windowed; when fullscreen it first leaves
+  fullscreen as usual.
+
+The title, main menu, keyboard scan path, and take-copter input are verified.
+F5/F7 runtime states are available, and the game keeps a separate 24C16 EEPROM
+save beside the executable. Most text keys and complete program paths remain
+unknown.

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(XaviXEmu VERSION 0.2.0 LANGUAGES C RC)
+project(XaviXEmu VERSION 0.3.0 LANGUAGES C RC)
 
 set(MINIZ_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/third_party/miniz")
 

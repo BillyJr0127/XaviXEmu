@@ -213,6 +213,112 @@ static void test_eeprom24c02(void)
 	i2c02_stop(&eeprom);
 }
 
+static void i2c16_start(xavix_eeprom24c08 *eeprom)
+{
+	xavix_eeprom24c16_set_lines(eeprom, 1, 1);
+	xavix_eeprom24c16_set_lines(eeprom, 1, 0);
+}
+
+static void i2c16_stop(xavix_eeprom24c08 *eeprom)
+{
+	xavix_eeprom24c16_set_lines(eeprom, 0, 0);
+	xavix_eeprom24c16_set_lines(eeprom, 1, 0);
+	xavix_eeprom24c16_set_lines(eeprom, 1, 1);
+}
+
+static int i2c16_write_byte(xavix_eeprom24c08 *eeprom, uint8_t data)
+{
+	unsigned bit;
+	int acknowledged;
+	for (bit = 0; bit < 8; ++bit)
+	{
+		const int value = !!(data & (uint8_t)(0x80U >> bit));
+		xavix_eeprom24c16_set_lines(eeprom, 0, value);
+		xavix_eeprom24c16_set_lines(eeprom, 1, value);
+	}
+	xavix_eeprom24c16_set_lines(eeprom, 0, 1);
+	xavix_eeprom24c16_set_lines(eeprom, 1, 1);
+	acknowledged = !xavix_eeprom24c08_read_sda(eeprom);
+	xavix_eeprom24c16_set_lines(eeprom, 0, 1);
+	return acknowledged;
+}
+
+static uint8_t i2c16_read_byte(xavix_eeprom24c08 *eeprom, int acknowledge)
+{
+	uint8_t result = 0;
+	unsigned bit;
+	for (bit = 0; bit < 8; ++bit)
+	{
+		xavix_eeprom24c16_set_lines(eeprom, 1, 1);
+		result = (uint8_t)((result << 1) |
+			xavix_eeprom24c08_read_sda(eeprom));
+		xavix_eeprom24c16_set_lines(eeprom, 0, 1);
+	}
+	xavix_eeprom24c16_set_lines(eeprom, 0, acknowledge ? 0 : 1);
+	xavix_eeprom24c16_set_lines(eeprom, 1, acknowledge ? 0 : 1);
+	xavix_eeprom24c16_set_lines(eeprom, 0, acknowledge ? 0 : 1);
+	xavix_eeprom24c16_set_lines(eeprom, 0, 1);
+	return result;
+}
+
+static uint8_t i2c16_control(uint16_t address, int read)
+{
+	return (uint8_t)(0xa0 | ((address >> 7) & 0x0e) |
+		(read ? 1 : 0));
+}
+
+static void i2c16_set_address(xavix_eeprom24c08 *eeprom,
+	uint16_t address)
+{
+	i2c16_start(eeprom);
+	CHECK(i2c16_write_byte(eeprom, i2c16_control(address, 0)));
+	CHECK(i2c16_write_byte(eeprom, (uint8_t)address));
+}
+
+static void test_eeprom24c16(void)
+{
+	xavix_eeprom24c08 eeprom;
+	uint8_t image[XAVIX_EEPROM24C16_SIZE];
+	uint8_t copied[XAVIX_EEPROM24C16_SIZE];
+	size_t index;
+
+	for (index = 0; index < sizeof(image); ++index)
+		image[index] = (uint8_t)(index * 9 + (index >> 8));
+	xavix_eeprom24c08_init(&eeprom, NULL, 0);
+	CHECK(!xavix_eeprom_load_image(&eeprom, image, sizeof(image) + 1));
+	CHECK(xavix_eeprom_load_image(&eeprom, image, sizeof(image)));
+	xavix_eeprom_copy_image(&eeprom, copied, sizeof(copied));
+	CHECK(!memcmp(copied, image, sizeof(copied)));
+
+	i2c16_set_address(&eeprom, 0x734);
+	CHECK(i2c16_write_byte(&eeprom, 0x77));
+	i2c16_stop(&eeprom);
+	CHECK(eeprom.data[0x734] == 0x77);
+	CHECK(eeprom.data[0x334] == image[0x334]);
+
+	i2c16_set_address(&eeprom, 0x7fe);
+	CHECK(i2c16_write_byte(&eeprom, 0x11));
+	CHECK(i2c16_write_byte(&eeprom, 0x22));
+	CHECK(i2c16_write_byte(&eeprom, 0x33));
+	CHECK(i2c16_write_byte(&eeprom, 0x44));
+	i2c16_stop(&eeprom);
+	CHECK(eeprom.data[0x7fe] == 0x11 && eeprom.data[0x7ff] == 0x22);
+	CHECK(eeprom.data[0x7f0] == 0x33 && eeprom.data[0x7f1] == 0x44);
+
+	eeprom.data[0x7ff] = 0x12;
+	eeprom.data[0x000] = 0x34;
+	i2c16_set_address(&eeprom, 0x7ff);
+	i2c16_start(&eeprom);
+	CHECK(i2c16_write_byte(&eeprom, i2c16_control(0x7ff, 1)));
+	CHECK(i2c16_read_byte(&eeprom, 1) == 0x12);
+	CHECK(i2c16_read_byte(&eeprom, 0) == 0x34);
+	i2c16_stop(&eeprom);
+
+	i2c16_start(&eeprom);
+	CHECK(!i2c16_write_byte(&eeprom, 0xb0));
+	i2c16_stop(&eeprom);
+}
+
 static void i2c04_set_address(xavix_eeprom24c08 *eeprom,
 	uint16_t address)
 {
@@ -358,6 +464,8 @@ static void test_sensor(void)
 	CHECK(sensor_scan_count(&sensor, XAVIX_SENSOR_NARROW, 0x21) == 9);
 	CHECK(sensor_scan_count(&sensor, XAVIX_SENSOR_BROADSIDE, 0x21) == 25);
 	CHECK(sensor_scan_count(&sensor, XAVIX_SENSOR_STEP_FORWARD, 0x21) == 81);
+	CHECK(sensor_scan_count(&sensor, XAVIX_SENSOR_NONE, 0x21) == 0);
+	CHECK(sensor_scan_count(&sensor, XAVIX_SENSOR_POINT, 0x21) == 1);
 	CHECK(sensor_scan_count(&sensor, XAVIX_SENSOR_BROADSIDE | XAVIX_SENSOR_STEP_FORWARD, 0x21) == 81);
 	CHECK(sensor_scan_count(&sensor, XAVIX_SENSOR_VERTICAL, 0x21) == 65);
 	CHECK(sensor_scan_count(&sensor, XAVIX_SENSOR_HORIZONTAL, 0x21) == 65);
@@ -520,11 +628,13 @@ static void test_serialization(void)
 	xavix_peripherals untouched;
 	uint8_t *first;
 	uint8_t *second;
+	uint8_t *legacy;
 	size_t size;
+	size_t legacy_size;
 	size_t written = 0;
 
 	xavix_peripherals_init(&original, NULL, 0, XAVIX_MASTER_CLOCK_NTSC);
-	for (size_t index = 0; index < XAVIX_EEPROM24C08_SIZE; index++)
+	for (size_t index = 0; index < XAVIX_EEPROM24C16_SIZE; index++)
 		original.eeprom.data[index] = (uint8_t)(index ^ (index >> 3));
 	i2c_set_address(&original.eeprom, 0x155);
 	CHECK(i2c_write_byte(&original.eeprom, 0xa7));
@@ -544,14 +654,17 @@ static void test_serialization(void)
 	xavix_dma_write(&original.dma, 6, 0x57, NULL);
 
 	size = xavix_peripherals_serialized_size();
+	legacy_size = size - XAVIX_EEPROM24C08_SIZE;
 	CHECK(size > XAVIX_EEPROM24C08_SIZE);
 	first = (uint8_t *)malloc(size);
 	second = (uint8_t *)malloc(size);
-	CHECK(first != NULL && second != NULL);
-	if (!first || !second)
+	legacy = (uint8_t *)malloc(legacy_size);
+	CHECK(first != NULL && second != NULL && legacy != NULL);
+	if (!first || !second || !legacy)
 	{
 		free(first);
 		free(second);
+		free(legacy);
 		return;
 	}
 
@@ -561,6 +674,28 @@ static void test_serialization(void)
 	CHECK(xavix_peripherals_deserialize(&restored, first, size));
 	CHECK(xavix_peripherals_serialize(&restored, second, size, &written));
 	CHECK(!memcmp(first, second, size));
+
+	/* Version 1 states stored only the first 1 KiB of EEPROM.  Keep their
+	 * remaining device state and initialize the newly represented high half. */
+	memcpy(legacy, first, 12);
+	legacy[4] = 1;
+	legacy[5] = 0;
+	legacy[8] = (uint8_t)legacy_size;
+	legacy[9] = (uint8_t)(legacy_size >> 8);
+	legacy[10] = (uint8_t)(legacy_size >> 16);
+	legacy[11] = (uint8_t)(legacy_size >> 24);
+	memcpy(legacy + 12, first + 12, XAVIX_EEPROM24C08_SIZE);
+	memcpy(legacy + 12 + XAVIX_EEPROM24C08_SIZE,
+		first + 12 + XAVIX_EEPROM24C16_SIZE,
+		size - 12 - XAVIX_EEPROM24C16_SIZE);
+	memset(&restored, 0xa5, sizeof(restored));
+	CHECK(xavix_peripherals_deserialize(&restored, legacy, legacy_size));
+	CHECK(!memcmp(restored.eeprom.data, original.eeprom.data,
+		XAVIX_EEPROM24C08_SIZE));
+	for (size_t index = XAVIX_EEPROM24C08_SIZE;
+		index < XAVIX_EEPROM24C16_SIZE; ++index)
+		CHECK(restored.eeprom.data[index] == 0xff);
+	CHECK(xavix_peripherals_deserialize(&restored, first, size));
 
 	i2c_stop(&original.eeprom);
 	i2c_stop(&restored.eeprom);
@@ -583,6 +718,7 @@ static void test_serialization(void)
 
 	free(first);
 	free(second);
+	free(legacy);
 }
 
 int main(void)
@@ -590,6 +726,7 @@ int main(void)
 	test_eeprom();
 	test_eeprom24c02();
 	test_eeprom24c04();
+	test_eeprom24c16();
 	test_sensor();
 	test_timer();
 	test_math();

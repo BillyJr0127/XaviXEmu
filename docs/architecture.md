@@ -18,10 +18,11 @@ paths.
 
 ## XaviX 2000 path
 
-The XaviX 2000 path is a compact interpreter and hardware model for the exact
-code paths exercised by the accepted game images. It includes 24C02, 24C04,
-and 24C08 EEPROM behaviour and synthetic CU5501/CU5501A-style optical images.
-It is not intended to replace the general-purpose MAME framework.
+The original XaviX and XaviX 2000 path is a compact interpreter and hardware
+model for the exact code paths exercised by the accepted game images. It
+includes 24C02, 24C04, 24C08, and 24C16 EEPROM behaviour and synthetic
+CU5501/CU5501A-style optical images. It is not intended to replace the
+general-purpose MAME framework.
 
 ## XaviX 2 path
 

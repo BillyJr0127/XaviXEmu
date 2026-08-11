@@ -32,6 +32,8 @@ typedef void (*xavix_io_write_fn)(void *context, uint8_t data, uint8_t direction
 typedef uint8_t (*xavix_adc_read_fn)(void *context, unsigned channel);
 typedef uint8_t (*xavix_sound_read_fn)(void *context, unsigned offset);
 typedef void (*xavix_sound_write_fn)(void *context, unsigned offset, uint8_t data);
+typedef uint8_t (*xavix_external_read_fn)(void *context, uint32_t address,
+	int *handled);
 
 typedef struct xavix_machine_hooks
 {
@@ -41,6 +43,7 @@ typedef struct xavix_machine_hooks
 	xavix_adc_read_fn read_adc;
 	xavix_sound_read_fn read_sound;
 	xavix_sound_write_fn write_sound;
+	xavix_external_read_fn read_external;
 } xavix_machine_hooks;
 
 /* Pointer-free emulated state.  This is the payload used by save states. */
@@ -110,6 +113,7 @@ void xavix_machine_reset(xavix_machine *machine);
 void xavix_machine_set_hooks(xavix_machine *machine, const xavix_machine_hooks *hooks);
 void xavix_machine_set_sword_input(xavix_machine *machine, uint8_t x, uint8_t y,
 	enum xavix_sensor_mode mode);
+void xavix_machine_trigger_ioevent(xavix_machine *machine, uint8_t bits);
 
 uint8_t xavix_machine_read_low(void *context, uint16_t address);
 void xavix_machine_write_low(void *context, uint16_t address, uint8_t data);

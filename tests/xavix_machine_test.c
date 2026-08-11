@@ -41,5 +41,14 @@ int main(void)
 	xavix_machine_advance(&machine, 4);
 	ok &= check(machine.state.peripherals.timer.current_value == 0xff, "timer underflow");
 	ok &= check((machine.state.irq_source & 0x10) != 0, "timer IRQ");
+	xavix_machine_trigger_ioevent(&machine, 0x01);
+	ok &= check(!(machine.state.ioevent_active & 0x01), "disabled IO event ignored");
+	xavix_machine_write_low(&machine, 0x7a80, 0x01);
+	xavix_machine_trigger_ioevent(&machine, 0x01);
+	ok &= check((machine.state.ioevent_active & 0x01) != 0, "IO event latched");
+	ok &= check((machine.state.irq_source & 0x08) != 0, "IO event IRQ");
+	xavix_machine_write_low(&machine, 0x7a81, 0x01);
+	ok &= check(!(machine.state.ioevent_active & 0x01), "IO event acknowledged");
+	ok &= check(!(machine.state.irq_source & 0x08), "IO event IRQ cleared");
 	return ok ? 0 : 1;
 }

@@ -163,12 +163,16 @@ static const interface_strings INTERFACE_TEXT[] =
 		L"The Lord of the Rings: Warrior of Middle-Earth\r\n"
 		L"Star Wars Saga Edition: Lightsaber Battle Game\r\n"
 		L"Star Wars Saga Edition: Lightsaber Battle Game (Japan)\r\n"
+		L"Ham-chans Dai Shuugou Dance Surunoda! Hashirunoda!（實驗支援）\r\n"
+		L"TV-PC Doraemon（實驗支援）\r\n"
 		L"NARUTO 忍者体感 ～だってばよ～（實驗支援）\r\n\r\n"
 		L"航海王：左鍵左拳／○，右鍵右拳／×，同按雙拳\r\n"
 		L"索隆：按住右鍵後左右或斜向拖曳來揮劍\r\n"
 		L"陰陽大戰記：移動滑鼠畫印；左鍵○，右鍵×，空白鍵背面反光\r\n"
 		L"勇者鬥惡龍：左鍵防禦，右鍵超必\r\n"
-		L"魔戒／星際大戰：移動滑鼠揮劍與操作遊戲游標\r\n\r\n"
+		L"魔戒／星際大戰：移動滑鼠揮劍與操作遊戲游標\r\n"
+		L"哈姆太郎：左／右鍵搖左右鈴，空白鍵搖雙鈴，Enter／中鍵確認\r\n"
+		L"TV-PC 哆啦A夢：滑鼠點選；上下移動或方向鍵／WASD 操作遊戲\r\n\r\n"
 		L"Billy Jr",
 		L"Billy Jr. 的模擬器世界",
 		L"如果願意支持我的話\r\n"
@@ -229,13 +233,17 @@ static const interface_strings INTERFACE_TEXT[] =
 		L"The Lord of the Rings: Warrior of Middle-Earth\r\n"
 		L"Star Wars Saga Edition: Lightsaber Battle Game\r\n"
 		L"Star Wars Saga Edition: Lightsaber Battle Game (Japan)\r\n"
+		L"Ham-chans Dai Shuugou Dance Surunoda! Hashirunoda! (experimental)\r\n"
+		L"TV-PC Doraemon (experimental)\r\n"
 		L"NARUTO Ninja Taikan: Dattebayo (experimental)\r\n\r\n"
 		L"One Piece: left-click = left punch/O; right-click = right punch/X.\r\n"
 		L"Press both for a double punch.\r\n"
 		L"Zoro: hold right-click and drag horizontally or diagonally.\r\n"
 		L"Onmyou Taisenki: move to draw seals; left = O, right = X, Space = back.\r\n"
 		L"Dragon Quest: left-click to guard; right-click for the special.\r\n"
-		L"LOTR / Star Wars: move the mouse to swing and control the in-game cursor.\r\n\r\n"
+		L"LOTR / Star Wars: move the mouse to swing and control the in-game cursor.\r\n"
+		L"Ham-chans: left/right = shake each bell; Space = both; Enter/middle = confirm.\r\n"
+		L"TV-PC Doraemon: click to select; move vertically or use arrows/WASD in games.\r\n\r\n"
 		L"Billy Jr",
 		L"Billy Jr.'s Emulator World",
 		L"If you'd like to support my work,\r\n"
@@ -292,6 +300,16 @@ static const uint8_t TTV_SWJ_ROM_SHA1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
 	0x40, 0x6f, 0x0b, 0xcc, 0xb0, 0x1c, 0xd4, 0xa2, 0x6f, 0xe4,
 	0xa5, 0x67, 0x5d, 0x7e, 0xbe, 0xcc, 0x78, 0xc5, 0x81, 0x47
 };
+static const uint8_t EPO_HAMD_ROM_SHA1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+{
+	0xc6, 0x1d, 0x43, 0x6d, 0x6b, 0x80, 0x37, 0x17, 0xb8, 0xc8,
+	0x4d, 0x20, 0x22, 0x49, 0x93, 0x80, 0xf7, 0x1c, 0xce, 0xd8
+};
+static const uint8_t TVPC_DOR_ROM_SHA1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+{
+	0x98, 0xfa, 0x86, 0xf8, 0x5e, 0x00, 0xaa, 0x40, 0xe7, 0xa5,
+	0x85, 0xff, 0x0b, 0xc9, 0x30, 0xcb, 0x5c, 0xa8, 0x83, 0x62
+};
 
 static drgqst_rom_image g_rom;
 static drgqst_core *g_core;
@@ -327,6 +345,9 @@ static uint64_t g_timing_guest_cycles;
 static uint64_t g_timing_interrupts;
 static uint8_t g_mouse_x = 0x80;
 static uint8_t g_mouse_y = 0x80;
+static uint8_t g_tvpc_mouse_counter_x;
+static uint8_t g_tvpc_mouse_counter_y;
+static int g_tvpc_mouse_position_valid;
 static drgqst_cursor_presentation g_cursor_presentation;
 static int g_left_button;
 static int g_right_button;
@@ -336,6 +357,13 @@ static unsigned g_naruto_execute_frames;
 static int g_omt_backside;
 static int g_ttv_spin_held;
 static unsigned g_ttv_spin_phase;
+static unsigned g_ttv_sw_motion_frames;
+static unsigned g_hamd_left_pulse_frames;
+static unsigned g_hamd_right_pulse_frames;
+static unsigned g_hamd_confirm_frames;
+static uint8_t g_tvpc_keyboard_rows[8];
+static uint8_t g_tvpc_mouse_key_pending;
+static uint8_t g_tvpc_mouse_key_active;
 static uint8_t g_ban_onep_menu_input;
 static unsigned g_ban_onep_menu_input_frames;
 static uint32_t g_eeprom_generation;
@@ -383,6 +411,10 @@ static enum drgqst_core_profile core_profile_for_rom(
 		return kind == DRGQST_ROM_TTV_LOTR ?
 			DRGQST_CORE_TTV_CU5501_24C02 :
 			DRGQST_CORE_TTV_CU5501A_24C02;
+	case DRGQST_ROM_EPO_HAMD:
+		return DRGQST_CORE_XAVIX_BASE;
+	case DRGQST_ROM_TVPC_DOR:
+		return DRGQST_CORE_XAVIX_I2C_24C16;
 	case DRGQST_ROM_DRAGON_QUEST:
 	case DRGQST_ROM_UNKNOWN:
 	default:
@@ -404,6 +436,10 @@ static const uint8_t *rom_sha1_for_kind(enum drgqst_rom_kind kind)
 		return TTV_SW_ROM_SHA1;
 	case DRGQST_ROM_TTV_SWJ:
 		return TTV_SWJ_ROM_SHA1;
+	case DRGQST_ROM_EPO_HAMD:
+		return EPO_HAMD_ROM_SHA1;
+	case DRGQST_ROM_TVPC_DOR:
+		return TVPC_DOR_ROM_SHA1;
 	case DRGQST_ROM_DRAGON_QUEST:
 	case DRGQST_ROM_UNKNOWN:
 	default:
@@ -436,11 +472,27 @@ static enum drgqst_persistence_kind persistence_kind_for_rom(
 		return kind == DRGQST_PERSISTENCE_EEPROM ?
 			DRGQST_PERSISTENCE_TTV_SWJ_EEPROM :
 			DRGQST_PERSISTENCE_TTV_SWJ_RUNTIME_STATE;
+	case DRGQST_ROM_EPO_HAMD:
+		return kind == DRGQST_PERSISTENCE_RUNTIME_STATE ?
+			DRGQST_PERSISTENCE_EPO_HAMD_RUNTIME_STATE : kind;
+	case DRGQST_ROM_TVPC_DOR:
+		return kind == DRGQST_PERSISTENCE_EEPROM ?
+			DRGQST_PERSISTENCE_TVPC_DOR_EEPROM :
+			DRGQST_PERSISTENCE_TVPC_DOR_RUNTIME_STATE;
 	case DRGQST_ROM_DRAGON_QUEST:
 	case DRGQST_ROM_UNKNOWN:
 	default:
 		return kind;
 	}
+}
+
+static size_t eeprom_size_for_rom(enum drgqst_rom_kind kind)
+{
+	if (kind == DRGQST_ROM_EPO_HAMD || kind == DRGQST_ROM_BAN_NARU)
+		return 0;
+	if (kind == DRGQST_ROM_TVPC_DOR)
+		return DRGQST_PERSISTENCE_EEPROM24C16_SIZE;
+	return DRGQST_PERSISTENCE_EEPROM_SIZE;
 }
 
 static void apply_system_ui_language(enum interface_language language)
@@ -793,11 +845,30 @@ static void update_core_mouse(void)
 {
 	if (!g_core)
 		return;
+	if (g_rom.kind == DRGQST_ROM_TVPC_DOR)
+	{
+		g_core->machine.state.anport_regs[2] = g_tvpc_mouse_counter_x;
+		g_core->machine.state.anport_regs[3] = g_tvpc_mouse_counter_y;
+		if (g_left_button)
+			g_core->machine.state.input0 |= 0x80;
+		else
+			g_core->machine.state.input0 &= (uint8_t)~0x80;
+		return;
+	}
 	drgqst_core_set_mouse(g_core, g_mouse_x, g_mouse_y,
 		g_left_button || (g_rom.kind == DRGQST_ROM_BAN_OMT &&
 			g_omt_backside),
 		g_right_button || (g_rom.kind == DRGQST_ROM_BAN_OMT &&
 			g_omt_backside));
+	if (g_rom.kind == DRGQST_ROM_TTV_SW && !g_left_button &&
+		!g_right_button && !g_ttv_spin_held)
+	{
+		/* The US program treats the 3-by-3 Japanese narrow image as a held
+		 * defensive pose.  A real moving edge is smaller and immediately
+		 * leaves the camera field; keep only a one-frame point sample. */
+		xavix_machine_set_sword_input(&g_core->machine, g_mouse_x, g_mouse_y,
+			g_ttv_sw_motion_frames ? XAVIX_SENSOR_POINT : XAVIX_SENSOR_NONE);
+	}
 	if ((g_rom.kind == DRGQST_ROM_TTV_SW ||
 		g_rom.kind == DRGQST_ROM_TTV_SWJ) && g_ttv_spin_held)
 	{
@@ -815,10 +886,120 @@ static void update_core_mouse(void)
 	}
 }
 
+static void synchronize_mouse_buttons(HWND window)
+{
+	g_left_button = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+	g_right_button = (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0;
+	if (g_left_button || g_right_button)
+		SetCapture(window);
+	else if (GetCapture() == window)
+		ReleaseCapture();
+}
+
+static void set_tvpc_cursor_key(WPARAM key, int pressed)
+{
+	uint8_t mask;
+
+	if (!g_core || g_rom.kind != DRGQST_ROM_TVPC_DOR)
+		return;
+	switch (key)
+	{
+	case VK_UP:
+	case 'W':
+		mask = 0x01;
+		break;
+	case VK_DOWN:
+	case 'S':
+		mask = 0x02;
+		break;
+	case VK_LEFT:
+	case 'A':
+		mask = 0x04;
+		break;
+	case VK_RIGHT:
+	case 'D':
+		mask = 0x08;
+		break;
+	default:
+		return;
+	}
+	if (pressed)
+		g_tvpc_keyboard_rows[1] |= mask;
+	else
+		g_tvpc_keyboard_rows[1] &= (uint8_t)~mask;
+}
+
+static void update_tvpc_keyboard(void)
+{
+	uint8_t rows[8];
+	unsigned row;
+
+	if (!g_core || g_rom.kind != DRGQST_ROM_TVPC_DOR)
+		return;
+	memcpy(rows, g_tvpc_keyboard_rows, sizeof(rows));
+	if (g_tvpc_mouse_key_active)
+		g_tvpc_mouse_key_active = 0;
+	else if (g_tvpc_mouse_key_pending)
+	{
+		g_tvpc_mouse_key_active = g_tvpc_mouse_key_pending;
+		g_tvpc_mouse_key_pending = 0;
+		rows[1] |= g_tvpc_mouse_key_active;
+	}
+	for (row = 0; row < sizeof(rows); ++row)
+		drgqst_core_set_tvpc_keyboard_row(g_core, row, rows[row]);
+}
+
+static void update_hamd_input(void)
+{
+	if (!g_core || g_rom.kind != DRGQST_ROM_EPO_HAMD)
+		return;
+	if (g_hamd_left_pulse_frames)
+	{
+		drgqst_core_trigger_hamd_packet(g_core, 0x15);
+		--g_hamd_left_pulse_frames;
+	}
+	if (g_hamd_right_pulse_frames)
+	{
+		drgqst_core_trigger_hamd_packet(g_core, 0x13);
+		--g_hamd_right_pulse_frames;
+	}
+	if (g_hamd_confirm_frames)
+	{
+		g_core->machine.state.input0 |= 0x01;
+		--g_hamd_confirm_frames;
+	}
+	else
+		g_core->machine.state.input0 &= (uint8_t)~0x01;
+}
+
+static void release_held_host_inputs(HWND window)
+{
+	g_left_button = 0;
+	g_right_button = 0;
+	g_omt_backside = 0;
+	g_ttv_spin_held = 0;
+	g_ttv_spin_phase = 0;
+	g_ttv_sw_motion_frames = 0;
+	g_hamd_left_pulse_frames = 0;
+	g_hamd_right_pulse_frames = 0;
+	g_hamd_confirm_frames = 0;
+	memset(g_tvpc_keyboard_rows, 0, sizeof(g_tvpc_keyboard_rows));
+	g_tvpc_mouse_key_pending = 0;
+	g_tvpc_mouse_key_active = 0;
+	g_naruto_joined_hands = 0;
+	g_naruto_execute_delay = 0;
+	g_naruto_execute_frames = 0;
+	if (GetCapture() == window)
+		ReleaseCapture();
+	update_core_mouse();
+}
+
 static void advance_ttv_special_gesture(void)
 {
 	if (g_ttv_spin_held)
 		g_ttv_spin_phase = (g_ttv_spin_phase + 1) & 7;
+	if (g_ttv_sw_motion_frames)
+		--g_ttv_sw_motion_frames;
 }
 
 static void pulse_ban_onep_menu_input(uint8_t input)
@@ -922,17 +1103,20 @@ static void load_persistent_eeprom(HWND window, drgqst_core *core,
 	enum drgqst_rom_kind rom_kind)
 {
 	const interface_strings *text = interface_text();
-	uint8_t image[DRGQST_PERSISTENCE_EEPROM_SIZE];
+	uint8_t image[DRGQST_PERSISTENCE_EEPROM24C16_SIZE];
 	wchar_t error[384];
+	size_t expected_size = eeprom_size_for_rom(rom_kind);
 	size_t size = 0;
 	int loaded_from_legacy = 0;
 
+	if (!expected_size)
+		return;
 	if (load_persistence_data(DRGQST_PERSISTENCE_EEPROM, rom_kind,
-		image, sizeof(image), &size, error,
+		image, expected_size, &size, error,
 		sizeof(error) / sizeof(error[0]), &loaded_from_legacy) &&
-		size == sizeof(image))
+		size == expected_size)
 	{
-		xavix_eeprom24c08_load_image(
+		xavix_eeprom_load_image(
 			&core->machine.state.peripherals.eeprom, image, size);
 		if (loaded_from_legacy &&
 			!drgqst_persistence_save(g_executable_directory,
@@ -948,18 +1132,22 @@ static int save_persistent_eeprom(HWND window, int show_error)
 {
 	const interface_strings *text = interface_text();
 	xavix_eeprom24c08 *eeprom;
-	uint8_t image[DRGQST_PERSISTENCE_EEPROM_SIZE];
+	uint8_t image[DRGQST_PERSISTENCE_EEPROM24C16_SIZE];
 	wchar_t error[384];
+	size_t size;
 
 	if (!g_core)
+		return 1;
+	size = eeprom_size_for_rom(g_rom.kind);
+	if (!size)
 		return 1;
 	eeprom = &g_core->machine.state.peripherals.eeprom;
 	if (!xavix_eeprom24c08_is_dirty(eeprom))
 		return 1;
-	xavix_eeprom24c08_copy_image(eeprom, image);
+	xavix_eeprom_copy_image(eeprom, image, size);
 	if (!drgqst_persistence_save(g_executable_directory,
 		persistence_kind_for_rom(DRGQST_PERSISTENCE_EEPROM, g_rom.kind),
-		rom_sha1_for_kind(g_rom.kind), image, sizeof(image), error,
+		rom_sha1_for_kind(g_rom.kind), image, size, error,
 		sizeof(error) / sizeof(error[0])))
 	{
 		if (show_error || !g_eeprom_error_shown)
@@ -979,7 +1167,7 @@ static void poll_persistent_eeprom(HWND window)
 	xavix_eeprom24c08 *eeprom;
 	uint32_t generation;
 
-	if (!g_core)
+	if (!g_core || !eeprom_size_for_rom(g_rom.kind))
 		return;
 	eeprom = &g_core->machine.state.peripherals.eeprom;
 	generation = eeprom->write_generation;
@@ -999,6 +1187,8 @@ static void set_mouse_position(HWND window, int client_x, int client_y)
 	display_viewport viewport = calculate_viewport(window);
 	int x = client_x - viewport.x;
 	int y = client_y - viewport.y;
+	uint8_t new_mouse_x;
+	uint8_t new_mouse_y;
 
 	if (x < 0)
 		x = 0;
@@ -1008,12 +1198,42 @@ static void set_mouse_position(HWND window, int client_x, int client_y)
 		y = 0;
 	else if (y >= viewport.height)
 		y = viewport.height - 1;
-	g_mouse_x = viewport.width > 1 ?
+	new_mouse_x = viewport.width > 1 ?
 		(uint8_t)((x * 255 + (viewport.width - 1) / 2) /
 			(viewport.width - 1)) : 0;
-	g_mouse_y = viewport.height > 1 ?
+	new_mouse_y = viewport.height > 1 ?
 		(uint8_t)((y * 255 + (viewport.height - 1) / 2) /
 			(viewport.height - 1)) : 0;
+	if (g_core && g_rom.kind == DRGQST_ROM_TTV_SW &&
+		(new_mouse_x != g_mouse_x || new_mouse_y != g_mouse_y))
+		g_ttv_sw_motion_frames = 1;
+	if (g_core && g_rom.kind == DRGQST_ROM_TVPC_DOR)
+	{
+		if (g_tvpc_mouse_position_valid)
+		{
+			int delta_x = (int)new_mouse_x - (int)g_mouse_x;
+			int delta_y = (int)new_mouse_y - (int)g_mouse_y;
+			if (delta_x < -32)
+				delta_x = -32;
+			if (delta_x > 32)
+				delta_x = 32;
+			if (delta_y < -32)
+				delta_y = -32;
+			if (delta_y > 32)
+				delta_y = 32;
+			g_tvpc_mouse_counter_x =
+				(uint8_t)(g_tvpc_mouse_counter_x + delta_x);
+			g_tvpc_mouse_counter_y =
+				(uint8_t)(g_tvpc_mouse_counter_y - delta_y);
+			if (delta_y < 0)
+				g_tvpc_mouse_key_pending = 0x01;
+			else if (delta_y > 0)
+				g_tvpc_mouse_key_pending = 0x02;
+		}
+		g_tvpc_mouse_position_valid = 1;
+	}
+	g_mouse_x = new_mouse_x;
+	g_mouse_y = new_mouse_y;
 	update_core_mouse();
 }
 
@@ -1119,6 +1339,8 @@ static void run_due_frames(HWND window)
 			run_xavix2_frame();
 		else
 		{
+			update_hamd_input();
+			update_tvpc_keyboard();
 			update_core_mouse();
 			g_framebuffer = drgqst_core_run_frame(g_core);
 			advance_ttv_special_gesture();
@@ -1192,9 +1414,10 @@ static int load_runtime_state(HWND window)
 {
 	const interface_strings *text = interface_text();
 	uint8_t *state;
-	uint8_t eeprom_image[DRGQST_PERSISTENCE_EEPROM_SIZE];
+	uint8_t eeprom_image[DRGQST_PERSISTENCE_EEPROM24C16_SIZE];
 	size_t state_size;
 	size_t loaded = 0;
+	size_t eeprom_size = eeprom_size_for_rom(g_rom.kind);
 	wchar_t error[384];
 	xavix_eeprom24c08 *eeprom;
 	uint32_t eeprom_generation;
@@ -1224,10 +1447,10 @@ static int load_runtime_state(HWND window)
 	/* Runtime states never rewind or overwrite the game's durable EEPROM. */
 	save_persistent_eeprom(window, 1);
 	eeprom = &g_core->machine.state.peripherals.eeprom;
-	xavix_eeprom24c08_copy_image(eeprom, eeprom_image);
+	if (eeprom_size)
+		xavix_eeprom_copy_image(eeprom, eeprom_image, eeprom_size);
 	eeprom_generation = eeprom->write_generation;
-	success = loaded == state_size &&
-		drgqst_state_load(g_core, state, loaded);
+	success = drgqst_state_load(g_core, state, loaded);
 	if (!success)
 	{
 		free(state);
@@ -1244,7 +1467,8 @@ static int load_runtime_state(HWND window)
 			text->state_save_title, MB_OK | MB_ICONERROR);
 	free(state);
 	eeprom = &g_core->machine.state.peripherals.eeprom;
-	memcpy(eeprom->data, eeprom_image, sizeof(eeprom_image));
+	if (eeprom_size)
+		memcpy(eeprom->data, eeprom_image, eeprom_size);
 	eeprom->dirty = 0;
 	eeprom->write_generation = eeprom_generation;
 	g_eeprom_generation = eeprom_generation;
@@ -1254,10 +1478,27 @@ static int load_runtime_state(HWND window)
 	g_omt_backside = 0;
 	g_ttv_spin_held = 0;
 	g_ttv_spin_phase = 0;
+	g_ttv_sw_motion_frames = 0;
+	g_hamd_left_pulse_frames = 0;
+	g_hamd_right_pulse_frames = 0;
+	g_hamd_confirm_frames = 0;
+	memset(g_tvpc_keyboard_rows, 0, sizeof(g_tvpc_keyboard_rows));
+	g_tvpc_mouse_key_pending = 0;
+	g_tvpc_mouse_key_active = 0;
 	g_naruto_joined_hands = 0;
 	g_naruto_execute_delay = 0;
 	g_naruto_execute_frames = 0;
+	if (g_rom.kind == DRGQST_ROM_TVPC_DOR)
+	{
+		g_tvpc_mouse_counter_x = g_core->machine.state.anport_regs[2];
+		g_tvpc_mouse_counter_y = g_core->machine.state.anport_regs[3];
+		g_tvpc_mouse_position_valid = 0;
+	}
 	g_core->machine.state.input0 &= (uint8_t)~0x0c;
+	/* Runtime states contain guest hardware only.  Re-sample the physical
+	 * buttons so a missed Windows button-up message cannot turn a restored
+	 * broad reflection into a permanently held defensive posture. */
+	synchronize_mouse_buttons(window);
 	update_core_mouse();
 	/* Submitted PCM is copied into win_audio's own buffers, so restoring the
 	 * core does not invalidate it.  Keeping the existing device alive avoids
@@ -1302,9 +1543,19 @@ static int activate_xavix2_rom(HWND window, drgqst_rom_image *image,
 	g_omt_backside = 0;
 	g_ttv_spin_held = 0;
 	g_ttv_spin_phase = 0;
+	g_ttv_sw_motion_frames = 0;
+	g_hamd_left_pulse_frames = 0;
+	g_hamd_right_pulse_frames = 0;
+	g_hamd_confirm_frames = 0;
+	memset(g_tvpc_keyboard_rows, 0, sizeof(g_tvpc_keyboard_rows));
+	g_tvpc_mouse_key_pending = 0;
+	g_tvpc_mouse_key_active = 0;
 	g_naruto_joined_hands = 0;
 	g_naruto_execute_delay = 0;
 	g_naruto_execute_frames = 0;
+	g_tvpc_mouse_counter_x = 0;
+	g_tvpc_mouse_counter_y = 0;
+	g_tvpc_mouse_position_valid = 0;
 	drgqst_cursor_presentation_reset(&g_cursor_presentation);
 	win_audio_shutdown(&g_audio_output);
 	win_audio_init(&g_audio_output);
@@ -1372,9 +1623,19 @@ static int load_rom(HWND window, const wchar_t *path, int show_error)
 	g_omt_backside = 0;
 	g_ttv_spin_held = 0;
 	g_ttv_spin_phase = 0;
+	g_ttv_sw_motion_frames = 0;
+	g_hamd_left_pulse_frames = 0;
+	g_hamd_right_pulse_frames = 0;
+	g_hamd_confirm_frames = 0;
+	memset(g_tvpc_keyboard_rows, 0, sizeof(g_tvpc_keyboard_rows));
+	g_tvpc_mouse_key_pending = 0;
+	g_tvpc_mouse_key_active = 0;
 	g_naruto_joined_hands = 0;
 	g_naruto_execute_delay = 0;
 	g_naruto_execute_frames = 0;
+	g_tvpc_mouse_counter_x = 0;
+	g_tvpc_mouse_counter_y = 0;
+	g_tvpc_mouse_position_valid = 0;
 	drgqst_cursor_presentation_reset(&g_cursor_presentation);
 	g_eeprom_generation =
 		g_core->machine.state.peripherals.eeprom.write_generation;
@@ -1444,6 +1705,8 @@ static void draw_mouse_target(HDC device, const display_viewport *viewport)
 	int radius;
 
 	if (!g_core || rom_has_internal_cursor(g_rom.kind) ||
+		g_rom.kind == DRGQST_ROM_EPO_HAMD ||
+		g_rom.kind == DRGQST_ROM_TVPC_DOR ||
 		(!rom_uses_camera(g_rom.kind) &&
 		drgqst_core_feather_visible(g_core)))
 		return;
@@ -1712,6 +1975,11 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT message,
 		}
 		break;
 
+	case WM_ACTIVATEAPP:
+		if (!wparam)
+			release_held_host_inputs(window);
+		return 0;
+
 	case WM_MOUSEMOVE:
 		set_mouse_position(window, GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam));
 		return 0;
@@ -1726,6 +1994,8 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT message,
 		SetFocus(window);
 		SetCapture(window);
 		g_left_button = 1;
+		if (g_core && g_rom.kind == DRGQST_ROM_EPO_HAMD)
+			g_hamd_left_pulse_frames = 4;
 		if (g_xavix2)
 		{
 			g_naruto_execute_delay = 2;
@@ -1745,6 +2015,8 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT message,
 		SetFocus(window);
 		SetCapture(window);
 		g_right_button = 1;
+		if (g_core && g_rom.kind == DRGQST_ROM_EPO_HAMD)
+			g_hamd_right_pulse_frames = 4;
 		set_mouse_position(window, GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam));
 		return 0;
 
@@ -1753,6 +2025,12 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT message,
 		if (!g_left_button)
 			ReleaseCapture();
 		set_mouse_position(window, GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam));
+		return 0;
+
+	case WM_MBUTTONDOWN:
+		SetFocus(window);
+		if (g_core && g_rom.kind == DRGQST_ROM_EPO_HAMD)
+			g_hamd_confirm_frames = 4;
 		return 0;
 
 	case WM_CAPTURECHANGED:
@@ -1802,6 +2080,38 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT message,
 		if (wparam == VK_SPACE && g_xavix2)
 		{
 			g_naruto_joined_hands = 1;
+			return 0;
+		}
+		if (wparam == VK_SPACE && g_core &&
+			g_rom.kind == DRGQST_ROM_EPO_HAMD)
+		{
+			if (!(lparam & ((LPARAM)1 << 30)))
+			{
+				g_hamd_left_pulse_frames = 4;
+				g_hamd_right_pulse_frames = 4;
+			}
+			return 0;
+		}
+		if (wparam == VK_RETURN && g_core &&
+			g_rom.kind == DRGQST_ROM_EPO_HAMD)
+		{
+			if (!(lparam & ((LPARAM)1 << 30)))
+				g_hamd_confirm_frames = 4;
+			return 0;
+		}
+		if (g_core && g_rom.kind == DRGQST_ROM_TVPC_DOR &&
+			(wparam == VK_UP || wparam == VK_DOWN ||
+			 wparam == VK_LEFT || wparam == VK_RIGHT ||
+			 wparam == 'W' || wparam == 'A' ||
+			 wparam == 'S' || wparam == 'D'))
+		{
+			set_tvpc_cursor_key(wparam, 1);
+			return 0;
+		}
+		if (wparam == VK_ESCAPE && g_core && !g_fullscreen &&
+			g_rom.kind == DRGQST_ROM_TVPC_DOR)
+		{
+			g_tvpc_keyboard_rows[0] |= 0x40;
 			return 0;
 		}
 		if (wparam == VK_SPACE && g_core &&
@@ -1864,6 +2174,20 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT message,
 		if (wparam == VK_SPACE && g_xavix2)
 		{
 			g_naruto_joined_hands = 0;
+			return 0;
+		}
+		if (g_rom.kind == DRGQST_ROM_TVPC_DOR &&
+			(wparam == VK_UP || wparam == VK_DOWN ||
+			 wparam == VK_LEFT || wparam == VK_RIGHT ||
+			 wparam == 'W' || wparam == 'A' ||
+			 wparam == 'S' || wparam == 'D'))
+		{
+			set_tvpc_cursor_key(wparam, 0);
+			return 0;
+		}
+		if (wparam == VK_ESCAPE && g_rom.kind == DRGQST_ROM_TVPC_DOR)
+		{
+			g_tvpc_keyboard_rows[0] &= (uint8_t)~0x40;
 			return 0;
 		}
 		if (wparam == VK_SPACE && g_rom.kind == DRGQST_ROM_BAN_OMT)

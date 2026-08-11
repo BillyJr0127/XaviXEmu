@@ -3,6 +3,25 @@
 All notable public changes will be documented in this file. The project uses
 semantic versioning while experimental releases carry a pre-release suffix.
 
+## 0.3.0-alpha - 2026-08-11
+
+### Fixed
+
+- Treat an idle US Star Wars saber as absent from the camera and ordinary
+  motion as a one-pixel, one-frame edge sample instead of a stationary 3-by-3
+  reflection, so mouse movement no longer becomes a held defense.
+- Send Ham-chans controller shakes as finite pulses and expose the firmware's
+  separate menu-confirm input on Enter and middle mouse.
+- Replace TV-PC ROM mirroring at the external keyboard scan addresses with an
+  active-high eight-row keyboard device.
+
+### Added
+
+- Decode the two Ham-chans wireless bell-controller packets and expose them as
+  left mouse, right mouse, and Space-for-both host controls.
+- Add TV-PC cursor-key mappings for arrow keys/WASD and short Up/Down pulses
+  from vertical mouse movement.
+
 ## 0.2.0-alpha - 2026-08-10
 
 ### Fixed
