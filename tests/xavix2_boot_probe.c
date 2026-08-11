@@ -1027,7 +1027,7 @@ static void print_audio_voices(const xavix2_machine_t *machine)
 			((uint16_t)descriptor[0x0f] << 8)) << 16) |
 			(descriptor[0x12] | ((uint32_t)descriptor[0x13] << 8));
 		pitch = voice->pitch;
-		source_rate = (uint32_t)(((uint64_t)pitch * engine_rate + 16384U) >> 15);
+		source_rate = (uint32_t)(((uint64_t)pitch * engine_rate + 32768U) >> 16);
 		printf("  ch=%u looped=%u start=%08" PRIX32 " end=%08" PRIX32
 			" pos=%08" PRIX32 "+%08" PRIX32 " pitch=%u rate=%" PRIu32
 			" volume=%u,%u\n",

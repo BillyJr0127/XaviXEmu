@@ -114,13 +114,60 @@ static void write_ram_snapshot(const char *bmp_path, const uint8_t *ram)
 	fclose(file);
 }
 
-int main(int argc, char **argv)
+static int persistence_profile(enum drgqst_rom_kind rom_kind,
+	const uint8_t **sha1, enum drgqst_persistence_kind *eeprom_kind,
+	enum drgqst_persistence_kind *state_kind)
 {
 	static const uint8_t ban_onep_sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
 	{
 		0xdb, 0x85, 0xf6, 0xcc, 0x48, 0xd7, 0x7c, 0x5a, 0x49, 0x67,
 		0xb9, 0xb8, 0xe2, 0x99, 0x91, 0x67, 0xe3, 0xdf, 0xc8, 0xc8
 	};
+	static const uint8_t lotr_sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+	{
+		0x26, 0x4a, 0x9d, 0x43, 0x27, 0xaf, 0x0a, 0x07, 0x58, 0x41,
+		0xad, 0x61, 0x29, 0xdb, 0x67, 0xd8, 0x2c, 0xf7, 0x41, 0xf1
+	};
+	static const uint8_t sw_sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+	{
+		0x1e, 0xd8, 0xd5, 0x56, 0xf3, 0x1b, 0x41, 0x82, 0x25, 0x9c,
+		0xa8, 0xc7, 0x66, 0xd6, 0x0c, 0x82, 0x4d, 0x8d, 0x97, 0x44
+	};
+	static const uint8_t swj_sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+	{
+		0x40, 0x6f, 0x0b, 0xcc, 0xb0, 0x1c, 0xd4, 0xa2, 0x6f, 0xe4,
+		0xa5, 0x67, 0x5d, 0x7e, 0xbe, 0xcc, 0x78, 0xc5, 0x81, 0x47
+	};
+
+	switch (rom_kind)
+	{
+	case DRGQST_ROM_BAN_ONEP:
+		*sha1 = ban_onep_sha1;
+		*eeprom_kind = DRGQST_PERSISTENCE_BAN_ONEP_EEPROM;
+		*state_kind = DRGQST_PERSISTENCE_BAN_ONEP_RUNTIME_STATE;
+		return 1;
+	case DRGQST_ROM_TTV_LOTR:
+		*sha1 = lotr_sha1;
+		*eeprom_kind = DRGQST_PERSISTENCE_TTV_LOTR_EEPROM;
+		*state_kind = DRGQST_PERSISTENCE_TTV_LOTR_RUNTIME_STATE;
+		return 1;
+	case DRGQST_ROM_TTV_SW:
+		*sha1 = sw_sha1;
+		*eeprom_kind = DRGQST_PERSISTENCE_TTV_SW_EEPROM;
+		*state_kind = DRGQST_PERSISTENCE_TTV_SW_RUNTIME_STATE;
+		return 1;
+	case DRGQST_ROM_TTV_SWJ:
+		*sha1 = swj_sha1;
+		*eeprom_kind = DRGQST_PERSISTENCE_TTV_SWJ_EEPROM;
+		*state_kind = DRGQST_PERSISTENCE_TTV_SWJ_RUNTIME_STATE;
+		return 1;
+	default:
+		return 0;
+	}
+}
+
+int main(int argc, char **argv)
+{
 	drgqst_rom_image image = { 0 };
 	drgqst_core *core;
 	wchar_t path[32768];
@@ -171,6 +218,9 @@ int main(int argc, char **argv)
 	}
 	if (argc >= 5)
 	{
+		const uint8_t *rom_sha1 = NULL;
+		enum drgqst_persistence_kind eeprom_kind;
+		enum drgqst_persistence_kind state_kind;
 		wchar_t save_directory[32768];
 		uint8_t *state = NULL;
 		uint8_t durable_eeprom[DRGQST_PERSISTENCE_EEPROM_SIZE];
@@ -179,6 +229,13 @@ int main(int argc, char **argv)
 		if (!MultiByteToWideChar(CP_ACP, 0, argv[4], -1, save_directory,
 			(int)(sizeof(save_directory) / sizeof(save_directory[0]))))
 			return 2;
+		if (!persistence_profile(image.kind, &rom_sha1, &eeprom_kind,
+			&state_kind))
+		{
+			fprintf(stderr, "no persistence profile for ROM kind %u\n",
+				(unsigned)image.kind);
+			return 2;
+		}
 		xavix_eeprom24c08_copy_image(&core->machine.state.peripherals.eeprom,
 			durable_eeprom);
 		if (argc >= 11)
@@ -194,8 +251,7 @@ int main(int argc, char **argv)
 		if (argc >= 16)
 			trajectory_interval = (unsigned)strtoul(argv[15], NULL, 0);
 		loaded_size = 0;
-		if (drgqst_persistence_load(save_directory,
-			DRGQST_PERSISTENCE_BAN_ONEP_EEPROM, ban_onep_sha1,
+		if (drgqst_persistence_load(save_directory, eeprom_kind, rom_sha1,
 			durable_eeprom, sizeof(durable_eeprom), &loaded_size, error,
 			sizeof(error) / sizeof(error[0])) && loaded_size == sizeof(durable_eeprom))
 		{
@@ -208,7 +264,7 @@ int main(int argc, char **argv)
 			state = (uint8_t *)malloc(state_size);
 			loaded_size = 0;
 			if (!state || !drgqst_persistence_load(save_directory,
-				DRGQST_PERSISTENCE_BAN_ONEP_RUNTIME_STATE, ban_onep_sha1,
+				state_kind, rom_sha1,
 				state, state_size, &loaded_size, error,
 				sizeof(error) / sizeof(error[0])) || loaded_size != state_size ||
 				!drgqst_state_load(core, state, loaded_size))
@@ -325,6 +381,51 @@ int main(int argc, char **argv)
 				left_pressed = !(step & 1);
 				right_pressed = !!(step & 1);
 			}
+			if (trajectory == 12 && frame >= trajectory_start &&
+				((frame - trajectory_start) %
+					(trajectory_interval ? trajectory_interval : UINT_MAX)) < 16)
+			{
+				static const int8_t circle_x[16] =
+				{
+					0, 23, 42, 54, 58, 54, 42, 23,
+					0, -23, -42, -54, -58, -54, -42, -23
+				};
+				static const int8_t circle_y[16] =
+				{
+					-58, -54, -42, -23, 0, 23, 42, 54,
+					58, 54, 42, 23, 0, -23, -42, -54
+				};
+				const unsigned step = (frame - trajectory_start) %
+					(trajectory_interval ? trajectory_interval : UINT_MAX);
+				x = (uint8_t)(0x80 + circle_x[step]);
+				y = (uint8_t)(0x80 + circle_y[step]);
+				left_pressed = !!(punch_mask & 1);
+				right_pressed = !!(punch_mask & 2);
+			}
+			if ((trajectory == 14 || trajectory == 15) &&
+				frame >= trajectory_start)
+			{
+				static const int8_t circle_x[16] =
+				{
+					0, 23, 42, 54, 58, 54, 42, 23,
+					0, -23, -42, -54, -58, -54, -42, -23
+				};
+				static const int8_t circle_y[16] =
+				{
+					-58, -54, -42, -23, 0, 23, 42, 54,
+					58, 54, 42, 23, 0, -23, -42, -54
+				};
+				const unsigned period = trajectory_interval ?
+					trajectory_interval : 64;
+				const unsigned phase = (frame - trajectory_start) % period;
+				unsigned index = phase * 16 / period;
+				if (trajectory == 15)
+					index = (16 - index) & 15;
+				x = (uint8_t)(0x80 + circle_x[index]);
+				y = (uint8_t)(0x80 + circle_y[index]);
+				left_pressed = !!(punch_mask & 1);
+				right_pressed = !!(punch_mask & 2);
+			}
 			if (frame >= 6200)
 				x = calibration_triangle(frame, 6200);
 			if (state_loaded && frame >=
@@ -334,7 +435,32 @@ int main(int argc, char **argv)
 				left_pressed = !!(punch_mask & 1);
 				right_pressed = !!(punch_mask & 2);
 			}
+			if (state_loaded && guard_hold && frame >= trajectory_start &&
+				frame < trajectory_start + guard_hold)
+			{
+				left_pressed = !!(punch_mask & 1);
+				right_pressed = !!(punch_mask & 2);
+			}
 			drgqst_core_set_mouse(core, x, y, left_pressed, right_pressed);
+			if (trajectory == 13 && frame >= trajectory_start &&
+				frame < trajectory_start + (guard_hold ? guard_hold : 120))
+				xavix_machine_set_sword_input(&core->machine, x, y,
+					XAVIX_SENSOR_VERTICAL);
+			if (trajectory == 16 && frame >= trajectory_start)
+			{
+				static const enum xavix_sensor_mode rotation[8] =
+				{
+					XAVIX_SENSOR_VERTICAL, XAVIX_SENSOR_DIAGONAL_DOWN,
+					XAVIX_SENSOR_HORIZONTAL, XAVIX_SENSOR_DIAGONAL_UP,
+					XAVIX_SENSOR_VERTICAL, XAVIX_SENSOR_DIAGONAL_DOWN,
+					XAVIX_SENSOR_HORIZONTAL, XAVIX_SENSOR_DIAGONAL_UP
+				};
+				const unsigned period = trajectory_interval ?
+					trajectory_interval : 64;
+				const unsigned phase = (frame - trajectory_start) % period;
+				xavix_machine_set_sword_input(&core->machine, x, y,
+					rotation[phase * 8 / period]);
+			}
 			if (state_loaded && guard_hold && frame >= trajectory_start &&
 				frame < trajectory_start + guard_hold)
 			{

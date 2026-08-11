@@ -34,7 +34,7 @@ int main(void)
 	rom[0x12] = 127;
 	rom[0x13] = 0x80;
 	store_address(voice0, 0x02, 0x06, 0x10);
-	store16(voice0 + 0x16, 0x4000);
+	store16(voice0 + 0x16, 0x8000);
 	voice0[0x32] = 0xff;
 	voice0[0x33] = 0x80;
 
@@ -53,6 +53,7 @@ int main(void)
 	rom[0x21] = 20;
 	rom[0x22] = 0x80;
 	store_address(voice0, 0x02, 0x06, 0x20);
+	store16(voice0 + 0x16, 0x8000);
 	/* Firmware descriptors put the looping sample end (one byte beyond the
 	 * terminator) here; playback loops to the primary start address. */
 	store_address(voice0, 0x0e, 0x12, 0x23);
@@ -66,9 +67,9 @@ int main(void)
 	assert(frame[4] == 10 * 255);
 	assert(xavix2_audio_status(&audio, 0) == 1);
 
-	xavix2_audio_command(&audio, 0xc0, descriptors, 0x2000, 7, 9);
+	xavix2_audio_command(&audio, 0xc0, descriptors, 0x4000, 7, 9);
 	assert(xavix2_audio_status(&audio, 0) == 1);
-	assert(audio.voice[0].pitch == 0x2000);
+	assert(audio.voice[0].pitch == 0x4000);
 	assert(audio.voice[0].volume_left == 7);
 	assert(audio.voice[0].volume_right == 9);
 	xavix2_audio_render(&audio, 96000);
@@ -84,7 +85,7 @@ int main(void)
 	store_address(voice0, 0x02, 0x06, 0x30);
 	store16(voice0 + 0x16, 0x8000);
 	xavix2_audio_command(&audio, 0x40, descriptors, 0, 0, 0);
-	xavix2_audio_render(&audio, 96000);
+	xavix2_audio_render(&audio, 192000);
 	frame = xavix2_audio_frame(&audio);
 	assert(frame[0] == 10 * 255);
 	assert(frame[2] == 0);

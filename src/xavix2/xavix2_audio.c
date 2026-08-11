@@ -241,11 +241,9 @@ void xavix2_audio_render(xavix2_audio *audio, uint32_t engine_rate)
 				continue;
 			left += sample * voice->volume_left;
 			right += sample * voice->volume_right;
-			/* Firmware pitch values form a Q15 step.  Q16 makes the
-			 * characteristic 0x0e6a/0x1339/0x1c72 values resolve to
-			 * roughly 12/16/24 kHz, exactly half their observed nominal
-			 * 24/32/48 kHz rates. */
-			step = ((uint64_t)voice->pitch * engine_rate << 17) /
+			/* Firmware computes pitch as source_rate * 65536 / engine_rate.
+			 * Convert that Q16 phase increment to the host output cadence. */
+			step = ((uint64_t)voice->pitch * engine_rate << 16) /
 				XAVIX2_AUDIO_OUTPUT_RATE;
 			advance_voice(audio, voice, step);
 		}

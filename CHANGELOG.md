@@ -13,10 +13,11 @@ semantic versioning while experimental releases carry a pre-release suffix.
 - Loop XaviX 2 PCM voices to their primary sample address instead of treating
   the descriptor's end pointer as a loop address, preventing playback from
   continuing into unrelated ROM data.
-- Interpret XaviX 2 PCM pitch as Q15, apply live `$c0` pitch/volume commands,
-  and detect terminators crossed by high-rate voices.  This corrects the
-  evidenced half-speed rates and prevents one-shots from leaking into adjacent
-  ROM data.
+- Restore the firmware-derived Q16 XaviX 2 PCM pitch conversion, apply live
+  `$c0` pitch/volume commands, and detect terminators crossed by high-rate
+  voices.  A spectrum comparison against a short real-hardware reference
+  confirms a 1.00 pitch ratio for Q16; the experimental Q15 conversion was
+  both too fast and at the wrong frequency.
 - Show the blue host target in LOTR and Star Wars scenes that do not provide a
   game-owned cursor, while suppressing it when the verified cursor sprites are
   visible.
@@ -31,6 +32,9 @@ semantic versioning while experimental releases carry a pre-release suffix.
 
 - Opt-in XaviX 2 WAV capture and per-frame hit/audio diagnostics in the
   ROM-dependent boot probe.
+- Map Space to LOTR's evidenced broad vertical Fire gesture and, while held,
+  to the rotating elongated-reflection gesture accepted by the Star Wars
+  lightsaber spin tutorial.
 
 ## 0.1.0-alpha - 2026-08-10
 

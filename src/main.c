@@ -334,6 +334,9 @@ static int g_naruto_joined_hands;
 static unsigned g_naruto_execute_delay;
 static unsigned g_naruto_execute_frames;
 static int g_omt_backside;
+static unsigned g_lotr_fire_phase;
+static int g_ttv_spin_held;
+static unsigned g_ttv_spin_phase;
 static uint8_t g_ban_onep_menu_input;
 static unsigned g_ban_onep_menu_input_frames;
 static uint32_t g_eeprom_generation;
@@ -789,12 +792,45 @@ static void stop_frame_clock(HWND window)
 
 static void update_core_mouse(void)
 {
-	if (g_core)
-		drgqst_core_set_mouse(g_core, g_mouse_x, g_mouse_y,
-			g_left_button || (g_rom.kind == DRGQST_ROM_BAN_OMT &&
-				g_omt_backside),
-			g_right_button || (g_rom.kind == DRGQST_ROM_BAN_OMT &&
-				g_omt_backside));
+	if (!g_core)
+		return;
+	if (g_rom.kind == DRGQST_ROM_TTV_LOTR && g_lotr_fire_phase)
+	{
+		const unsigned step = g_lotr_fire_phase - 1;
+		const uint8_t y = (uint8_t)(0x20 + (0xbf * step + 5) / 11);
+		/* The Fire of Arnor lesson accepts a broad reflector travelling
+		 * vertically, matching the upright defensive sword gesture. */
+		drgqst_core_set_mouse(g_core, 0x80, y, 1, 0);
+		return;
+	}
+	drgqst_core_set_mouse(g_core, g_mouse_x, g_mouse_y,
+		g_left_button || (g_rom.kind == DRGQST_ROM_BAN_OMT &&
+			g_omt_backside),
+		g_right_button || (g_rom.kind == DRGQST_ROM_BAN_OMT &&
+			g_omt_backside));
+	if ((g_rom.kind == DRGQST_ROM_TTV_SW ||
+		g_rom.kind == DRGQST_ROM_TTV_SWJ) && g_ttv_spin_held)
+	{
+		static const enum xavix_sensor_mode rotation[4] =
+		{
+			XAVIX_SENSOR_VERTICAL,
+			XAVIX_SENSOR_DIAGONAL_DOWN,
+			XAVIX_SENSOR_HORIZONTAL,
+			XAVIX_SENSOR_DIAGONAL_UP
+		};
+		/* Pointing the physical saber at the camera and rolling it produces
+		 * a rotating elongated reflection, rather than a moving point. */
+		xavix_machine_set_sword_input(&g_core->machine, 0x80, 0x80,
+			rotation[(g_ttv_spin_phase / 2) & 3]);
+	}
+}
+
+static void advance_ttv_special_gesture(void)
+{
+	if (g_lotr_fire_phase && ++g_lotr_fire_phase > 12)
+		g_lotr_fire_phase = 0;
+	if (g_ttv_spin_held)
+		g_ttv_spin_phase = (g_ttv_spin_phase + 1) & 7;
 }
 
 static void pulse_ban_onep_menu_input(uint8_t input)
@@ -1093,6 +1129,7 @@ static void run_due_frames(HWND window)
 		{
 			update_core_mouse();
 			g_framebuffer = drgqst_core_run_frame(g_core);
+			advance_ttv_special_gesture();
 			advance_ban_onep_menu_input();
 			update_cursor_presentation();
 			win_audio_submit(&g_audio_output,
@@ -1223,6 +1260,9 @@ static int load_runtime_state(HWND window)
 	g_ban_onep_menu_input = 0;
 	g_ban_onep_menu_input_frames = 0;
 	g_omt_backside = 0;
+	g_lotr_fire_phase = 0;
+	g_ttv_spin_held = 0;
+	g_ttv_spin_phase = 0;
 	g_naruto_joined_hands = 0;
 	g_naruto_execute_delay = 0;
 	g_naruto_execute_frames = 0;
@@ -1269,6 +1309,9 @@ static int activate_xavix2_rom(HWND window, drgqst_rom_image *image,
 	g_ban_onep_menu_input = 0;
 	g_ban_onep_menu_input_frames = 0;
 	g_omt_backside = 0;
+	g_lotr_fire_phase = 0;
+	g_ttv_spin_held = 0;
+	g_ttv_spin_phase = 0;
 	g_naruto_joined_hands = 0;
 	g_naruto_execute_delay = 0;
 	g_naruto_execute_frames = 0;
@@ -1337,6 +1380,9 @@ static int load_rom(HWND window, const wchar_t *path, int show_error)
 	g_ban_onep_menu_input = 0;
 	g_ban_onep_menu_input_frames = 0;
 	g_omt_backside = 0;
+	g_lotr_fire_phase = 0;
+	g_ttv_spin_held = 0;
+	g_ttv_spin_phase = 0;
 	g_naruto_joined_hands = 0;
 	g_naruto_execute_delay = 0;
 	g_naruto_execute_frames = 0;
@@ -1753,6 +1799,24 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT message,
 			return 0;
 		}
 		if (wparam == VK_SPACE && g_core &&
+			g_rom.kind == DRGQST_ROM_TTV_LOTR)
+		{
+			if (!(lparam & ((LPARAM)1 << 30)))
+				g_lotr_fire_phase = 1;
+			update_core_mouse();
+			return 0;
+		}
+		if (wparam == VK_SPACE && g_core &&
+			(g_rom.kind == DRGQST_ROM_TTV_SW ||
+			 g_rom.kind == DRGQST_ROM_TTV_SWJ))
+		{
+			if (!(lparam & ((LPARAM)1 << 30)))
+				g_ttv_spin_phase = 0;
+			g_ttv_spin_held = 1;
+			update_core_mouse();
+			return 0;
+		}
+		if (wparam == VK_SPACE && g_core &&
 			g_rom.kind == DRGQST_ROM_BAN_OMT)
 		{
 			g_omt_backside = 1;
@@ -1807,6 +1871,14 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT message,
 		if (wparam == VK_SPACE && g_rom.kind == DRGQST_ROM_BAN_OMT)
 		{
 			g_omt_backside = 0;
+			update_core_mouse();
+			return 0;
+		}
+		if (wparam == VK_SPACE &&
+			(g_rom.kind == DRGQST_ROM_TTV_SW ||
+			 g_rom.kind == DRGQST_ROM_TTV_SWJ))
+		{
+			g_ttv_spin_held = 0;
 			update_core_mouse();
 			return 0;
 		}

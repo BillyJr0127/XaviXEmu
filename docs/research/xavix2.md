@@ -275,20 +275,28 @@ support is therefore experimental rather than claimed complete.
   opt-in WAV/voice diagnostics in the boot probe.
 
 Follow-up user testing showed that the corrected loop endpoints did not fix the
-slow playback or all accumulated noise.  Command-level traces then provided
-three additional pieces of evidence:
+overall pacing or all accumulated noise.  Command-level traces and a short
+user-supplied real-hardware recording then provided three additional pieces of
+evidence:
 
-- firmware pitch values `$0e6a`, `$1339`, and `$1c72` resolve near the natural
-  24, 32, and 48 kHz families only when interpreted as Q15; the former Q16
-  conversion produced exactly half-speed 12, 16, and 24 kHz rates;
+- the firmware loads the system-clock constant `98,437,488` and divides it by
+  `(13 + 1) * (32 + 1)`, storing the resulting 213,068 Hz engine rate at low
+  RAM `$0150`; its pitch routine explicitly computes
+  `source_rate * 65536 / engine_rate`, establishing Q16 rather than Q15;
+- a spectrum comparison of the same title cue gives a 1.00 candidate/reference
+  frequency ratio with Q16, while the experimental Q15 interpretation is both
+  too fast and spectrally mismatched.  The reference excerpt is analysis-only
+  and is not part of the repository;
 - `$c0|channel` commands copy the live `$ea18` pitch and `$ea1c/$ea1d` volume
   controls into an existing voice, including observed pitch slides such as
   4900, 4986, 5156, and 5455; ignoring them left stale voice parameters; and
-- Q15 playback can advance by more than one source byte, so checking only the
+- high-rate playback can advance by more than one source byte, so checking only the
   byte landed on can skip a `$80` terminator and enter the next ROM region.
 
 The voice model now latches start parameters, applies the live `$c0` updates,
-uses the evidenced Q15 step, and checks every source byte crossed by a
+uses the firmware-derived Q16 step, and checks every source byte crossed by a
 high-rate voice.  ROM-independent tests cover parameter updates and a
-terminator skipped by a two-byte step.  Exact envelopes, filtering, and opcode
-`$ff` remain separate research milestones.
+terminator skipped by a two-byte step.  Overall music/event pacing, stale
+voices during menu transitions, exact envelopes, filtering, and opcode `$ff`
+remain separate research milestones rather than being hidden behind another
+global playback multiplier.

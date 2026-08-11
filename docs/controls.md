@@ -44,6 +44,12 @@ games draw a special cursor in some scenes. XaviXEmu hides its blue target
 while that game-owned cursor is visible and restores the target in scenes that
 do not provide one.
 
+- `ttv_lotr`: press Space for the broad vertical defensive stroke used by the
+  Fire of Arnor lesson.
+- `ttv_sw` / `ttv_swj`: hold Space for the lightsaber spin gesture. This
+  rotates an elongated optical reflection through vertical, diagonal, and
+  horizontal orientations; release Space to return to normal mouse input.
+
 ## `ban_naru` (experimental)
 
 - Mouse movement: first wrist reflector and game-owned cursor.

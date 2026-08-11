@@ -76,3 +76,40 @@ Subsequent user testing verified normal gameplay as playable with the
 synthesized optical input.  The game-owned 2x2 cursor sprite families were
 identified independently for LOTR, Star Wars US, and Star Wars Japan; the host
 blue target is now drawn only on frames where those sprites are absent.
+
+## Broad vertical and rotating-reflection gestures
+
+- Observed symptom: LOTR's Fire of Arnor lesson rejected the stationary square
+  broadside model, and the on-screen defensive sword remained at the ordinary
+  diagonal pose.
+- PC/address: the supplied runtime checkpoint idles around `$003c78-$003c89`;
+  the recognized camera data is produced by the existing `$7b81/$7b80` scan.
+- I/O/register: the CU5501 reflected image and its host X/Y trajectory.
+- Hypothesis: the lesson classifies a broad sword face travelling vertically,
+  not a stationary button state.
+- Experiment: restore the checkpoint before every trial and repeat each of the
+  eight cardinal/diagonal trajectories with a 5-by-5 broad reflection.
+- Result: the vertical downward trajectory cleared the instruction text within
+  12 frames and reached the next courtyard scene; a stationary broad reflection
+  did not. Space now emits that same 12-frame camera-space trajectory.
+- Code changed: Win32 input sequencing only; no firmware PC or status value is
+  patched.
+
+- Observed symptom: `ttv_swj` asked the player to point the lightsaber at the
+  sensor and spin it, but moving the existing small reflector around a circle
+  never completed the tutorial.
+- PC/address: the supplied checkpoint idles around `$0037ea-$0037fb`.
+- I/O/register: the complete 32-by-31 CU5501A reflected image.
+- Hypothesis: rolling the physical saber changes the orientation of an
+  elongated reflection at the sensor center; its centroid does not orbit the
+  image.
+- Experiment: cycle a centered 5-by-13 reflection through vertical, both
+  diagonals, and horizontal orientations. Compare this with clockwise and
+  counter-clockwise point trajectories at several speeds and blob sizes.
+- Result: point trajectories remained on lesson step 1. The rotating elongated
+  image advanced the game through its yellow acknowledgement and reached the
+  Japanese `practice once more?` prompt. Holding Space now supplies that image;
+  releasing it restores ordinary mouse input.
+- Code changed: four synthetic reflection orientations and the host Space-key
+  sequencer. The shapes model observable optical input rather than bypassing a
+  tutorial result.

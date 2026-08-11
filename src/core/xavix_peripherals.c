@@ -12,6 +12,7 @@
 #include "xavix_peripherals.h"
 
 #include <limits.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define XAVIX_STATE_VERSION UINT16_C(1)
@@ -393,7 +394,7 @@ void xavix_cu5501a_reset(xavix_cu5501a *sensor)
 	sensor->illuminated = 0;
 	sensor->scan_x = sensor->host_x;
 	sensor->scan_y = sensor->host_y;
-	sensor->scan_mode = sensor->host_mode & 3;
+	sensor->scan_mode = sensor->host_mode & 7;
 }
 
 void xavix_cu5501a_set_input(xavix_cu5501a *sensor, uint8_t x, uint8_t y, uint8_t mode)
@@ -403,7 +404,7 @@ void xavix_cu5501a_set_input(xavix_cu5501a *sensor, uint8_t x, uint8_t y, uint8_
 
 	sensor->host_x = x;
 	sensor->host_y = y;
-	sensor->host_mode = mode & 3;
+	sensor->host_mode = mode & 7;
 }
 
 void xavix_cu5501a_begin_scan(xavix_cu5501a *sensor, int illuminated)
@@ -417,7 +418,7 @@ void xavix_cu5501a_begin_scan(xavix_cu5501a *sensor, int illuminated)
 	sensor->illuminated = !!illuminated;
 	sensor->scan_x = sensor->host_x;
 	sensor->scan_y = sensor->host_y;
-	sensor->scan_mode = sensor->host_mode & 3;
+	sensor->scan_mode = sensor->host_mode & 7;
 }
 
 void xavix_cu5501a_write_io1(xavix_cu5501a *sensor, uint8_t data, uint8_t direction)
@@ -448,31 +449,50 @@ uint8_t xavix_cu5501a_pixel_at(const xavix_cu5501a *sensor, unsigned column, uns
 	int sword_y;
 	int image_x;
 	int image_y;
-	int radius;
+	int radius_x;
+	int radius_y;
+	int delta_x;
+	int delta_y;
 
 	if (!sensor || column >= XAVIX_CU5501A_WIDTH || row >= XAVIX_CU5501A_HEIGHT || !sensor->illuminated)
 		return 0;
 
 	sword_x = sensor_coordinate(sensor->scan_x, XAVIX_CU5501A_WIDTH, 1);
 	sword_y = sensor_coordinate(sensor->scan_y, XAVIX_CU5501A_HEIGHT, 0);
-	radius = (sensor->scan_mode & XAVIX_SENSOR_STEP_FORWARD) ? 4 :
-		(sensor->scan_mode & XAVIX_SENSOR_BROADSIDE) ? 2 : 1;
+	if (sensor->scan_mode >= XAVIX_SENSOR_VERTICAL)
+	{
+		radius_x = (sensor->scan_mode == XAVIX_SENSOR_HORIZONTAL) ? 6 :
+			(sensor->scan_mode == XAVIX_SENSOR_VERTICAL) ? 2 : 5;
+		radius_y = (sensor->scan_mode == XAVIX_SENSOR_VERTICAL) ? 6 :
+			(sensor->scan_mode == XAVIX_SENSOR_HORIZONTAL) ? 2 : 5;
+	}
+	else
+	{
+		radius_x = (sensor->scan_mode & XAVIX_SENSOR_STEP_FORWARD) ? 4 :
+			(sensor->scan_mode & XAVIX_SENSOR_BROADSIDE) ? 2 : 1;
+		radius_y = radius_x;
+	}
 	image_x = sword_x;
 	image_y = sword_y;
-	if (radius > 1)
+	if (radius_x > 1 || radius_y > 1)
 	{
-		if (image_x < radius)
-			image_x = radius;
-		else if (image_x > XAVIX_CU5501A_WIDTH - radius - 1)
-			image_x = XAVIX_CU5501A_WIDTH - radius - 1;
-		if (image_y < radius)
-			image_y = radius;
-		else if (image_y > XAVIX_CU5501A_HEIGHT - radius - 1)
-			image_y = XAVIX_CU5501A_HEIGHT - radius - 1;
+		if (image_x < radius_x)
+			image_x = radius_x;
+		else if (image_x > XAVIX_CU5501A_WIDTH - radius_x - 1)
+			image_x = XAVIX_CU5501A_WIDTH - radius_x - 1;
+		if (image_y < radius_y)
+			image_y = radius_y;
+		else if (image_y > XAVIX_CU5501A_HEIGHT - radius_y - 1)
+			image_y = XAVIX_CU5501A_HEIGHT - radius_y - 1;
 	}
 
-	return ((int)column >= image_x - radius && (int)column <= image_x + radius &&
-		(int)row >= image_y - radius && (int)row <= image_y + radius) ? 0x40 : 0;
+	delta_x = (int)column - image_x;
+	delta_y = (int)row - image_y;
+	if (sensor->scan_mode == XAVIX_SENSOR_DIAGONAL_DOWN)
+		return abs(delta_x - delta_y) <= 2 && abs(delta_x) <= 5 ? 0x40 : 0;
+	if (sensor->scan_mode == XAVIX_SENSOR_DIAGONAL_UP)
+		return abs(delta_x + delta_y) <= 2 && abs(delta_x) <= 5 ? 0x40 : 0;
+	return (abs(delta_x) <= radius_x && abs(delta_y) <= radius_y) ? 0x40 : 0;
 }
 
 uint8_t xavix_cu5501a_read_adc(xavix_cu5501a *sensor)
@@ -1124,7 +1144,8 @@ int xavix_peripherals_deserialize(
 		!valid_boolean(restored.eeprom.write_protect) || !valid_boolean(restored.eeprom.dirty) ||
 		restored.sensor.pixel >= XAVIX_CU5501A_PIXELS || restored.sensor.adc_phase > XAVIX_CU5501A_WIDTH ||
 		!valid_boolean(restored.sensor.sync_phase) || !valid_boolean(restored.sensor.illuminated) ||
-		restored.sensor.host_mode > 3 || restored.sensor.scan_mode > 3 ||
+		restored.sensor.host_mode > XAVIX_SENSOR_DIAGONAL_UP ||
+		restored.sensor.scan_mode > XAVIX_SENSOR_DIAGONAL_UP ||
 		!restored.timer.master_clock_hz || restored.timer.frequency > 0x0f ||
 		restored.timer.prescale_cycles >= (UINT64_C(1) << (restored.timer.frequency + 1)) ||
 		!valid_boolean(restored.timer.running) || !valid_boolean(restored.timer.irq_pending) ||

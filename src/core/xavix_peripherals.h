@@ -34,7 +34,11 @@ enum xavix_sensor_mode
 {
 	XAVIX_SENSOR_NARROW = 0,       /* ordinary sword edge: 3 by 3 pixels */
 	XAVIX_SENSOR_BROADSIDE = 1,    /* held left mouse button: 5 by 5 */
-	XAVIX_SENSOR_STEP_FORWARD = 2  /* held right mouse button: 9 by 9 */
+	XAVIX_SENSOR_STEP_FORWARD = 2, /* held right mouse button: 9 by 9 */
+	XAVIX_SENSOR_VERTICAL = 4,     /* broad face held upright: 5 by 13 */
+	XAVIX_SENSOR_DIAGONAL_DOWN = 5,
+	XAVIX_SENSOR_HORIZONTAL = 6,
+	XAVIX_SENSOR_DIAGONAL_UP = 7
 };
 
 enum xavix_i2c_protocol_state

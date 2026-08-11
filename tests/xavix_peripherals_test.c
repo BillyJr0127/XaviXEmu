@@ -359,6 +359,10 @@ static void test_sensor(void)
 	CHECK(sensor_scan_count(&sensor, XAVIX_SENSOR_BROADSIDE, 0x21) == 25);
 	CHECK(sensor_scan_count(&sensor, XAVIX_SENSOR_STEP_FORWARD, 0x21) == 81);
 	CHECK(sensor_scan_count(&sensor, XAVIX_SENSOR_BROADSIDE | XAVIX_SENSOR_STEP_FORWARD, 0x21) == 81);
+	CHECK(sensor_scan_count(&sensor, XAVIX_SENSOR_VERTICAL, 0x21) == 65);
+	CHECK(sensor_scan_count(&sensor, XAVIX_SENSOR_HORIZONTAL, 0x21) == 65);
+	CHECK(sensor_scan_count(&sensor, XAVIX_SENSOR_DIAGONAL_DOWN, 0x21) == 55);
+	CHECK(sensor_scan_count(&sensor, XAVIX_SENSOR_DIAGONAL_UP, 0x21) == 55);
 	CHECK(sensor_scan_count(&sensor, XAVIX_SENSOR_BROADSIDE, 0x01) == 0);
 
 	xavix_cu5501a_set_input(&sensor, 0xff, 0xff, XAVIX_SENSOR_BROADSIDE);
