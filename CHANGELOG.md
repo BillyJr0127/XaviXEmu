@@ -28,8 +28,8 @@ semantic versioning while experimental releases carry a pre-release suffix.
 ### Changed
 
 - Promote `ban_omt`, `ttv_lotr`, `ttv_sw`, and `ttv_swj` to Playable based on
-  direct user gameplay verification; synthetic optical limitations remain
-  documented.
+  direct maintainer gameplay verification; synthetic optical limitations
+  remain documented.
 
 ### Added
 

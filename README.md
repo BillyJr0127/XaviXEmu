@@ -29,10 +29,10 @@ holders or MAMEdev. See [the legal notes](docs/legal.md).
 | --- | --- | --- | --- |
 | XaviX 2000 | `drgqst` | Playable | Boots, gameplay, virtual sword, EEPROM, and runtime states |
 | XaviX 2000 | `ban_onep` | Playable | Gameplay, dual-reflector input, menus, EEPROM, and runtime states |
-| XaviX 2000 | `ban_omt` | Playable | User-verified gameplay, optical input, EEPROM, and runtime states |
-| XaviX 2000 | `ttv_lotr` | Playable | User-verified gameplay with synthetic CU5501 sword input |
-| XaviX 2000 | `ttv_sw` | Playable | User-verified gameplay with synthetic CU5501A input |
-| XaviX 2000 | `ttv_swj` | Playable | User-verified Japanese gameplay with synthetic CU5501A input |
+| XaviX 2000 | `ban_omt` | Playable | Maintainer-verified gameplay, optical input, EEPROM, and runtime states |
+| XaviX 2000 | `ttv_lotr` | Playable | Maintainer-verified gameplay with synthetic CU5501 sword input |
+| XaviX 2000 | `ttv_sw` | Playable | Maintainer-verified gameplay with synthetic CU5501A input |
+| XaviX 2000 | `ttv_swj` | Playable | Maintainer-verified Japanese gameplay with synthetic CU5501A input |
 | XaviX 2 | `ban_naru` | Experimental | Title, menus, character selection, story path, and provisional PCM audio |
 
 The status terms and known limitations are defined in
@@ -105,8 +105,9 @@ XaviX 2 EEPROM and runtime states are not implemented in v0.2.0-alpha.
 
 - Optical input is a synthetic model based on observed firmware behaviour; it
   is not a cycle-accurate model of the original camera and reflector geometry.
-- `ban_omt`, `ttv_lotr`, `ttv_sw`, and `ttv_swj` are user-verified as
-  playable, but their synthetic optical controls are not hardware-perfect.
+- `ban_omt`, `ttv_lotr`, `ttv_sw`, and `ttv_swj` have been
+  maintainer-verified as playable, but their synthetic optical controls are
+  not hardware-perfect.
 - XaviX 2 still has unknown CPU behaviour, incomplete GPU coverage,
   provisional audio envelopes/filtering, incomplete gesture classification,
   and no persistence.
@@ -117,9 +118,10 @@ XaviX 2 EEPROM and runtime states are not implemented in v0.2.0-alpha.
 
 XaviXEmu began as a local investigation of `drgqst` against MAME revision
 `cf2d7a9be259552a3b493156e50e9149b6856448`. The standalone source was
-developed before it had its own Git repository. Its first public history will
-therefore be an honest initial import of that pre-Git development snapshot;
-no backdated or artificial commits will be created.
+developed before it had its own Git repository. Its first public commit was
+an honest initial import of that pre-Git development snapshot; no backdated
+or artificial commits were created. Subsequent development has continued
+through public commits, CI runs, and tagged releases.
 
 Development has been assisted by OpenAI Codex under human direction, review,
 and testing. OpenAI is acknowledged as a development tool, not named as a
