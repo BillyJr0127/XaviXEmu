@@ -622,7 +622,8 @@ void drgqst_core_set_mouse(drgqst_core *core, uint8_t x, uint8_t y,
 		return;
 	}
 	if (step_forward)
-		mode = XAVIX_SENSOR_STEP_FORWARD;
+		mode = core->game_profile == DRGQST_CORE_TTV_CU5501_24C02 ?
+			XAVIX_SENSOR_VERTICAL : XAVIX_SENSOR_STEP_FORWARD;
 	else if (broadside)
 		mode = XAVIX_SENSOR_BROADSIDE;
 	xavix_machine_set_sword_input(&core->machine, x, y, mode);

@@ -44,8 +44,8 @@ int main(void)
 	xavix2_audio_render(&audio, 96000);
 	frame = xavix2_audio_frame(&audio);
 	assert(frame[0] == 0 && frame[1] == 0);
-	assert(frame[2] == 64 * 255 && frame[3] == 64 * 128);
-	assert(frame[4] == 127 * 255 && frame[5] == 127 * 128);
+	assert(frame[2] == 64 * 255 / 2 && frame[3] == 64 * 128 / 2);
+	assert(frame[4] == 127 * 255 / 2 && frame[5] == 127 * 128 / 2);
 	assert(frame[6] == 0 && frame[7] == 0);
 	assert(xavix2_audio_status(&audio, 0) == 0);
 
@@ -62,9 +62,9 @@ int main(void)
 	assert(audio.voice[0].end_address == 0x23);
 	xavix2_audio_render(&audio, 96000);
 	frame = xavix2_audio_frame(&audio);
-	assert(frame[0] == 10 * 255);
-	assert(frame[2] == 20 * 255);
-	assert(frame[4] == 10 * 255);
+	assert(frame[0] == 10 * 255 / 2);
+	assert(frame[2] == 20 * 255 / 2);
+	assert(frame[4] == 10 * 255 / 2);
 	assert(xavix2_audio_status(&audio, 0) == 1);
 
 	xavix2_audio_command(&audio, 0xc0, descriptors, 0x4000, 7, 9);
@@ -74,8 +74,8 @@ int main(void)
 	assert(audio.voice[0].volume_right == 9);
 	xavix2_audio_render(&audio, 96000);
 	frame = xavix2_audio_frame(&audio);
-	assert(frame[0] == 10 * 7 && frame[1] == 10 * 9);
-	assert(frame[2] == 15 * 7 && frame[3] == 15 * 9);
+	assert(frame[0] == 10 * 7 / 2 && frame[1] == 10 * 9 / 2);
+	assert(frame[2] == 15 * 7 / 2 && frame[3] == 15 * 9 / 2);
 	xavix2_audio_command(&audio, 0x80, descriptors, 0, 0, 0);
 	assert(xavix2_audio_status(&audio, 0) == 0);
 
@@ -87,7 +87,7 @@ int main(void)
 	xavix2_audio_command(&audio, 0x40, descriptors, 0, 0, 0);
 	xavix2_audio_render(&audio, 192000);
 	frame = xavix2_audio_frame(&audio);
-	assert(frame[0] == 10 * 255);
+	assert(frame[0] == 10 * 255 / 2);
 	assert(frame[2] == 0);
 	assert(xavix2_audio_status(&audio, 0) == 0);
 

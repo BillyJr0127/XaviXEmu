@@ -137,6 +137,10 @@ static int test_internal_cursor_watch_profiles(void)
 		watch->last_address != UINT32_C(0xa14780) ||
 		watch->address_stride != 0x60)
 		goto done;
+	drgqst_core_set_mouse(core, 0x80, 0x80, 0, 1);
+	if (core->machine.state.peripherals.sensor.host_mode !=
+		XAVIX_SENSOR_VERTICAL)
+		goto done;
 
 	if (!drgqst_core_init_profile(core, rom, TEST_ROM_SIZE,
 		DRGQST_CORE_TTV_CU5501A_24C02))
@@ -148,6 +152,10 @@ static int test_internal_cursor_watch_profiles(void)
 		watch->second_first_address != UINT32_C(0xf01fe0) ||
 		watch->second_last_address != UINT32_C(0xf02160) ||
 		watch->second_address_stride != 0x80)
+		goto done;
+	drgqst_core_set_mouse(core, 0x80, 0x80, 0, 1);
+	if (core->machine.state.peripherals.sensor.host_mode !=
+		XAVIX_SENSOR_STEP_FORWARD)
 		goto done;
 
 	if (!drgqst_core_init_profile(core, rom, TEST_ROM_SIZE,

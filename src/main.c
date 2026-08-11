@@ -334,7 +334,6 @@ static int g_naruto_joined_hands;
 static unsigned g_naruto_execute_delay;
 static unsigned g_naruto_execute_frames;
 static int g_omt_backside;
-static unsigned g_lotr_fire_phase;
 static int g_ttv_spin_held;
 static unsigned g_ttv_spin_phase;
 static uint8_t g_ban_onep_menu_input;
@@ -794,15 +793,6 @@ static void update_core_mouse(void)
 {
 	if (!g_core)
 		return;
-	if (g_rom.kind == DRGQST_ROM_TTV_LOTR && g_lotr_fire_phase)
-	{
-		const unsigned step = g_lotr_fire_phase - 1;
-		const uint8_t y = (uint8_t)(0x20 + (0xbf * step + 5) / 11);
-		/* The Fire of Arnor lesson accepts a broad reflector travelling
-		 * vertically, matching the upright defensive sword gesture. */
-		drgqst_core_set_mouse(g_core, 0x80, y, 1, 0);
-		return;
-	}
 	drgqst_core_set_mouse(g_core, g_mouse_x, g_mouse_y,
 		g_left_button || (g_rom.kind == DRGQST_ROM_BAN_OMT &&
 			g_omt_backside),
@@ -827,8 +817,6 @@ static void update_core_mouse(void)
 
 static void advance_ttv_special_gesture(void)
 {
-	if (g_lotr_fire_phase && ++g_lotr_fire_phase > 12)
-		g_lotr_fire_phase = 0;
 	if (g_ttv_spin_held)
 		g_ttv_spin_phase = (g_ttv_spin_phase + 1) & 7;
 }
@@ -1073,6 +1061,7 @@ static void run_xavix2_frame(void)
 static void update_timing_diagnostics(HWND window, LONGLONG now)
 {
 	wchar_t title[256];
+	win_audio_stats audio_stats;
 	double elapsed;
 	double fps;
 	double core_ms;
@@ -1097,10 +1086,13 @@ static void update_timing_diagnostics(HWND window, LONGLONG now)
 		(double)(guest_cycles - g_timing_guest_cycles) / elapsed / 1000000.0 : 0.0;
 	irq_rate = g_xavix2 && elapsed > 0.0 ?
 		(double)(interrupts - g_timing_interrupts) / elapsed : 0.0;
+	win_audio_get_stats(&g_audio_output, &audio_stats);
 	swprintf(title, sizeof(title) / sizeof(title[0]),
-		L"XaviXEmu | %.1f FPS | %.2f ms/frame | dropped %llu | guest %.1f M/s | IRQ %.1f/s",
+		L"XaviXEmu | %.1f FPS | %.2f ms/frame | dropped %llu | guest %.1f M/s | IRQ %.1f/s | audio drop %llu / under %llu",
 		fps, core_ms, (unsigned long long)g_timing_dropped_frames,
-		guest_rate, irq_rate);
+		guest_rate, irq_rate,
+		(unsigned long long)audio_stats.dropped_frames,
+		(unsigned long long)audio_stats.underruns);
 	SetWindowTextW(window, title);
 	g_timing_window_counter = now;
 	g_timing_core_counter = 0;
@@ -1260,7 +1252,6 @@ static int load_runtime_state(HWND window)
 	g_ban_onep_menu_input = 0;
 	g_ban_onep_menu_input_frames = 0;
 	g_omt_backside = 0;
-	g_lotr_fire_phase = 0;
 	g_ttv_spin_held = 0;
 	g_ttv_spin_phase = 0;
 	g_naruto_joined_hands = 0;
@@ -1309,7 +1300,6 @@ static int activate_xavix2_rom(HWND window, drgqst_rom_image *image,
 	g_ban_onep_menu_input = 0;
 	g_ban_onep_menu_input_frames = 0;
 	g_omt_backside = 0;
-	g_lotr_fire_phase = 0;
 	g_ttv_spin_held = 0;
 	g_ttv_spin_phase = 0;
 	g_naruto_joined_hands = 0;
@@ -1380,7 +1370,6 @@ static int load_rom(HWND window, const wchar_t *path, int show_error)
 	g_ban_onep_menu_input = 0;
 	g_ban_onep_menu_input_frames = 0;
 	g_omt_backside = 0;
-	g_lotr_fire_phase = 0;
 	g_ttv_spin_held = 0;
 	g_ttv_spin_phase = 0;
 	g_naruto_joined_hands = 0;
@@ -1793,17 +1782,26 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT message,
 		break;
 
 	case WM_KEYDOWN:
+		if (wparam == VK_F10 && !(lparam & ((LPARAM)1 << 30)))
+		{
+			LARGE_INTEGER now;
+			g_timing_diagnostics = !g_timing_diagnostics;
+			QueryPerformanceCounter(&now);
+			g_timing_window_counter = now.QuadPart;
+			g_timing_core_counter = 0;
+			g_timing_frames = 0;
+			g_timing_dropped_frames = 0;
+			g_timing_guest_cycles = g_xavix2 ?
+				g_xavix2->cpu.total_cycles : 0;
+			g_timing_interrupts = g_xavix2 ?
+				g_xavix2->cpu.interrupt_count : 0;
+			if (!g_timing_diagnostics)
+				update_window_title(window);
+			return 0;
+		}
 		if (wparam == VK_SPACE && g_xavix2)
 		{
 			g_naruto_joined_hands = 1;
-			return 0;
-		}
-		if (wparam == VK_SPACE && g_core &&
-			g_rom.kind == DRGQST_ROM_TTV_LOTR)
-		{
-			if (!(lparam & ((LPARAM)1 << 30)))
-				g_lotr_fire_phase = 1;
-			update_core_mouse();
 			return 0;
 		}
 		if (wparam == VK_SPACE && g_core &&

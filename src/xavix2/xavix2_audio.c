@@ -247,6 +247,11 @@ void xavix2_audio_render(xavix2_audio *audio, uint32_t engine_rate)
 				XAVIX2_AUDIO_OUTPUT_RATE;
 			advance_voice(audio, voice, step);
 		}
+		/* The channel accumulator has more headroom than the final DAC.  Keep
+		 * one guard bit before conversion so ordinary polyphonic passages do
+		 * not hard-clip when several firmware voices overlap. */
+		left /= 2;
+		right /= 2;
 		audio->frame[frame * 2] = clamp16(left);
 		audio->frame[frame * 2 + 1] = clamp16(right);
 	}

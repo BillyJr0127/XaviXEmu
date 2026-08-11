@@ -300,3 +300,13 @@ terminator skipped by a two-byte step.  Overall music/event pacing, stale
 voices during menu transitions, exact envelopes, filtering, and opcode `$ff`
 remain separate research milestones rather than being hidden behind another
 global playback multiplier.
+
+Follow-up validation confirmed that Q16 gives normal voice pitch while the
+game still feels slow and polyphonic menu passages retain audible noise.  A
+30-second automated title-to-character-select capture reached the signed
+16-bit output rails during ordinary music, proving that the provisional mixer
+had no accumulator headroom.  The output conversion now preserves one guard
+bit before saturation.  This changes neither source pitch nor firmware event
+timing.  F10 exposes live FPS, guest byte-cycles, dropped frames, and WinMM
+drop/underrun counters so host scheduling can be separated from guest timing
+on the user's machine before any clock change is considered.

@@ -79,21 +79,23 @@ blue target is now drawn only on frames where those sprites are absent.
 
 ## Broad vertical and rotating-reflection gestures
 
-- Observed symptom: LOTR's Fire of Arnor lesson rejected the stationary square
-  broadside model, and the on-screen defensive sword remained at the ordinary
-  diagonal pose.
+- Observed symptom: LOTR's right-mouse defense used a square large-reflection
+  model, and the game rendered the sword at its ordinary diagonal pose rather
+  than the upright defensive pose needed to prepare Fire of Arnor.
 - PC/address: the supplied runtime checkpoint idles around `$003c78-$003c89`;
   the recognized camera data is produced by the existing `$7b81/$7b80` scan.
 - I/O/register: the CU5501 reflected image and its host X/Y trajectory.
-- Hypothesis: the lesson classifies a broad sword face travelling vertically,
-  not a stationary button state.
-- Experiment: restore the checkpoint before every trial and repeat each of the
-  eight cardinal/diagonal trajectories with a 5-by-5 broad reflection.
-- Result: the vertical downward trajectory cleared the instruction text within
-  12 frames and reached the next courtyard scene; a stationary broad reflection
-  did not. Space now emits that same 12-frame camera-space trajectory.
-- Code changed: Win32 input sequencing only; no firmware PC or status value is
-  patched.
+- Hypothesis: defense is the stationary elongated reflection of the sword's
+  broad face held vertically; it is an orientation, not a vertical attack.
+- Experiment: the supplied checkpoint showed that a downward broad trajectory
+  can clear the card, but user gameplay validation identified that as the wrong
+  action: it is a slash rather than the required defensive posture. Replace
+  LOTR's right-mouse square with a centered 5-by-13 upright reflection while
+  leaving ordinary attack trajectories unchanged.
+- Result: the incorrect automatic Space-key slash has been removed. The new
+  right-mouse posture awaits direct visual confirmation in the gameplay scene.
+- Code changed: LOTR's synthetic right-mouse reflection geometry only; no
+  firmware PC or status value is patched.
 
 - Observed symptom: `ttv_swj` asked the player to point the lightsaber at the
   sensor and spin it, but moving the existing small reflector around a circle

@@ -18,6 +18,9 @@ semantic versioning while experimental releases carry a pre-release suffix.
   voices.  A spectrum comparison against a short real-hardware reference
   confirms a 1.00 pitch ratio for Q16; the experimental Q15 conversion was
   both too fast and at the wrong frequency.
+- Preserve one accumulator guard bit before XaviX 2 PCM output conversion,
+  preventing ordinary polyphonic passages from hard-clipping while retaining
+  the firmware-derived pitch and relative channel volumes.
 - Show the blue host target in LOTR and Star Wars scenes that do not provide a
   game-owned cursor, while suppressing it when the verified cursor sprites are
   visible.
@@ -32,9 +35,11 @@ semantic versioning while experimental releases carry a pre-release suffix.
 
 - Opt-in XaviX 2 WAV capture and per-frame hit/audio diagnostics in the
   ROM-dependent boot probe.
-- Map Space to LOTR's evidenced broad vertical Fire gesture and, while held,
-  to the rotating elongated-reflection gesture accepted by the Star Wars
-  lightsaber spin tutorial.
+- Add an F10 runtime timing display with FPS, guest CPU rate, dropped frames,
+  and audio delivery counters for diagnosing host-dependent slowdown.
+- Model LOTR right-mouse defense as a stationary upright broad reflection, and
+  map held Space to the rotating elongated-reflection gesture accepted by the
+  Star Wars lightsaber spin tutorial.
 
 ## 0.1.0-alpha - 2026-08-10
 
