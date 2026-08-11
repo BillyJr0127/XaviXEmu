@@ -3,9 +3,9 @@
 All notable public changes will be documented in this file. The project uses
 semantic versioning while experimental releases carry a pre-release suffix.
 
-## 0.1.0-alpha - Unreleased
+## 0.1.0-alpha - 2026-08-10
 
-Initial planned public source release, imported from the real pre-Git local
+Initial public source release, imported from the real pre-Git local
 development snapshot.
 
 ### Added

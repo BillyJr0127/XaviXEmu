@@ -1,12 +1,14 @@
 # XaviXEmu
 
+[![Windows CI](https://github.com/BillyJr0127/XaviXEmu/actions/workflows/windows-ci.yml/badge.svg?branch=main)](https://github.com/BillyJr0127/XaviXEmu/actions/workflows/windows-ci.yml)
+
 XaviXEmu is an experimental, open-source Windows emulator for selected XaviX
 2000 and XaviX 2 television games. The project focuses on documented hardware
 behaviour, motion-input emulation, reproducible tests, and preservation of
 research for systems whose original optical accessories are difficult to use
 on modern displays.
 
-The first planned public release is **v0.1.0-alpha**. The project is not a
+The first public release is **v0.1.0-alpha**. The project is not a
 general-purpose XaviX emulator and does not claim cycle-accurate optical
 sensor emulation.
 
