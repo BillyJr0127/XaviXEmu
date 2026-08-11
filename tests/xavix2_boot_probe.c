@@ -1083,6 +1083,8 @@ int main(int argc, char **argv)
 	unsigned video_autofire_end = UINT_MAX;
 	unsigned video_autofire_period = 0;
 	unsigned video_defense_at = UINT_MAX;
+	unsigned video_trace_at = UINT_MAX;
+	unsigned video_trace_period = 1;
 	int release_unknown_poll = 0;
 	int pulse_irq = 0;
 	int fine_trace_started = 0;
@@ -1204,6 +1206,9 @@ int main(int argc, char **argv)
 		const char *video_autofire_period_text =
 			getenv("XAVIX2_VIDEO_AUTOFIRE_PERIOD");
 		const char *video_defense_at_text = getenv("XAVIX2_VIDEO_DEFENSE_AT");
+		const char *video_trace_at_text = getenv("XAVIX2_VIDEO_TRACE_AT");
+		const char *video_trace_period_text =
+			getenv("XAVIX2_VIDEO_TRACE_PERIOD");
 		if (input) pending_input = (uint32_t)strtoul(input, NULL, 0);
 		if (at) input_at = _strtoui64(at, NULL, 0);
 		if (release_at) input_release_at = _strtoui64(release_at, NULL, 0);
@@ -1387,6 +1392,15 @@ int main(int argc, char **argv)
 		if (video_defense_at_text)
 			video_defense_at = (unsigned)strtoul(video_defense_at_text,
 				NULL, 0);
+		if (video_trace_at_text)
+			video_trace_at = (unsigned)strtoul(video_trace_at_text, NULL, 0);
+		if (video_trace_period_text)
+		{
+			video_trace_period = (unsigned)strtoul(video_trace_period_text,
+				NULL, 0);
+			if (!video_trace_period)
+				video_trace_period = 1;
+		}
 		if (sensor_packet_text)
 		{
 			if (!parse_sensor_packet(sensor_packet_text, sensor_packet))
@@ -1486,6 +1500,19 @@ int main(int argc, char **argv)
 				pending_input : 0;
 			(void)xavix2_machine_run_video_frame(machine,
 				frame_packet, frame_input);
+			if (frame >= video_trace_at &&
+				(frame - video_trace_at) % video_trace_period == 0)
+			{
+				printf("video_frame=%u hardware_frame=%" PRIu64
+					" byte_cycles=%" PRIu64 " instructions=%" PRIu64
+					" interrupts=%" PRIu64 " pc=%08" PRIX32
+					" hash=%016" PRIX64 "\n",
+					frame + 1, machine->frame_count,
+					machine->cpu.total_cycles,
+					machine->cpu.total_instructions,
+					machine->cpu.interrupt_count, machine->cpu.pc,
+					frame_hash(machine));
+			}
 		}
 		completed = machine->cpu.total_cycles;
 		requested = completed;

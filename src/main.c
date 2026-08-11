@@ -310,14 +310,21 @@ static int g_stretch_4_3 = 1;
 static int g_window_scale = DEFAULT_SCALE;
 static WINDOWPLACEMENT g_windowed_placement;
 static LONG_PTR g_windowed_style;
-static HDC g_backbuffer_dc;
-static HBITMAP g_backbuffer_bitmap;
-static HGDIOBJ g_backbuffer_old_bitmap;
-static int g_backbuffer_width;
-static int g_backbuffer_height;
+static HDC g_capture_dc;
+static HBITMAP g_capture_bitmap;
+static HGDIOBJ g_capture_old_bitmap;
+static int g_capture_width;
+static int g_capture_height;
 static LARGE_INTEGER g_counter_frequency;
 static LONGLONG g_next_frame_counter;
 static LONGLONG g_frame_counter_step;
+static int g_timing_diagnostics;
+static LONGLONG g_timing_window_counter;
+static LONGLONG g_timing_core_counter;
+static uint64_t g_timing_frames;
+static uint64_t g_timing_dropped_frames;
+static uint64_t g_timing_guest_cycles;
+static uint64_t g_timing_interrupts;
 static uint8_t g_mouse_x = 0x80;
 static uint8_t g_mouse_y = 0x80;
 static drgqst_cursor_presentation g_cursor_presentation;
@@ -763,6 +770,14 @@ static void start_frame_clock(HWND window)
 	if (g_frame_counter_step < 1)
 		g_frame_counter_step = 1;
 	g_next_frame_counter = now.QuadPart;
+	g_timing_window_counter = now.QuadPart;
+	g_timing_core_counter = 0;
+	g_timing_frames = 0;
+	g_timing_dropped_frames = 0;
+	g_timing_guest_cycles = g_xavix2 ?
+		g_xavix2->cpu.total_cycles : 0;
+	g_timing_interrupts = g_xavix2 ?
+		g_xavix2->cpu.interrupt_count : 0;
 	SetTimer(window, ID_EMULATION_TIMER, 1, NULL);
 }
 
@@ -1018,9 +1033,51 @@ static void run_xavix2_frame(void)
 	g_frame_stride = stride;
 }
 
+static void update_timing_diagnostics(HWND window, LONGLONG now)
+{
+	wchar_t title[256];
+	double elapsed;
+	double fps;
+	double core_ms;
+	double guest_rate;
+	double irq_rate;
+	uint64_t guest_cycles;
+	uint64_t interrupts;
+
+	if (!g_timing_diagnostics || !emulator_loaded() ||
+		!g_counter_frequency.QuadPart ||
+		now - g_timing_window_counter < g_counter_frequency.QuadPart)
+		return;
+	elapsed = (double)(now - g_timing_window_counter) /
+		(double)g_counter_frequency.QuadPart;
+	fps = elapsed > 0.0 ? (double)g_timing_frames / elapsed : 0.0;
+	core_ms = g_timing_frames ?
+		(double)g_timing_core_counter * 1000.0 /
+		((double)g_counter_frequency.QuadPart * (double)g_timing_frames) : 0.0;
+	guest_cycles = g_xavix2 ? g_xavix2->cpu.total_cycles : 0;
+	interrupts = g_xavix2 ? g_xavix2->cpu.interrupt_count : 0;
+	guest_rate = g_xavix2 && elapsed > 0.0 ?
+		(double)(guest_cycles - g_timing_guest_cycles) / elapsed / 1000000.0 : 0.0;
+	irq_rate = g_xavix2 && elapsed > 0.0 ?
+		(double)(interrupts - g_timing_interrupts) / elapsed : 0.0;
+	swprintf(title, sizeof(title) / sizeof(title[0]),
+		L"XaviXEmu | %.1f FPS | %.2f ms/frame | dropped %llu | guest %.1f M/s | IRQ %.1f/s",
+		fps, core_ms, (unsigned long long)g_timing_dropped_frames,
+		guest_rate, irq_rate);
+	SetWindowTextW(window, title);
+	g_timing_window_counter = now;
+	g_timing_core_counter = 0;
+	g_timing_frames = 0;
+	g_timing_dropped_frames = 0;
+	g_timing_guest_cycles = guest_cycles;
+	g_timing_interrupts = interrupts;
+}
+
 static void run_due_frames(HWND window)
 {
 	LARGE_INTEGER now;
+	LARGE_INTEGER frame_start;
+	LARGE_INTEGER frame_end;
 	unsigned frames = 0;
 
 	if (!emulator_loaded())
@@ -1028,6 +1085,7 @@ static void run_due_frames(HWND window)
 	QueryPerformanceCounter(&now);
 	while (now.QuadPart >= g_next_frame_counter && frames < 3)
 	{
+		QueryPerformanceCounter(&frame_start);
 		if (g_xavix2)
 			run_xavix2_frame();
 		else
@@ -1041,11 +1099,21 @@ static void run_due_frames(HWND window)
 				DRGQST_AUDIO_FRAMES_PER_VIDEO_FRAME);
 			poll_persistent_eeprom(window);
 		}
+		QueryPerformanceCounter(&frame_end);
+		g_timing_core_counter += frame_end.QuadPart - frame_start.QuadPart;
+		g_timing_frames++;
 		g_next_frame_counter += g_frame_counter_step;
 		++frames;
 	}
+	QueryPerformanceCounter(&now);
 	if (frames == 3 && now.QuadPart >= g_next_frame_counter)
+	{
+		g_timing_dropped_frames += 1 +
+			(uint64_t)((now.QuadPart - g_next_frame_counter) /
+			g_frame_counter_step);
 		g_next_frame_counter = now.QuadPart + g_frame_counter_step;
+	}
+	update_timing_diagnostics(window, now.QuadPart);
 	if (frames)
 		InvalidateRect(window, NULL, FALSE);
 }
@@ -1372,22 +1440,90 @@ static void draw_mouse_target(HDC device, const display_viewport *viewport)
 	DeleteObject(pen);
 }
 
-static void release_backbuffer(void)
+static void fill_letterbox(HDC device, const RECT *client,
+	const display_viewport *viewport)
 {
-	if (g_backbuffer_dc && g_backbuffer_old_bitmap)
-		SelectObject(g_backbuffer_dc, g_backbuffer_old_bitmap);
-	if (g_backbuffer_bitmap)
-		DeleteObject(g_backbuffer_bitmap);
-	if (g_backbuffer_dc)
-		DeleteDC(g_backbuffer_dc);
-	g_backbuffer_dc = NULL;
-	g_backbuffer_bitmap = NULL;
-	g_backbuffer_old_bitmap = NULL;
-	g_backbuffer_width = 0;
-	g_backbuffer_height = 0;
+	RECT bar;
+	HBRUSH black = (HBRUSH)GetStockObject(BLACK_BRUSH);
+
+	if (viewport->y > client->top)
+	{
+		SetRect(&bar, client->left, client->top,
+			client->right, viewport->y);
+		FillRect(device, &bar, black);
+	}
+	if (viewport->y + viewport->height < client->bottom)
+	{
+		SetRect(&bar, client->left, viewport->y + viewport->height,
+			client->right, client->bottom);
+		FillRect(device, &bar, black);
+	}
+	if (viewport->x > client->left)
+	{
+		SetRect(&bar, client->left, viewport->y,
+			viewport->x, viewport->y + viewport->height);
+		FillRect(device, &bar, black);
+	}
+	if (viewport->x + viewport->width < client->right)
+	{
+		SetRect(&bar, viewport->x + viewport->width, viewport->y,
+			client->right, viewport->y + viewport->height);
+		FillRect(device, &bar, black);
+	}
 }
 
-static int ensure_backbuffer(HDC device, int width, int height)
+static int render_display(HDC device, const RECT *client,
+	const display_viewport *viewport)
+{
+	BITMAPINFO bitmap;
+	int result;
+
+	fill_letterbox(device, client, viewport);
+	memset(&bitmap, 0, sizeof(bitmap));
+	bitmap.bmiHeader.biSize = sizeof(bitmap.bmiHeader);
+	bitmap.bmiHeader.biWidth = (LONG)g_frame_stride;
+	bitmap.bmiHeader.biHeight = -(LONG)g_frame_height;
+	bitmap.bmiHeader.biPlanes = 1;
+	bitmap.bmiHeader.biBitCount = 32;
+	bitmap.bmiHeader.biCompression = BI_RGB;
+
+	SetStretchBltMode(device, COLORONCOLOR);
+	result = StretchDIBits(device,
+		viewport->x, viewport->y, viewport->width, viewport->height,
+		0, 0, (int)g_frame_width, (int)g_frame_height,
+		g_framebuffer, &bitmap, DIB_RGB_COLORS, SRCCOPY);
+	draw_mouse_target(device, viewport);
+	return result != 0 && (DWORD)result != GDI_ERROR;
+}
+
+static void paint_window(HWND window)
+{
+	PAINTSTRUCT paint;
+	HDC device = BeginPaint(window, &paint);
+	RECT client;
+	display_viewport viewport = calculate_viewport(window);
+
+	GetClientRect(window, &client);
+	(void)render_display(device, &client, &viewport);
+	EndPaint(window, &paint);
+}
+
+static void release_capture_surface(void)
+{
+	if (g_capture_dc && g_capture_old_bitmap)
+		SelectObject(g_capture_dc, g_capture_old_bitmap);
+	if (g_capture_bitmap)
+		DeleteObject(g_capture_bitmap);
+	if (g_capture_dc)
+		DeleteDC(g_capture_dc);
+	g_capture_dc = NULL;
+	g_capture_bitmap = NULL;
+	g_capture_old_bitmap = NULL;
+	g_capture_width = 0;
+	g_capture_height = 0;
+}
+
+static int ensure_capture_surface(HDC device, int width, int height)
 {
 	HBITMAP bitmap;
 	HDC memory;
@@ -1395,10 +1531,10 @@ static int ensure_backbuffer(HDC device, int width, int height)
 
 	if (width <= 0 || height <= 0)
 		return 0;
-	if (g_backbuffer_dc && g_backbuffer_width == width &&
-		g_backbuffer_height == height)
+	if (g_capture_dc && g_capture_width == width &&
+		g_capture_height == height)
 		return 1;
-	release_backbuffer();
+	release_capture_surface();
 	memory = CreateCompatibleDC(device);
 	if (!memory)
 		return 0;
@@ -1415,49 +1551,12 @@ static int ensure_backbuffer(HDC device, int width, int height)
 		DeleteDC(memory);
 		return 0;
 	}
-	g_backbuffer_dc = memory;
-	g_backbuffer_bitmap = bitmap;
-	g_backbuffer_old_bitmap = old_bitmap;
-	g_backbuffer_width = width;
-	g_backbuffer_height = height;
+	g_capture_dc = memory;
+	g_capture_bitmap = bitmap;
+	g_capture_old_bitmap = old_bitmap;
+	g_capture_width = width;
+	g_capture_height = height;
 	return 1;
-}
-
-static void paint_window(HWND window)
-{
-	PAINTSTRUCT paint;
-	HDC device = BeginPaint(window, &paint);
-	HDC target = device;
-	RECT client;
-	BITMAPINFO bitmap;
-	display_viewport viewport = calculate_viewport(window);
-	int client_width;
-	int client_height;
-
-	GetClientRect(window, &client);
-	client_width = client.right - client.left;
-	client_height = client.bottom - client.top;
-	if (ensure_backbuffer(device, client_width, client_height))
-		target = g_backbuffer_dc;
-	FillRect(target, &client, (HBRUSH)GetStockObject(BLACK_BRUSH));
-	memset(&bitmap, 0, sizeof(bitmap));
-	bitmap.bmiHeader.biSize = sizeof(bitmap.bmiHeader);
-	bitmap.bmiHeader.biWidth = (LONG)g_frame_stride;
-	bitmap.bmiHeader.biHeight = -(LONG)g_frame_height;
-	bitmap.bmiHeader.biPlanes = 1;
-	bitmap.bmiHeader.biBitCount = 32;
-	bitmap.bmiHeader.biCompression = BI_RGB;
-
-	SetStretchBltMode(target, COLORONCOLOR);
-	StretchDIBits(target,
-		viewport.x, viewport.y, viewport.width, viewport.height,
-		0, 0, (int)g_frame_width, (int)g_frame_height,
-		g_framebuffer, &bitmap, DIB_RGB_COLORS, SRCCOPY);
-	draw_mouse_target(target, &viewport);
-	if (target != device)
-		BitBlt(device, 0, 0, client_width, client_height,
-			target, 0, 0, SRCCOPY);
-	EndPaint(window, &paint);
 }
 
 static void capture_screenshot(HWND window)
@@ -1465,28 +1564,42 @@ static void capture_screenshot(HWND window)
 	const interface_strings *text = interface_text();
 	display_viewport viewport;
 	RECT source_rectangle;
+	RECT client;
+	HDC device = NULL;
 	wchar_t error[384];
 	wchar_t message[768];
 
 	if (!emulator_loaded())
 		return;
-	if (!RedrawWindow(window, NULL, NULL,
-		RDW_INVALIDATE | RDW_UPDATENOW) || !g_backbuffer_dc)
+	GetClientRect(window, &client);
+	device = GetDC(window);
+	if (!device || !ensure_capture_surface(device,
+		client.right - client.left, client.bottom - client.top))
 	{
-		lstrcpyW(error, L"The display backbuffer is not available.");
+		if (device)
+			ReleaseDC(window, device);
+		lstrcpyW(error, L"The screenshot surface is not available.");
 		goto failure;
 	}
+	ReleaseDC(window, device);
+	device = NULL;
 	viewport = calculate_viewport(window);
+	if (!render_display(g_capture_dc, &client, &viewport))
+	{
+		lstrcpyW(error, L"The current frame could not be rendered for capture.");
+		goto failure;
+	}
+	GdiFlush();
 	SetRect(&source_rectangle, viewport.x, viewport.y,
 		viewport.x + viewport.width, viewport.y + viewport.height);
 	if (source_rectangle.left < 0 || source_rectangle.top < 0 ||
-		source_rectangle.right > g_backbuffer_width ||
-		source_rectangle.bottom > g_backbuffer_height)
+		source_rectangle.right > g_capture_width ||
+		source_rectangle.bottom > g_capture_height)
 	{
-		lstrcpyW(error, L"The display viewport is outside the backbuffer.");
+		lstrcpyW(error, L"The display viewport is outside the screenshot surface.");
 		goto failure;
 	}
-	if (!xavix_screenshot_save_png(g_backbuffer_dc, &source_rectangle,
+	if (!xavix_screenshot_save_png(g_capture_dc, &source_rectangle,
 		g_executable_directory, NULL, 0, error,
 		sizeof(error) / sizeof(error[0])))
 		goto failure;
@@ -1735,7 +1848,7 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT message,
 		stop_frame_clock(window);
 		save_persistent_eeprom(window, 1);
 		win_audio_shutdown(&g_audio_output);
-		release_backbuffer();
+		release_capture_surface();
 		timeEndPeriod(1);
 		free(g_core);
 		g_core = NULL;
@@ -1765,6 +1878,13 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous_instance,
 
 	(void)previous_instance;
 	(void)command_line;
+	{
+		wchar_t timing_value[8];
+		DWORD timing_length = GetEnvironmentVariableW(L"XAVIXEMU_TIMING",
+			timing_value, sizeof(timing_value) / sizeof(timing_value[0]));
+		g_timing_diagnostics = timing_length &&
+			!(timing_length == 1 && timing_value[0] == L'0');
+	}
 	win_audio_init(&g_audio_output);
 	arguments = CommandLineToArgvW(GetCommandLineW(), &argument_count);
 	if (arguments && argument_count >= 3 &&

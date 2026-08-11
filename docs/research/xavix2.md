@@ -210,6 +210,33 @@ so the GUI crops that area before applying its optional 4:3 presentation.
   audio output.  Envelope behavior and exact hardware filtering remain
   provisional and should be calibrated against the hidden sound test.
 
-Opcode `$ff`, gameplay gesture classification, sound, EEPROM persistence, and
-save states remain later milestones; XaviX 2 support is therefore experimental
-rather than claimed complete.
+## Enlarged-window timing
+
+- Observed symptom: `ban_naru` played visibly slower in a maximized window than
+  in the reference hardware recording, despite the host completing a headless
+  600-frame run substantially faster than real time.
+- Timing involved: the guest is paced at 60 video frames per second and about
+  98 million byte-cycles per second.  The former paint path scaled every frame
+  into a client-sized compatible bitmap and then copied that entire enlarged
+  bitmap to the window.
+- Hypothesis: the duplicate full-window GDI work was starving the emulator's
+  timer rather than the emulated CPU clock being too low.
+- Experiment: enable the opt-in `XAVIXEMU_TIMING=1` window-title counters and
+  compare minimized and maximized runs.  Before the display change, minimized
+  operation held 60.0 FPS and 98.0 Mbyte-cycles/s, while maximized operation
+  fell to 42.0 FPS, 68.6 Mbyte-cycles/s, and dropped 18 frames per measurement
+  interval.  Draw the nearest-neighbor framebuffer directly to the window DC,
+  clearing only letterbox bars; allocate the old-style compatible surface only
+  when F8 needs a screenshot.
+- Result: the maximized run now holds approximately 60 FPS, 98 Mbyte-cycles/s,
+  and zero dropped frames; an Alt+Enter full-screen run measured 60.0 FPS,
+  98.0 Mbyte-cycles/s, and zero drops.  F8 still captures the current scaled
+  viewport, and the normal paint path no longer performs a second full-size
+  copy.
+- Code changed: `src/main.c` display painting, on-demand screenshot capture,
+  and opt-in timing diagnostics.  No guest clock, opcode, interrupt, or
+  game-specific timing hack was changed.
+
+Opcode `$ff`, gameplay gesture classification, exact audio envelopes and
+filtering, EEPROM persistence, and save states remain later milestones; XaviX 2
+support is therefore experimental rather than claimed complete.
