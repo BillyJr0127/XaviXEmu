@@ -1,0 +1,100 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Billy Jr. and contributors
+
+#ifndef DRGQST_PLAYER_PERSISTENCE_H
+#define DRGQST_PLAYER_PERSISTENCE_H
+
+#include <stddef.h>
+#include <stdint.h>
+#include <wchar.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+enum
+{
+	DRGQST_PERSISTENCE_ROM_SHA1_SIZE = 20,
+	DRGQST_PERSISTENCE_EEPROM_SIZE = 1024,
+	DRGQST_PERSISTENCE_HEADER_SIZE = 40,
+	DRGQST_PERSISTENCE_MAX_STATE_SIZE = 128 * 1024 * 1024
+};
+
+enum drgqst_persistence_kind
+{
+	DRGQST_PERSISTENCE_EEPROM = 1,
+	DRGQST_PERSISTENCE_RUNTIME_STATE = 2,
+	DRGQST_PERSISTENCE_BAN_ONEP_EEPROM = 3,
+	DRGQST_PERSISTENCE_BAN_ONEP_RUNTIME_STATE = 4,
+	DRGQST_PERSISTENCE_BAN_OMT_EEPROM = 5,
+	DRGQST_PERSISTENCE_BAN_OMT_RUNTIME_STATE = 6,
+	DRGQST_PERSISTENCE_TTV_LOTR_EEPROM = 7,
+	DRGQST_PERSISTENCE_TTV_LOTR_RUNTIME_STATE = 8,
+	DRGQST_PERSISTENCE_TTV_SW_EEPROM = 9,
+	DRGQST_PERSISTENCE_TTV_SW_RUNTIME_STATE = 10,
+	DRGQST_PERSISTENCE_TTV_SWJ_EEPROM = 11,
+	DRGQST_PERSISTENCE_TTV_SWJ_RUNTIME_STATE = 12
+};
+
+/*
+ * On-disk header (40 bytes, little-endian integers):
+ *   0  magic "DRGQSAVE"         8  version u16
+ *  10  kind u16                 12  ROM SHA-1[20]
+ *  32  payload size u32         36  payload CRC32 u32
+ */
+
+/*
+ * directory_override is a test/integration injection point.  When it is
+ * NULL, files live under %LOCALAPPDATA%\DrgqstPlayer for compatibility with
+ * older releases.  A non-NULL value is used as the exact directory, allowing
+ * the application to place files beside its executable.  Paths must fit the
+ * target's standard Win32 MAX_PATH configuration.
+ */
+int drgqst_persistence_get_directory(
+	const wchar_t *directory_override,
+	wchar_t *output,
+	size_t output_length,
+	wchar_t *error,
+	size_t error_length);
+
+int drgqst_persistence_get_path(
+	const wchar_t *directory_override,
+	enum drgqst_persistence_kind kind,
+	wchar_t *output,
+	size_t output_length,
+	wchar_t *error,
+	size_t error_length);
+
+/*
+ * Save accepts an opaque caller-owned blob.  EEPROM payloads must be exactly
+ * 1024 bytes; runtime states are opaque and independent of core structures.
+ */
+int drgqst_persistence_save(
+	const wchar_t *directory_override,
+	enum drgqst_persistence_kind kind,
+	const uint8_t rom_sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE],
+	const void *payload,
+	size_t payload_size,
+	wchar_t *error,
+	size_t error_length);
+
+/*
+ * Load reads into private memory, validates the complete header, ROM SHA-1,
+ * exact file size and CRC32, and only then copies into the caller's buffer.
+ * On failure payload and payload_size are left untouched/zero respectively.
+ */
+int drgqst_persistence_load(
+	const wchar_t *directory_override,
+	enum drgqst_persistence_kind kind,
+	const uint8_t rom_sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE],
+	void *payload,
+	size_t payload_capacity,
+	size_t *payload_size,
+	wchar_t *error,
+	size_t error_length);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif

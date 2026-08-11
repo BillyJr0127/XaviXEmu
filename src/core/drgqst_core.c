@@ -1,0 +1,599 @@
+/*
+ * SPDX-License-Identifier: BSD-3-Clause
+ * Copyright (c) 2026 Billy Jr. and contributors
+ *
+ * Wiring for the game-focused SSD 2000 CPU, XaviX bus and video renderer.
+ */
+#include "drgqst_core.h"
+
+#include <string.h>
+
+static void sync_frame_audio(drgqst_core *core, uint32_t elapsed_cycles);
+
+static uint8_t cpu_read(void *opaque, xavix_cpu_bus_t bus, uint32_t address)
+{
+	xavix_machine *machine = (xavix_machine *)opaque;
+	switch (bus)
+	{
+	case XAVIX_CPU_BUS_LOW:
+		return xavix_machine_read_low(machine, (uint16_t)address);
+	case XAVIX_CPU_BUS_VECTOR:
+		return xavix_machine_read_vector(machine, (uint16_t)address);
+	case XAVIX_CPU_BUS_EXTERNAL:
+	default:
+		return xavix_machine_read_external(machine, address);
+	}
+}
+
+static void cpu_write(void *opaque, xavix_cpu_bus_t bus, uint32_t address, uint8_t data)
+{
+	xavix_machine *machine = (xavix_machine *)opaque;
+	if (bus == XAVIX_CPU_BUS_LOW)
+		xavix_machine_write_low(machine, (uint16_t)address, data);
+	else if (bus == XAVIX_CPU_BUS_EXTERNAL)
+		xavix_machine_write_external(machine, address, data);
+}
+
+static uint8_t video_read(void *opaque, uint32_t address)
+{
+	return xavix_machine_read_full((const xavix_machine *)opaque, address);
+}
+
+static uint8_t audio_register_read(void *opaque, uint16_t address)
+{
+	drgqst_core *core = (drgqst_core *)opaque;
+	return address < XAVIX_MAIN_RAM_SIZE ?
+		core->machine.state.main_ram[address] : 0xff;
+}
+
+static void audio_register_write(void *opaque, uint16_t address, uint8_t data)
+{
+	drgqst_core *core = (drgqst_core *)opaque;
+	if (address < XAVIX_MAIN_RAM_SIZE)
+		core->machine.state.main_ram[address] = data;
+}
+
+static uint8_t audio_program_read(void *opaque, uint32_t address)
+{
+	drgqst_core *core = (drgqst_core *)opaque;
+	return xavix_machine_read_full(&core->machine, address);
+}
+
+static xavix_audio_bus audio_bus(drgqst_core *core)
+{
+	xavix_audio_bus bus;
+	bus.read_register_byte = audio_register_read;
+	bus.write_register_byte = audio_register_write;
+	bus.read_program_byte = audio_program_read;
+	bus.context = core;
+	return bus;
+}
+
+static void sync_audio_irq(drgqst_core *core)
+{
+	xavix_machine_state *state = &core->machine.state;
+	state->sound_irq_status = core->audio.irq_status;
+	if (xavix_audio_irq_pending(&core->audio))
+		state->irq_source |= 0x80;
+	else
+		state->irq_source &= (uint8_t)~0x80;
+	state->irq_asserted = state->irq_source != 0;
+}
+
+static uint8_t sound_read(void *opaque, unsigned offset)
+{
+	drgqst_core *core = (drgqst_core *)opaque;
+	xavix_audio_bus bus = audio_bus(core);
+	sync_frame_audio(core, core->machine.state.frame_cycles);
+	uint8_t value = xavix_audio_read(&core->audio, &bus, offset);
+	sync_audio_irq(core);
+	return value;
+}
+
+static void sound_write(void *opaque, unsigned offset, uint8_t data)
+{
+	drgqst_core *core = (drgqst_core *)opaque;
+	xavix_audio_bus bus = audio_bus(core);
+	sync_frame_audio(core, core->machine.state.frame_cycles);
+	xavix_audio_write(&core->audio, &bus, offset, data);
+	if (offset == XAVIX_AUDIO_REGISTER_PAGE)
+		core->machine.state.sound_regbase = core->audio.register_page;
+	sync_audio_irq(core);
+}
+
+static uint8_t ban_onep_io1_read(void *opaque, uint8_t direction)
+{
+	static const uint8_t phase_bits[4] = { 0x00, 0x02, 0x06, 0x04 };
+	drgqst_core *core = (drgqst_core *)opaque;
+	uint8_t input = core->machine.state.input1 & (uint8_t)~0x0e;
+	(void)direction;
+	if (xavix_eeprom24c08_read_sda(&core->machine.state.peripherals.eeprom))
+		input |= 0x08;
+	input |= phase_bits[core->ban_onep_sync_phase & 3];
+	if (++core->ban_onep_sync_divider >= core->ban_onep_sync_period)
+	{
+		core->ban_onep_sync_divider = 0;
+		core->ban_onep_sync_phase = (core->ban_onep_sync_phase + 1) & 3;
+	}
+	return input;
+}
+
+static unsigned ban_onep_punch_progress(uint8_t phase)
+{
+	if (!phase || phase >= 19)
+		return 0;
+	if (phase <= 4)
+		return 0;
+	if (phase <= 9)
+		return (unsigned)(phase - 4) * 255U / 5U;
+	if (phase <= 12)
+		return 255;
+	return (unsigned)(19 - phase) * 255U / 7U;
+}
+
+static void ban_onep_hand_position(const drgqst_core *core, unsigned hand,
+	int *x, int *y, int *radius)
+{
+	const int base_x = hand ? 23 : 8;
+	const int base_y = 27;
+	const uint8_t phase = hand ? core->ban_onep_right_punch :
+		core->ban_onep_left_punch;
+	const unsigned progress = ban_onep_punch_progress(phase);
+	const int target_offset = core->ban_onep_left_punch &&
+		core->ban_onep_right_punch ? 6 : 2;
+	int target_x = 3 + (core->ban_onep_aim_x * 26 + 127) / 255;
+	const int target_y = 3 + (core->ban_onep_aim_y * 15 + 127) / 255;
+	target_x += hand ? target_offset : -target_offset;
+	if (target_x < 1)
+		target_x = 1;
+	else if (target_x > XAVIX_CU5501A_WIDTH - 2)
+		target_x = XAVIX_CU5501A_WIDTH - 2;
+	*x = base_x + (target_x - base_x) * (int)progress / 255;
+	*y = base_y + (target_y - base_y) * (int)progress / 255;
+	*radius = progress >= 180 ?
+		(core->ban_onep_left_punch && core->ban_onep_right_punch ? 3 : 2) : 1;
+}
+
+static uint8_t ban_onep_adc_read(void *opaque, unsigned channel)
+{
+	drgqst_core *core = (drgqst_core *)opaque;
+	xavix_cu5501a *sensor = &core->machine.state.peripherals.sensor;
+	const unsigned pixel = sensor->pixel % XAVIX_CU5501A_PIXELS;
+	const int column = (int)(pixel % XAVIX_CU5501A_WIDTH);
+	const int row = (int)(pixel / XAVIX_CU5501A_WIDTH);
+	uint8_t result = 0;
+	unsigned hand;
+	if (channel != 0)
+		return 0xff;
+	if (!sensor->illuminated)
+		goto advance;
+	for (hand = 0; hand < 2; ++hand)
+	{
+		int x;
+		int y;
+		int radius;
+		ban_onep_hand_position(core, hand, &x, &y, &radius);
+		if (column >= x - radius && column <= x + radius &&
+			row >= y - radius && row <= y + radius)
+			result = 0x40;
+	}
+advance:
+	if (sensor->adc_phase)
+		sensor->pixel = (uint16_t)((sensor->pixel + 1) % XAVIX_CU5501A_PIXELS);
+	if (++sensor->adc_phase > XAVIX_CU5501A_WIDTH)
+		sensor->adc_phase = 0;
+	return result;
+}
+
+static void ban_onep_io1_write(void *opaque, uint8_t data, uint8_t direction)
+{
+	drgqst_core *core = (drgqst_core *)opaque;
+	const int scl = (direction & 0x10) ? !!(data & 0x10) : 0;
+	const int sda = (direction & 0x08) ? !!(data & 0x08) : 1;
+	if (core->game_profile == DRGQST_CORE_TTV_CU5501_24C02 ||
+		core->game_profile == DRGQST_CORE_TTV_CU5501A_24C02)
+		xavix_eeprom24c02_set_lines(
+			&core->machine.state.peripherals.eeprom, scl, sda);
+	else
+		xavix_eeprom24c04_set_lines(
+			&core->machine.state.peripherals.eeprom, scl, sda);
+	if (core->game_profile == DRGQST_CORE_TTV_CU5501A_24C02 &&
+		(direction & 0x21) == 0x21 && (data & 1))
+	{
+		/* Star Wars first scans an unlit reference frame.  P1.5 is
+		 * then pulsed before P1.0 starts the reflected-light readout.  The
+		 * exposure remains latched after the lamp pulse has ended. */
+		if (data & 0x20)
+			core->ttv_exposure_pending = 1;
+		else
+		{
+			xavix_cu5501a_begin_scan(
+				&core->machine.state.peripherals.sensor,
+				core->ttv_exposure_pending);
+			core->ttv_exposure_pending = 0;
+		}
+	}
+	else
+		xavix_cu5501a_write_io1(&core->machine.state.peripherals.sensor,
+			data, direction);
+}
+
+static void sync_interrupt_lines(drgqst_core *core)
+{
+	xavix_cpu_set_irq(&core->cpu, core->machine.state.irq_asserted);
+	xavix_cpu_set_nmi(&core->cpu, core->machine.state.nmi_asserted);
+}
+
+int drgqst_core_init_profile(drgqst_core *core, const uint8_t *rom,
+	size_t rom_size, enum drgqst_core_profile profile)
+{
+	xavix_machine_hooks hooks;
+	if (!core || !rom || (rom_size != UINT32_C(0x800000) &&
+		rom_size != UINT32_C(0x400000)))
+		return 0;
+	memset(core, 0, sizeof(*core));
+	core->game_profile = (uint8_t)profile;
+	xavix_machine_init(&core->machine, rom, rom_size);
+	xavix_cpu_init(&core->cpu, cpu_read, cpu_write, &core->machine);
+	xavix_audio_init(&core->audio, XAVIX_CLOCK_HZ,
+		XAVIX_AUDIO_DEFAULT_HOST_RATE, 0x80);
+	memset(&hooks, 0, sizeof(hooks));
+	hooks.context = core;
+	hooks.read_sound = sound_read;
+	hooks.write_sound = sound_write;
+	if (profile == DRGQST_CORE_BAN_ONEP ||
+		profile == DRGQST_CORE_BAN_OMT ||
+		profile == DRGQST_CORE_TTV_CU5501_24C02 ||
+		profile == DRGQST_CORE_TTV_CU5501A_24C02)
+	{
+		hooks.read_io1 = ban_onep_io1_read;
+		hooks.write_io1 = ban_onep_io1_write;
+		if (profile == DRGQST_CORE_BAN_ONEP)
+			hooks.read_adc = ban_onep_adc_read;
+	}
+	xavix_machine_set_hooks(&core->machine, &hooks);
+	xavix_video_init(&core->video);
+	if (profile == DRGQST_CORE_DRAGON_QUEST)
+		xavix_video_watch_drgqst_feather(&core->video);
+	core->ban_onep_aim_x = 0x80;
+	core->ban_onep_aim_y = 0x80;
+	/* The acquisition loop consumes one state per read.  Holding a phase for
+	 * sixteen reads made each optical pass take several host frames and slowed
+	 * the game clock. */
+	core->ban_onep_sync_period = 1;
+	return 1;
+}
+
+int drgqst_core_init(drgqst_core *core, const uint8_t *rom, size_t rom_size)
+{
+	return drgqst_core_init_profile(core, rom, rom_size,
+		DRGQST_CORE_DRAGON_QUEST);
+}
+
+void drgqst_core_reset(drgqst_core *core)
+{
+	if (!core)
+		return;
+	xavix_machine_reset(&core->machine);
+	xavix_cpu_reset(&core->cpu);
+	xavix_audio_reset(&core->audio);
+	xavix_video_reset(&core->video);
+	if (core->game_profile == DRGQST_CORE_DRAGON_QUEST)
+		xavix_video_watch_drgqst_feather(&core->video);
+	core->frame_fraction = 0;
+	core->audio_frame_cycles = 0;
+	core->audio_frame_position = 0;
+	core->audio_frame_active = 0;
+	core->ban_onep_sync_divider = 0;
+	if (!core->ban_onep_sync_period)
+		core->ban_onep_sync_period = 1;
+	core->ban_onep_sync_phase = 0;
+	core->ban_onep_buttons = 0;
+	core->ban_onep_drag_active = 0;
+	core->ban_onep_drag_origin_x = 0x80;
+	core->ban_onep_left_punch = 0;
+	core->ban_onep_right_punch = 0;
+	core->ban_onep_aim_x = 0x80;
+	core->ban_onep_aim_y = 0x80;
+	core->ban_onep_bazooka_phase = 0;
+	memset(core->frame_audio, 0, sizeof(core->frame_audio));
+}
+
+static void sync_frame_audio(drgqst_core *core, uint32_t elapsed_cycles)
+{
+	xavix_audio_bus bus;
+	uint32_t target;
+
+	if (!core->audio_frame_active || !core->audio_frame_cycles)
+		return;
+	target = (uint32_t)(((uint64_t)elapsed_cycles *
+		DRGQST_AUDIO_FRAMES_PER_VIDEO_FRAME) / core->audio_frame_cycles);
+	if (target > DRGQST_AUDIO_FRAMES_PER_VIDEO_FRAME)
+		target = DRGQST_AUDIO_FRAMES_PER_VIDEO_FRAME;
+	if (target <= core->audio_frame_position)
+		return;
+	bus = audio_bus(core);
+	xavix_audio_generate(&core->audio, &bus,
+		core->frame_audio + core->audio_frame_position * 2U,
+		target - core->audio_frame_position);
+	core->audio_frame_position = target;
+	sync_audio_irq(core);
+}
+
+int drgqst_core_step(drgqst_core *core)
+{
+	int cycles;
+	if (!core)
+		return 0;
+	sync_interrupt_lines(core);
+	cycles = xavix_cpu_execute(&core->cpu, 1);
+	if (cycles > 0)
+	{
+		xavix_machine_advance(&core->machine, (unsigned)cycles);
+		sync_frame_audio(core, core->machine.state.frame_cycles);
+		sync_interrupt_lines(core);
+	}
+	return cycles;
+}
+
+uint64_t drgqst_core_run_instructions(drgqst_core *core, uint32_t instructions)
+{
+	uint64_t cycles = 0;
+	uint32_t i;
+	for (i = 0; i < instructions && !core->cpu.stopped; ++i)
+	{
+		int step_cycles = drgqst_core_step(core);
+		if (step_cycles <= 0)
+			break;
+		cycles += (unsigned)step_cycles;
+	}
+	return cycles;
+}
+
+uint64_t drgqst_core_run_cycles(drgqst_core *core, uint32_t cycles)
+{
+	uint64_t elapsed = 0;
+	while (elapsed < cycles && !core->cpu.stopped)
+	{
+		int step_cycles = drgqst_core_step(core);
+		if (step_cycles <= 0)
+			break;
+		elapsed += (unsigned)step_cycles;
+	}
+	return elapsed;
+}
+
+static const uint32_t *render_frame(drgqst_core *core)
+{
+	xavix_machine_state *state = &core->machine.state;
+	xavix_video_inputs inputs;
+	memset(&inputs, 0, sizeof(inputs));
+	inputs.main_ram = state->main_ram;
+	inputs.main_ram_size = sizeof(state->main_ram);
+	inputs.fragment_ram = state->fragment_ram;
+	inputs.palette_sh = state->palette_sh;
+	inputs.palette_l = state->palette_l;
+	inputs.palette_entries = 256;
+	inputs.segment_regs = state->segment_regs;
+	inputs.tilemap_regs[0] = state->tile_regs[0];
+	inputs.tilemap_regs[1] = state->tile_regs[1];
+	inputs.sprite_mode = state->sprite_reg;
+	inputs.arena_start = state->arena_start;
+	inputs.arena_end = state->arena_end;
+	inputs.arena_control = state->arena_control;
+	inputs.colmix_sh = state->colmix_sh;
+	inputs.colmix_l = state->colmix_l;
+	inputs.colmix_control = state->colmix_control;
+	inputs.read_program_byte = video_read;
+	inputs.read_program_opaque = &core->machine;
+	xavix_video_render(&core->video, &inputs);
+	return xavix_video_framebuffer(&core->video);
+}
+
+const uint32_t *drgqst_core_run_frame(drgqst_core *core)
+{
+	uint32_t cycles;
+	if (!core)
+		return NULL;
+	cycles = XAVIX_CLOCK_HZ / XAVIX_FRAME_RATE;
+	core->frame_fraction += XAVIX_CLOCK_HZ % XAVIX_FRAME_RATE;
+	if (core->frame_fraction >= XAVIX_FRAME_RATE)
+	{
+		core->frame_fraction -= XAVIX_FRAME_RATE;
+		++cycles;
+	}
+	/* run_frame defines a fresh host/video interval even if diagnostic code
+	 * executed individual instructions between calls. */
+	core->machine.state.frame_cycles = 0;
+	core->audio_frame_cycles = cycles;
+	core->audio_frame_position = 0;
+	core->audio_frame_active = 1;
+	drgqst_core_run_cycles(core, cycles);
+	if (core->game_profile == DRGQST_CORE_BAN_ONEP)
+	{
+		if (core->ban_onep_left_punch && core->ban_onep_left_punch < 19)
+			++core->ban_onep_left_punch;
+		else
+			core->ban_onep_left_punch = 0;
+		if (core->ban_onep_right_punch && core->ban_onep_right_punch < 19)
+			++core->ban_onep_right_punch;
+		else
+			core->ban_onep_right_punch = 0;
+		if (core->ban_onep_bazooka_phase &&
+			core->ban_onep_bazooka_phase < 12)
+			++core->ban_onep_bazooka_phase;
+		else
+			core->ban_onep_bazooka_phase = 0;
+	}
+	sync_frame_audio(core, cycles);
+	core->audio_frame_active = 0;
+	core->machine.state.frame_cycles = 0;
+	if (core->machine.state.video_control & 0x20)
+	{
+		core->machine.state.video_control |= 0x80;
+		core->machine.state.nmi_asserted = 1;
+		sync_interrupt_lines(core);
+	}
+	return render_frame(core);
+}
+
+const uint32_t *drgqst_core_framebuffer(const drgqst_core *core)
+{
+	return core ? xavix_video_framebuffer(&core->video) : NULL;
+}
+
+size_t drgqst_core_generate_audio(drgqst_core *core,
+	int16_t *interleaved_stereo, size_t frames)
+{
+	xavix_audio_bus bus;
+	size_t generated;
+	if (!core)
+		return 0;
+	bus = audio_bus(core);
+	generated = xavix_audio_generate(&core->audio, &bus,
+		interleaved_stereo, frames);
+	sync_audio_irq(core);
+	return generated;
+}
+
+const int16_t *drgqst_core_frame_audio(const drgqst_core *core)
+{
+	return core ? core->frame_audio : NULL;
+}
+
+int drgqst_core_feather_visible(const drgqst_core *core)
+{
+	return core && xavix_video_feather_visible(&core->video);
+}
+
+static int signed_main_ram_word(const drgqst_core *core, unsigned address)
+{
+	const uint16_t value = (uint16_t)core->machine.state.main_ram[address] |
+		((uint16_t)core->machine.state.main_ram[address + 1] << 8);
+	return value & 0x8000U ? (int)value - 0x10000 : (int)value;
+}
+
+int drgqst_core_sword_cursor_position(const drgqst_core *core, int *x, int *y)
+{
+	if (!core)
+		return 0;
+	if (x)
+		*x = 128 + signed_main_ram_word(core, 0x026c);
+	if (y)
+		*y = 112 - signed_main_ram_word(core, 0x0270);
+	return 1;
+}
+
+void drgqst_core_set_mouse(drgqst_core *core, uint8_t x, uint8_t y,
+	int broadside, int step_forward)
+{
+	enum xavix_sensor_mode mode = XAVIX_SENSOR_NARROW;
+	if (!core)
+		return;
+	if (core->game_profile == DRGQST_CORE_BAN_ONEP)
+	{
+		const uint8_t buttons = (broadside ? 1 : 0) |
+			(step_forward ? 2 : 0);
+		const int drag_x = x > core->ban_onep_drag_origin_x ?
+			x - core->ban_onep_drag_origin_x :
+			core->ban_onep_drag_origin_x - x;
+		if (core->ban_onep_bazooka_phase)
+		{
+			const unsigned step = core->ban_onep_bazooka_phase - 1U;
+			const unsigned low = 0x20;
+			const unsigned high = 0xdf;
+			const uint8_t forward = (uint8_t)(low +
+				((high - low) * step + 5U) / 11U);
+			/* The original two-glove exercise distinguishes a simultaneous
+			 * forward thrust from two stationary reflectors.  This path is the
+			 * smallest camera-space gesture known to satisfy that classifier. */
+			core->ban_onep_aim_x = (uint8_t)(high - (forward - low));
+			core->ban_onep_aim_y = (uint8_t)(high - (forward - low));
+			/* One reflector reaches the camera first while the second follows.
+			 * Keeping that leading hand fully extended reproduces the two-object
+			 * path recognized by the glove-training program. */
+			if (core->ban_onep_bazooka_phase > 1)
+				core->ban_onep_left_punch = 10;
+		}
+		else
+		{
+			core->ban_onep_aim_x = x;
+			core->ban_onep_aim_y = y;
+		}
+		/* The camera image is mirrored: the reflector on its right produces the
+		 * left arm on screen, and vice versa. */
+		if ((buttons & 1) && !(core->ban_onep_buttons & 1))
+			core->ban_onep_right_punch = 1;
+		if ((buttons & 2) && !(core->ban_onep_buttons & 2))
+		{
+			core->ban_onep_left_punch = 1;
+			core->ban_onep_drag_active = 0;
+			core->ban_onep_drag_origin_x = x;
+		}
+		else if ((buttons & 2) && !core->ban_onep_drag_active && drag_x >= 6)
+		{
+			core->ban_onep_drag_active = 1;
+		}
+		if (!(buttons & 2))
+			core->ban_onep_drag_active = 0;
+		else if (core->ban_onep_drag_active)
+		{
+			/* Zoro's sword stages classify the direction of the reflector path.
+			 * Keep the right-button reflector at the raw mouse coordinate once
+			 * a deliberate drag begins; a stationary click remains a normal
+			 * pre-shaped right punch for Luffy. */
+			core->ban_onep_left_punch = 10;
+		}
+		core->ban_onep_buttons = buttons;
+		if (broadside)
+			core->machine.state.input0 |= 0x01;
+		else
+			core->machine.state.input0 &= (uint8_t)~0x01;
+		if (step_forward)
+			core->machine.state.input0 |= 0x02;
+		else
+			core->machine.state.input0 &= (uint8_t)~0x02;
+		xavix_machine_set_sword_input(&core->machine, x, y,
+			broadside || step_forward ? XAVIX_SENSOR_BROADSIDE :
+			XAVIX_SENSOR_NARROW);
+		return;
+	}
+	if (core->game_profile == DRGQST_CORE_BAN_OMT)
+	{
+		if (broadside && step_forward)
+		{
+			/* Turning the Drive's broad grey back toward the camera is an
+			 * optical gesture, not a press of both controller buttons. */
+			core->machine.state.input0 &= (uint8_t)~0x03;
+			mode = XAVIX_SENSOR_STEP_FORWARD;
+		}
+		else
+		{
+			if (broadside)
+				core->machine.state.input0 |= 0x01;
+			else
+				core->machine.state.input0 &= (uint8_t)~0x01;
+			if (step_forward)
+				core->machine.state.input0 |= 0x02;
+			else
+				core->machine.state.input0 &= (uint8_t)~0x02;
+			mode = XAVIX_SENSOR_NARROW;
+		}
+		xavix_machine_set_sword_input(&core->machine, x, y, mode);
+		return;
+	}
+	if (step_forward)
+		mode = XAVIX_SENSOR_STEP_FORWARD;
+	else if (broadside)
+		mode = XAVIX_SENSOR_BROADSIDE;
+	xavix_machine_set_sword_input(&core->machine, x, y, mode);
+}
+
+void drgqst_core_trigger_bazooka(drgqst_core *core)
+{
+	if (!core || core->game_profile != DRGQST_CORE_BAN_ONEP)
+		return;
+	core->ban_onep_bazooka_phase = 1;
+	core->ban_onep_left_punch = 1;
+	core->ban_onep_right_punch = 1;
+}
