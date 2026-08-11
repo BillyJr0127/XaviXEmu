@@ -64,7 +64,10 @@ typedef struct xavix_video_sprite_watch
 {
 	uint32_t first_address;
 	uint32_t last_address;
+	uint32_t second_first_address;
+	uint32_t second_last_address;
 	uint16_t address_stride;
+	uint16_t second_address_stride;
 	uint8_t required_sprite_mode;
 	uint8_t enabled;
 } xavix_video_sprite_watch;

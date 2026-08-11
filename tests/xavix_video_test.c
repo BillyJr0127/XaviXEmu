@@ -184,6 +184,24 @@ static void test_feather_visible_pixel_bounds(void)
 	xavix_video_render(&video, &input);
 	assert(!xavix_video_feather_visible(&video));
 	assert(video.report.watched_sprite_pixels == 0);
+
+	/* Star Wars US and Japan use separate cursor graphics ranges.  Confirm
+	 * that a match in the optional second range is reported independently. */
+	{
+		xavix_video_sprite_watch watch;
+		memset(&watch, 0, sizeof(watch));
+		watch.first_address = address + 0x80U;
+		watch.last_address = address + 0x80U;
+		watch.second_first_address = address;
+		watch.second_last_address = address;
+		watch.required_sprite_mode = 0x04;
+		watch.enabled = 1;
+		xavix_video_set_sprite_watch(&video, &watch);
+		fragment[0x100] = 0;
+		xavix_video_render(&video, &input);
+		assert(xavix_video_feather_visible(&video));
+		assert(video.report.watched_sprite_pixels == 64);
+	}
 }
 
 static void test_colmix_layer_enables(void)

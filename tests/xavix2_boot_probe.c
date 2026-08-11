@@ -1026,15 +1026,14 @@ static void print_audio_voices(const xavix2_machine_t *machine)
 		loop = ((uint32_t)(descriptor[0x0e] |
 			((uint16_t)descriptor[0x0f] << 8)) << 16) |
 			(descriptor[0x12] | ((uint32_t)descriptor[0x13] << 8));
-		pitch = (uint16_t)(descriptor[0x16] |
-			((uint16_t)descriptor[0x17] << 8));
-		source_rate = (uint32_t)(((uint64_t)pitch * engine_rate + 32768U) >> 16);
+		pitch = voice->pitch;
+		source_rate = (uint32_t)(((uint64_t)pitch * engine_rate + 16384U) >> 15);
 		printf("  ch=%u looped=%u start=%08" PRIX32 " end=%08" PRIX32
 			" pos=%08" PRIX32 "+%08" PRIX32 " pitch=%u rate=%" PRIu32
 			" volume=%u,%u\n",
 			channel, voice->loop, start, loop,
 			(uint32_t)(voice->position >> 32), (uint32_t)voice->position,
-			pitch, source_rate, descriptor[0x32], descriptor[0x33]);
+			pitch, source_rate, voice->volume_left, voice->volume_right);
 	}
 }
 

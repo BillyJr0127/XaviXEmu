@@ -119,6 +119,47 @@ static int test_firmware_cursor_position(void)
 	return 1;
 }
 
+static int test_internal_cursor_watch_profiles(void)
+{
+	uint8_t *rom = (uint8_t *)malloc(TEST_ROM_SIZE);
+	drgqst_core *core = (drgqst_core *)malloc(sizeof(*core));
+	const xavix_video_sprite_watch *watch;
+	int ok = 0;
+
+	if (!rom || !core)
+		goto done;
+	make_test_rom(rom);
+	if (!drgqst_core_init_profile(core, rom, TEST_ROM_SIZE,
+		DRGQST_CORE_TTV_CU5501_24C02))
+		goto done;
+	watch = &core->video.sprite_watch;
+	if (!watch->enabled || watch->first_address != UINT32_C(0xa14660) ||
+		watch->last_address != UINT32_C(0xa14780) ||
+		watch->address_stride != 0x60)
+		goto done;
+
+	if (!drgqst_core_init_profile(core, rom, TEST_ROM_SIZE,
+		DRGQST_CORE_TTV_CU5501A_24C02))
+		goto done;
+	watch = &core->video.sprite_watch;
+	if (!watch->enabled || watch->first_address != UINT32_C(0xf6eee0) ||
+		watch->last_address != UINT32_C(0xf6f060) ||
+		watch->address_stride != 0x80 ||
+		watch->second_first_address != UINT32_C(0xf01fe0) ||
+		watch->second_last_address != UINT32_C(0xf02160) ||
+		watch->second_address_stride != 0x80)
+		goto done;
+
+	if (!drgqst_core_init_profile(core, rom, TEST_ROM_SIZE,
+		DRGQST_CORE_BAN_ONEP) || core->video.sprite_watch.enabled)
+		goto done;
+	ok = 1;
+done:
+	free(core);
+	free(rom);
+	return ok;
+}
+
 static int test_round_trip_and_continuation(void)
 {
 	uint8_t *rom = NULL;
@@ -480,6 +521,7 @@ done:
 int main(void)
 {
 	CHECK(test_firmware_cursor_position());
+	CHECK(test_internal_cursor_watch_profiles());
 	CHECK(test_round_trip_and_continuation());
 	CHECK(test_audio_register_writes_are_timed_within_frame());
 	CHECK(test_repeated_one_piece_load_resets_host_input());

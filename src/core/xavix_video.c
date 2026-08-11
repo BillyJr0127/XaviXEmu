@@ -139,6 +139,7 @@ void xavix_video_watch_drgqst_feather(xavix_video *video)
 	if (!video)
 		return;
 
+	memset(&video->sprite_watch, 0, sizeof(video->sprite_watch));
 	video->sprite_watch.first_address = UINT32_C(0xa17d80);
 	video->sprite_watch.last_address = UINT32_C(0xa18080);
 	video->sprite_watch.address_stride = 0x60;
@@ -582,17 +583,27 @@ static void draw_tilemap(render_context *render, unsigned which)
 		draw_tilemap_line(render, which, y);
 }
 
+static int address_matches_watch(uint32_t address, uint32_t first,
+	uint32_t last, uint16_t stride)
+{
+	if (!first || address < first || address > last)
+		return 0;
+	if (!stride)
+		return address == first;
+	return ((address - first) % stride) == 0;
+}
+
 static int sprite_is_watched(const xavix_video *video, uint8_t mode,
 	uint32_t address)
 {
 	const xavix_video_sprite_watch *watch = &video->sprite_watch;
 
-	if (!watch->enabled || mode != watch->required_sprite_mode ||
-		address < watch->first_address || address > watch->last_address)
+	if (!watch->enabled || mode != watch->required_sprite_mode)
 		return 0;
-	if (!watch->address_stride)
-		return address == watch->first_address;
-	return ((address - watch->first_address) % watch->address_stride) == 0;
+	return address_matches_watch(address, watch->first_address,
+		watch->last_address, watch->address_stride) ||
+		address_matches_watch(address, watch->second_first_address,
+		watch->second_last_address, watch->second_address_stride);
 }
 
 static void draw_sprites(render_context *render)

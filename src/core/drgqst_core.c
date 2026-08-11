@@ -224,6 +224,42 @@ static void sync_interrupt_lines(drgqst_core *core)
 	xavix_cpu_set_nmi(&core->cpu, core->machine.state.nmi_asserted);
 }
 
+static void configure_internal_cursor_watch(drgqst_core *core)
+{
+	xavix_video_sprite_watch watch;
+
+	memset(&watch, 0, sizeof(watch));
+	watch.required_sprite_mode = 0x04;
+	watch.enabled = 1;
+	switch ((enum drgqst_core_profile)core->game_profile)
+	{
+	case DRGQST_CORE_DRAGON_QUEST:
+		watch.first_address = UINT32_C(0xa17d80);
+		watch.last_address = UINT32_C(0xa18080);
+		watch.address_stride = 0x60;
+		break;
+	case DRGQST_CORE_TTV_CU5501_24C02:
+		watch.first_address = UINT32_C(0xa14660);
+		watch.last_address = UINT32_C(0xa14780);
+		watch.address_stride = 0x60;
+		break;
+	case DRGQST_CORE_TTV_CU5501A_24C02:
+		watch.first_address = UINT32_C(0xf6eee0);
+		watch.last_address = UINT32_C(0xf6f060);
+		watch.address_stride = 0x80;
+		watch.second_first_address = UINT32_C(0xf01fe0);
+		watch.second_last_address = UINT32_C(0xf02160);
+		watch.second_address_stride = 0x80;
+		break;
+	case DRGQST_CORE_BAN_ONEP:
+	case DRGQST_CORE_BAN_OMT:
+	default:
+		watch.enabled = 0;
+		break;
+	}
+	xavix_video_set_sprite_watch(&core->video, &watch);
+}
+
 int drgqst_core_init_profile(drgqst_core *core, const uint8_t *rom,
 	size_t rom_size, enum drgqst_core_profile profile)
 {
@@ -253,8 +289,7 @@ int drgqst_core_init_profile(drgqst_core *core, const uint8_t *rom,
 	}
 	xavix_machine_set_hooks(&core->machine, &hooks);
 	xavix_video_init(&core->video);
-	if (profile == DRGQST_CORE_DRAGON_QUEST)
-		xavix_video_watch_drgqst_feather(&core->video);
+	configure_internal_cursor_watch(core);
 	core->ban_onep_aim_x = 0x80;
 	core->ban_onep_aim_y = 0x80;
 	/* The acquisition loop consumes one state per read.  Holding a phase for
@@ -278,8 +313,7 @@ void drgqst_core_reset(drgqst_core *core)
 	xavix_cpu_reset(&core->cpu);
 	xavix_audio_reset(&core->audio);
 	xavix_video_reset(&core->video);
-	if (core->game_profile == DRGQST_CORE_DRAGON_QUEST)
-		xavix_video_watch_drgqst_feather(&core->video);
+	configure_internal_cursor_watch(core);
 	core->frame_fraction = 0;
 	core->audio_frame_cycles = 0;
 	core->audio_frame_position = 0;
@@ -462,6 +496,11 @@ const int16_t *drgqst_core_frame_audio(const drgqst_core *core)
 }
 
 int drgqst_core_feather_visible(const drgqst_core *core)
+{
+	return core && xavix_video_feather_visible(&core->video);
+}
+
+int drgqst_core_internal_cursor_visible(const drgqst_core *core)
 {
 	return core && xavix_video_feather_visible(&core->video);
 }

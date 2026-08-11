@@ -25,10 +25,10 @@ rejected rather than assigned a compatibility status.
 | --- | --- | --- | --- | --- |
 | `drgqst` | XaviX 2000 | Playable | Boot, calibration, title, gameplay, narrow/broad/step-forward virtual sword input, 24C08 EEPROM, F5/F7 states | Synthetic CU5501A image; control feel and sound are not hardware-perfect |
 | `ban_onep` | XaviX 2000 | Playable | Title, first battle, menu O/X, separate left/right reflectors, simultaneous double gesture, 24C04 EEPROM, F5/F7 states | Punch strength, later techniques, guard timing, and Zoro gesture feel need real-hardware calibration |
-| `ban_omt` | XaviX 2000 | Experimental | Boot and optical-input path with 24C04 persistence profile | Calibration, seal drawing, and full play-through are not verified |
-| `ttv_lotr` | XaviX 2000 | Experimental | Title input and transition to new-game save-area selection using CU5501 synthesis | Later gameplay and complete controls are not verified |
-| `ttv_sw` | XaviX 2000 | Experimental | Title input and transition to new/resume menu using CU5501A synthesis | Later gameplay and complete controls are not verified |
-| `ttv_swj` | XaviX 2000 | Experimental | Japanese title input and transition to new/resume menu | Later gameplay and complete controls are not verified |
+| `ban_omt` | XaviX 2000 | Playable | User-verified gameplay, direction selection, seal drawing, synthetic front/reverse reflector input, 24C04 EEPROM, F5/F7 states | Optical area and gesture thresholds are synthetic rather than calibrated original hardware |
+| `ttv_lotr` | XaviX 2000 | Playable | User-verified gameplay using synthesized CU5501 sword input and 24C02 persistence | Synthetic sensor geometry; host crosshair is shown only when the game-owned cursor is absent |
+| `ttv_sw` | XaviX 2000 | Playable | User-verified gameplay using synthesized CU5501A input and 24C02 persistence | Synthetic sensor geometry; host crosshair is shown only when the game-owned cursor is absent |
+| `ttv_swj` | XaviX 2000 | Playable | User-verified Japanese gameplay using synthesized CU5501A input and 24C02 persistence | Synthetic sensor geometry; host crosshair is shown only when the game-owned cursor is absent |
 | `ban_naru` | XaviX 2 | Experimental | Boot, title, menu hit testing, character selection, story/tutorial path, native 320x240 crop, provisional signed 8-bit PCM | Unknown opcode behaviour, incomplete gestures/GPU/audio, no EEPROM, no F5/F7 state |
 
 ## Reporting results

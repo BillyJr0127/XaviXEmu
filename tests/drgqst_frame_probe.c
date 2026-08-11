@@ -138,6 +138,7 @@ int main(int argc, char **argv)
 	unsigned input_pulses = 1;
 	unsigned guard_hold = 0;
 	unsigned trajectory_interval = 0;
+	unsigned last_cursor_visible = UINT_MAX;
 	int state_loaded = 0;
 	int durable_eeprom_loaded = 0;
 	uint8_t initial_eeprom[DRGQST_PERSISTENCE_EEPROM_SIZE];
@@ -370,10 +371,20 @@ int main(int argc, char **argv)
 			}
 		}
 		pixels = drgqst_core_run_frame(core);
+		{
+			const unsigned cursor_visible =
+				drgqst_core_internal_cursor_visible(core);
+			if (cursor_visible != last_cursor_visible)
+			{
+				printf("cursor-transition frame=%u visible=%u\n",
+					frame, cursor_visible);
+				last_cursor_visible = cursor_visible;
+			}
+		}
 		if (frame <= 10 || frame % 60 == 0 || frame == frames)
 		{
 			const xavix_video_frame_report *report = xavix_video_last_report(&core->video);
-			printf("frame=%u pc=%06lX cycles=%llu irq=%02X vc=%02X hash=%016llX opaque=%lu reads=%lu edge=%02X/%02X old=%02X/%02X\n",
+			printf("frame=%u pc=%06lX cycles=%llu irq=%02X vc=%02X hash=%016llX opaque=%lu reads=%lu edge=%02X/%02X old=%02X/%02X cursor=%u\n",
 				frame, (unsigned long)xavix_cpu_linear_pc(&core->cpu),
 				(unsigned long long)core->cpu.total_cycles, core->machine.state.irq_source,
 				core->machine.state.video_control,
@@ -381,16 +392,18 @@ int main(int argc, char **argv)
 				(unsigned long)report->opaque_pixels_drawn,
 				(unsigned long)report->memory_reads,
 				core->machine.state.main_ram[0xcb], core->machine.state.main_ram[0xcc],
-				core->machine.state.main_ram[0xcd], core->machine.state.main_ram[0xce]);
+				core->machine.state.main_ram[0xcd], core->machine.state.main_ram[0xce],
+				drgqst_core_internal_cursor_visible(core));
 		}
 	}
 	if (argc >= 4 && pixels && !write_bmp(argv[3], pixels))
 		fprintf(stderr, "could not write %s\n", argv[3]);
 	if (argc >= 4)
 		write_ram_snapshot(argv[3], core->machine.state.main_ram);
-	printf("done frames=%u stopped=%u pc=%06lX ram75=%02X ram76=%02X\n",
+	printf("done frames=%u stopped=%u pc=%06lX ram75=%02X ram76=%02X cursor=%u\n",
 		frame - 1, core->cpu.stopped, (unsigned long)xavix_cpu_linear_pc(&core->cpu),
-		core->machine.state.main_ram[0x75], core->machine.state.main_ram[0x76]);
+		core->machine.state.main_ram[0x75], core->machine.state.main_ram[0x76],
+		drgqst_core_internal_cursor_visible(core));
 	printf("io=%02X/%02X dir=%02X/%02X adc=%02X/%02X sensor=%u/%u/%u/%u host=%u/%u scan=%u/%u eeprom=%u/%lu\n",
 		core->machine.state.io_data[0], core->machine.state.io_data[1],
 		core->machine.state.io_direction[0], core->machine.state.io_direction[1],

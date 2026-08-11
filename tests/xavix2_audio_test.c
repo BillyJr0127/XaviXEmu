@@ -34,14 +34,14 @@ int main(void)
 	rom[0x12] = 127;
 	rom[0x13] = 0x80;
 	store_address(voice0, 0x02, 0x06, 0x10);
-	store16(voice0 + 0x16, 0x8000);
+	store16(voice0 + 0x16, 0x4000);
 	voice0[0x32] = 0xff;
 	voice0[0x33] = 0x80;
 
 	xavix2_audio_init(&audio, rom, sizeof(rom));
-	xavix2_audio_command(&audio, 0x40, descriptors);
+	xavix2_audio_command(&audio, 0x40, descriptors, 0, 0, 0);
 	assert(xavix2_audio_status(&audio, 0) == 1);
-	xavix2_audio_render(&audio, descriptors, 96000);
+	xavix2_audio_render(&audio, 96000);
 	frame = xavix2_audio_frame(&audio);
 	assert(frame[0] == 0 && frame[1] == 0);
 	assert(frame[2] == 64 * 255 && frame[3] == 64 * 128);
@@ -56,23 +56,42 @@ int main(void)
 	/* Firmware descriptors put the looping sample end (one byte beyond the
 	 * terminator) here; playback loops to the primary start address. */
 	store_address(voice0, 0x0e, 0x12, 0x23);
-	xavix2_audio_command(&audio, 0x240, descriptors);
+	xavix2_audio_command(&audio, 0x240, descriptors, 0, 0, 0);
 	assert(audio.voice[0].start_address == 0x20);
 	assert(audio.voice[0].end_address == 0x23);
-	xavix2_audio_render(&audio, descriptors, 96000);
+	xavix2_audio_render(&audio, 96000);
 	frame = xavix2_audio_frame(&audio);
 	assert(frame[0] == 10 * 255);
 	assert(frame[2] == 20 * 255);
 	assert(frame[4] == 10 * 255);
 	assert(xavix2_audio_status(&audio, 0) == 1);
 
-	xavix2_audio_command(&audio, 0xc0, descriptors);
+	xavix2_audio_command(&audio, 0xc0, descriptors, 0x2000, 7, 9);
 	assert(xavix2_audio_status(&audio, 0) == 1);
-	xavix2_audio_command(&audio, 0x80, descriptors);
+	assert(audio.voice[0].pitch == 0x2000);
+	assert(audio.voice[0].volume_left == 7);
+	assert(audio.voice[0].volume_right == 9);
+	xavix2_audio_render(&audio, 96000);
+	frame = xavix2_audio_frame(&audio);
+	assert(frame[0] == 10 * 7 && frame[1] == 10 * 9);
+	assert(frame[2] == 15 * 7 && frame[3] == 15 * 9);
+	xavix2_audio_command(&audio, 0x80, descriptors, 0, 0, 0);
+	assert(xavix2_audio_status(&audio, 0) == 0);
+
+	rom[0x30] = 10;
+	rom[0x31] = 0x80;
+	rom[0x32] = 100;
+	store_address(voice0, 0x02, 0x06, 0x30);
+	store16(voice0 + 0x16, 0x8000);
+	xavix2_audio_command(&audio, 0x40, descriptors, 0, 0, 0);
+	xavix2_audio_render(&audio, 96000);
+	frame = xavix2_audio_frame(&audio);
+	assert(frame[0] == 10 * 255);
+	assert(frame[2] == 0);
 	assert(xavix2_audio_status(&audio, 0) == 0);
 
 	store_address(voice0, 0x02, 0x06, sizeof(rom));
-	xavix2_audio_command(&audio, 0x40, descriptors);
+	xavix2_audio_command(&audio, 0x40, descriptors, 0, 0, 0);
 	assert(xavix2_audio_status(&audio, 0) == 0);
 	assert(xavix2_audio_status(&audio, 8) == 0);
 

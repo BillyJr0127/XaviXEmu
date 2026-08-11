@@ -35,6 +35,9 @@ static void stop_voice(xavix2_audio_voice *voice)
 	voice->position = 0;
 	voice->start_address = 0;
 	voice->end_address = 0;
+	voice->pitch = 0;
+	voice->volume_left = 0;
+	voice->volume_right = 0;
 	voice->active = 0;
 	voice->loop = 0;
 }
@@ -50,7 +53,8 @@ void xavix2_audio_init(xavix2_audio *audio, const uint8_t *rom,
 }
 
 void xavix2_audio_command(xavix2_audio *audio, uint16_t command,
-	const uint8_t descriptors[XAVIX2_AUDIO_DESCRIPTOR_BYTES])
+	const uint8_t descriptors[XAVIX2_AUDIO_DESCRIPTOR_BYTES],
+	uint16_t control_pitch, uint8_t control_left, uint8_t control_right)
 {
 	unsigned channel;
 	unsigned operation;
@@ -72,7 +76,15 @@ void xavix2_audio_command(xavix2_audio *audio, uint16_t command,
 		return;
 	}
 	if (operation == 0x0c0)
+	{
+		if (voice->active)
+		{
+			voice->pitch = control_pitch;
+			voice->volume_left = control_left;
+			voice->volume_right = control_right;
+		}
 		return;
+	}
 	if (operation != 0x040 && operation != 0x240)
 		return;
 
@@ -88,6 +100,9 @@ void xavix2_audio_command(xavix2_audio *audio, uint16_t command,
 	end = descriptor_address(descriptor, 0x0e, 0x12);
 	voice->end_address = voice->loop && end > start && end <= audio->rom_size ?
 		end : 0;
+	voice->pitch = load16(descriptor + 0x16);
+	voice->volume_left = descriptor[0x32];
+	voice->volume_right = descriptor[0x33];
 	voice->active = 1;
 }
 
@@ -157,12 +172,51 @@ static int32_t interpolated_sample(xavix2_audio *audio,
 	return first + (int32_t)(((int64_t)(second - first) * fraction) >> 32);
 }
 
-void xavix2_audio_render(xavix2_audio *audio,
-	const uint8_t descriptors[XAVIX2_AUDIO_DESCRIPTOR_BYTES],
-	uint32_t engine_rate)
+static void advance_voice(xavix2_audio *audio, xavix2_audio_voice *voice,
+	uint64_t step)
+{
+	const uint32_t old_address = (uint32_t)(voice->position >> 32);
+	uint64_t next_position = voice->position + step;
+	uint32_t next_address = (uint32_t)(next_position >> 32);
+	uint32_t address;
+
+	if (voice->loop && voice->end_address > voice->start_address &&
+		next_address >= voice->end_address)
+	{
+		const uint64_t loop_bytes =
+			(uint64_t)(voice->end_address - voice->start_address) << 32;
+		const uint64_t beyond_end = next_position -
+			((uint64_t)voice->end_address << 32);
+		voice->position = ((uint64_t)voice->start_address << 32) +
+			beyond_end % loop_bytes;
+		return;
+	}
+
+	/* Faster-than-output-rate voices may cross the 0x80 terminator without
+	 * landing on it.  Check every newly crossed source byte so a one-shot
+	 * cannot continue into unrelated ROM and a sentinel-loop cannot emit the
+	 * bytes following its sample. */
+	for (address = old_address + 1; address <= next_address; ++address)
+	{
+		if (address >= audio->rom_size || audio->rom[address] == 0x80)
+		{
+			if (voice->loop && voice->start_address < audio->rom_size &&
+				audio->rom[voice->start_address] != 0x80)
+				voice->position = (uint64_t)voice->start_address << 32;
+			else
+				stop_voice(voice);
+			return;
+		}
+		if (address == UINT32_MAX)
+			break;
+	}
+	voice->position = next_position;
+}
+
+void xavix2_audio_render(xavix2_audio *audio, uint32_t engine_rate)
 {
 	unsigned frame;
-	if (!audio || !descriptors)
+	if (!audio)
 		return;
 	memset(audio->frame, 0, sizeof(audio->frame));
 	if (!engine_rate)
@@ -176,25 +230,24 @@ void xavix2_audio_render(xavix2_audio *audio,
 		for (channel = 0; channel < XAVIX2_AUDIO_VOICES; ++channel)
 		{
 			xavix2_audio_voice *voice = &audio->voice[channel];
-			const uint8_t *descriptor;
-			uint16_t pitch;
 			uint64_t step;
 			int32_t sample;
 			if (!voice->active)
 				continue;
-			descriptor = descriptors +
-				channel * XAVIX2_AUDIO_DESCRIPTOR_SIZE;
-			pitch = load16(descriptor + 0x16);
-			if (!pitch)
+			if (!voice->pitch)
 				continue;
 			sample = interpolated_sample(audio, voice);
 			if (!voice->active)
 				continue;
-			left += sample * descriptor[0x32];
-			right += sample * descriptor[0x33];
-			step = ((uint64_t)pitch * engine_rate << 16) /
+			left += sample * voice->volume_left;
+			right += sample * voice->volume_right;
+			/* Firmware pitch values form a Q15 step.  Q16 makes the
+			 * characteristic 0x0e6a/0x1339/0x1c72 values resolve to
+			 * roughly 12/16/24 kHz, exactly half their observed nominal
+			 * 24/32/48 kHz rates. */
+			step = ((uint64_t)voice->pitch * engine_rate << 17) /
 				XAVIX2_AUDIO_OUTPUT_RATE;
-			voice->position += step;
+			advance_voice(audio, voice, step);
 		}
 		audio->frame[frame * 2] = clamp16(left);
 		audio->frame[frame * 2 + 1] = clamp16(right);

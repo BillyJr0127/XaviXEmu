@@ -74,6 +74,7 @@ size_t drgqst_core_generate_audio(drgqst_core *core,
 const int16_t *drgqst_core_frame_audio(const drgqst_core *core);
 
 int drgqst_core_feather_visible(const drgqst_core *core);
+int drgqst_core_internal_cursor_visible(const drgqst_core *core);
 
 /* Firmware-calibrated logical sword hotspot in the native 256x224 picture. */
 int drgqst_core_sword_cursor_position(const drgqst_core *core, int *x, int *y);

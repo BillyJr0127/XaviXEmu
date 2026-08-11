@@ -40,7 +40,9 @@ original accessories used ordinary buttons.
 ## `ttv_lotr`, `ttv_sw`, and `ttv_swj`
 
 Move the mouse in a quick horizontal, vertical, or diagonal stroke. These
-games draw their own cursor; XaviXEmu does not add a second host cursor.
+games draw a special cursor in some scenes. XaviXEmu hides its blue target
+while that game-owned cursor is visible and restores the target in scenes that
+do not provide one.
 
 ## `ban_naru` (experimental)
 

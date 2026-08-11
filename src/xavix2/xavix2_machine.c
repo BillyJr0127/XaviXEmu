@@ -700,7 +700,9 @@ static void machine_write8(void *opaque, uint32_t address, uint8_t data)
 			if (offset == 0xa0b)
 				xavix2_audio_command(&machine->audio,
 					load16(machine->mmio + 0xa0a),
-					machine->video_ram + AUDIO_DESCRIPTOR_RAM_OFFSET);
+					machine->video_ram + AUDIO_DESCRIPTOR_RAM_OFFSET,
+					load16(machine->mmio + 0xa18), machine->mmio[0xa1c],
+					machine->mmio[0xa1d]);
 			if (offset >= XAVIX2_CAPTURE_REGISTER_FIRST &&
 				offset < XAVIX2_CAPTURE_REGISTER_FIRST + XAVIX2_CAPTURE_REGISTER_COUNT)
 				note_capture_access(machine, offset, data, 1);
@@ -922,9 +924,7 @@ uint64_t xavix2_machine_run_video_frame(xavix2_machine_t *machine,
 	if (machine->cpu.total_cycles < target)
 		(void)xavix2_machine_execute(machine,
 			target - machine->cpu.total_cycles);
-	xavix2_audio_render(&machine->audio,
-		machine->video_ram + AUDIO_DESCRIPTOR_RAM_OFFSET,
-		load32(machine->low_ram + 0x150));
+	xavix2_audio_render(&machine->audio, load32(machine->low_ram + 0x150));
 	return machine->cpu.total_cycles - start;
 }
 

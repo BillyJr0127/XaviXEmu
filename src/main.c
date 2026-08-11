@@ -360,9 +360,10 @@ static int rom_uses_camera(enum drgqst_rom_kind kind)
 
 static int rom_has_internal_cursor(enum drgqst_rom_kind kind)
 {
-	return kind == DRGQST_ROM_BAN_OMT || kind == DRGQST_ROM_TTV_LOTR ||
-		kind == DRGQST_ROM_TTV_SW || kind == DRGQST_ROM_TTV_SWJ ||
-		kind == DRGQST_ROM_BAN_NARU;
+	if (kind == DRGQST_ROM_TTV_LOTR || kind == DRGQST_ROM_TTV_SW ||
+		kind == DRGQST_ROM_TTV_SWJ)
+		return drgqst_core_internal_cursor_visible(g_core);
+	return kind == DRGQST_ROM_BAN_OMT || kind == DRGQST_ROM_BAN_NARU;
 }
 
 static enum drgqst_core_profile core_profile_for_rom(

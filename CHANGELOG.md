@@ -13,6 +13,19 @@ semantic versioning while experimental releases carry a pre-release suffix.
 - Loop XaviX 2 PCM voices to their primary sample address instead of treating
   the descriptor's end pointer as a loop address, preventing playback from
   continuing into unrelated ROM data.
+- Interpret XaviX 2 PCM pitch as Q15, apply live `$c0` pitch/volume commands,
+  and detect terminators crossed by high-rate voices.  This corrects the
+  evidenced half-speed rates and prevents one-shots from leaking into adjacent
+  ROM data.
+- Show the blue host target in LOTR and Star Wars scenes that do not provide a
+  game-owned cursor, while suppressing it when the verified cursor sprites are
+  visible.
+
+### Changed
+
+- Promote `ban_omt`, `ttv_lotr`, `ttv_sw`, and `ttv_swj` to Playable based on
+  direct user gameplay verification; synthetic optical limitations remain
+  documented.
 
 ### Added
 

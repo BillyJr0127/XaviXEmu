@@ -71,6 +71,8 @@
 ## Current milestone
 
 The first blocking hardware behavior is corrected for all three TTV games.
-`ttv_sw` and `ttv_swj` reach their new/resume menus, and `ttv_lotr` reaches its
-new-game save-area screen using synthesized optical input.  Full play-through
-testing remains separate from this first support milestone.
+All three games reached their first menu milestones in the automated probes.
+Subsequent user testing verified normal gameplay as playable with the
+synthesized optical input.  The game-owned 2x2 cursor sprite families were
+identified independently for LOTR, Star Wars US, and Star Wars Japan; the host
+blue target is now drawn only on frames where those sprites are absent.
