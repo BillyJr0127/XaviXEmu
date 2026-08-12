@@ -909,6 +909,95 @@ done:
 	return ok;
 }
 
+static int test_epo_hamc_sensor_profile(void)
+{
+	static const uint8_t sync_values[4] = { 0x81, 0x83, 0x87, 0x85 };
+	uint8_t *rom = (uint8_t *)malloc(TEST_OMT_ROM_SIZE);
+	drgqst_core *core = (drgqst_core *)malloc(sizeof(*core));
+	uint8_t *state = (uint8_t *)malloc(drgqst_state_serialized_size());
+	size_t written = 0;
+	unsigned index;
+	int ok = 0;
+
+	if (!rom || !core || !state)
+		goto done;
+	make_test_rom_sized(rom, TEST_OMT_ROM_SIZE);
+	if (!drgqst_core_init_profile(core, rom, TEST_OMT_ROM_SIZE,
+		DRGQST_CORE_EPO_HAMC_SENSOR) ||
+		core->game_profile != DRGQST_CORE_EPO_HAMC_SENSOR ||
+		core->machine.rom_size != TEST_OMT_ROM_SIZE)
+		goto done;
+
+	core->machine.state.input0 = 0xa5;
+	core->machine.state.input1 = 0x81;
+	if (xavix_machine_read_low(&core->machine, 0x7a00) != 0xa5)
+		goto done;
+	for (index = 0; index < sizeof(sync_values); ++index)
+	{
+		if (xavix_machine_read_low(&core->machine, 0x7a01) !=
+			sync_values[index])
+			goto done;
+	}
+	for (index = 0; index < 4; ++index)
+	{
+		const uint16_t address = (uint16_t)(index < 2 ?
+			0x7b00 + index : 0x7b10 + index - 2);
+		if (xavix_machine_read_low(&core->machine, address) != 0xff)
+			goto done;
+		xavix_machine_write_low(&core->machine, address,
+			(uint8_t)(0x20 + index));
+		if (xavix_machine_read_low(&core->machine, address) != 0xff ||
+			core->machine.state.anport_regs[index] != 0x00)
+			goto done;
+	}
+
+	core_i2c_send_control(core, 0xa2);
+	if (core->machine.state.peripherals.eeprom.selected ||
+		core->machine.state.peripherals.eeprom.protocol_state != XAVIX_I2C_IDLE)
+		goto done;
+	if (xavix_machine_read_low(&core->machine, 0x7b80) != 0xff)
+		goto done;
+	drgqst_core_set_mouse(core, 0x12, 0xe4, 1, 1);
+	for (index = 0; index < 8; ++index)
+	{
+		const uint8_t control = (uint8_t)((index & 3) |
+			(index >= 4 ? 0x10 : 0));
+		xavix_machine_write_low(&core->machine, 0x7b81, control);
+		if (xavix_machine_read_low(&core->machine, 0x7b80) != 0 ||
+			core->machine.state.peripherals.sensor.pixel ||
+			core->machine.state.peripherals.sensor.adc_phase ||
+			core->machine.state.peripherals.sensor.host_x != 0x80 ||
+			core->machine.state.peripherals.sensor.host_y != 0x80)
+			goto done;
+	}
+
+	core->machine.state.main_ram[XAVIX_PARALLEL_NVRAM_BASE + 0x123] = 0x5a;
+	(void)xavix_machine_read_low(&core->machine, 0x7a01);
+	if (!drgqst_state_save(core, state, drgqst_state_serialized_size(),
+		&written) || written != drgqst_state_serialized_size())
+		goto done;
+	core->ban_onep_sync_phase = 3;
+	if (!drgqst_state_load(core, state, written) ||
+		core->game_profile != DRGQST_CORE_EPO_HAMC_SENSOR ||
+		core->ban_onep_sync_phase || core->ban_onep_sync_divider)
+		goto done;
+
+	drgqst_core_reset(core);
+	if (core->machine.state.main_ram[
+		XAVIX_PARALLEL_NVRAM_BASE + 0x123] != 0xff ||
+		core->machine.state.input0 ||
+		core->machine.state.peripherals.eeprom.selected ||
+		core->machine.state.peripherals.sensor.pixel ||
+		core->machine.state.peripherals.sensor.adc_phase)
+		goto done;
+	ok = 1;
+done:
+	free(state);
+	free(core);
+	free(rom);
+	return ok;
+}
+
 int main(void)
 {
 	RUN_TEST(test_firmware_cursor_position());
@@ -922,6 +1011,7 @@ int main(void)
 	RUN_TEST(test_super_dash_ball_anport_and_nvram());
 	RUN_TEST(test_generic_parallel_nvram_profile());
 	RUN_TEST(test_plain_xavix2000_profile());
+	RUN_TEST(test_epo_hamc_sensor_profile());
 	printf("drgqst_state_test: all tests passed (%llu-byte state)\n",
 		(unsigned long long)drgqst_state_serialized_size());
 	return EXIT_SUCCESS;

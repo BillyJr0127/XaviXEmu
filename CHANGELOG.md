@@ -21,6 +21,9 @@ semantic versioning while experimental releases carry a pre-release suffix.
 - Recognize the exact 4 MiB `epo_es2j` image through a plain XaviX 2000
   profile with isolated P1/ANPORT/ADC behavior, independent runtime states,
   and verified title, game-select, attract-mode football, and PCM milestones.
+- Recognize the exact 4 MiB `epo_hamc` image with a dedicated no-EEPROM
+  synchronization profile, independent runtime states, and verified EPOCH,
+  animated-title, and PCM milestones.
 - Add ROM-independent tests for separate instruction fetching and interrupt
   acknowledgement/delivery.
 

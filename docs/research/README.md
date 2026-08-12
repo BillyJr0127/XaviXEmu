@@ -13,6 +13,7 @@ expectations are documented in `../compatibility.md`.
 - [`epo_bowl`](epo-bowl.md)
 - [`epo_ebox`](epo-ebox.md)
 - [`epo_es2j`](epo-es2j.md)
+- [`epo_hamc`](epo-hamc.md)
 - [`tak_chq`](tak-chq.md)
 - [Early XaviX (`epo_hamd` and `tvpc_dor`)](early-xavix.md)
 - [TTV optical sensors](ttv-sensors.md)

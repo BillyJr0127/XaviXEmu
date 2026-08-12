@@ -20,6 +20,7 @@ enum
 	TAK_CHQ_ROM_SIZE = 0x400000,
 	EPO_EBOX_ROM_SIZE = 0x400000,
 	EPO_ES2J_ROM_SIZE = 0x400000,
+	EPO_HAMC_ROM_SIZE = 0x400000,
 	TVPC_DOR_ROM_SIZE = 0x400000
 };
 
@@ -36,6 +37,7 @@ enum
 #define TAK_CHQ_ROM_CRC32 UINT32_C(0xffd2eb95)
 #define EPO_EBOX_ROM_CRC32 UINT32_C(0xe25ae4f5)
 #define EPO_ES2J_ROM_CRC32 UINT32_C(0x840aecb1)
+#define EPO_HAMC_ROM_CRC32 UINT32_C(0xb1177813)
 #define BAN_NARU_ROM_CRC32 UINT32_C(0xe3465ad2)
 #define BAN_BLDJ_ROM_CRC32 UINT32_C(0xaa865fe3)
 #define BAN_DB2J_ROM_CRC32 UINT32_C(0x7362ac0d)
@@ -66,7 +68,8 @@ enum drgqst_rom_kind
 	/* Keep newly recognized images append-only for diagnostic stability. */
 	DRGQST_ROM_TAK_CHQ,
 	DRGQST_ROM_EPO_EBOX,
-	DRGQST_ROM_EPO_ES2J
+	DRGQST_ROM_EPO_ES2J,
+	DRGQST_ROM_EPO_HAMC
 };
 
 typedef struct drgqst_rom_image

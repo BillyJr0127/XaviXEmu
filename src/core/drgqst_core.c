@@ -222,6 +222,21 @@ static uint8_t ban_onep_io1_read(void *opaque, uint8_t direction)
 	return input;
 }
 
+static uint8_t epo_hamc_io1_read(void *opaque, uint8_t direction)
+{
+	static const uint8_t phase_bits[4] = { 0x00, 0x02, 0x06, 0x04 };
+	drgqst_core *core = (drgqst_core *)opaque;
+	uint8_t input = core->machine.state.input1 & (uint8_t)~0x06;
+	(void)direction;
+	input |= phase_bits[core->ban_onep_sync_phase & 3];
+	if (++core->ban_onep_sync_divider >= core->ban_onep_sync_period)
+	{
+		core->ban_onep_sync_divider = 0;
+		core->ban_onep_sync_phase = (core->ban_onep_sync_phase + 1) & 3;
+	}
+	return input;
+}
+
 static unsigned ban_onep_punch_progress(uint8_t phase)
 {
 	if (!phase || phase >= 19)
@@ -287,6 +302,16 @@ advance:
 	if (++sensor->adc_phase > XAVIX_CU5501A_WIDTH)
 		sensor->adc_phase = 0;
 	return result;
+}
+
+static uint8_t epo_hamc_adc_read(void *opaque, unsigned channel)
+{
+	(void)opaque;
+	(void)channel;
+	/* The firmware performs a 32-by-32 acquisition, but the electrical
+	 * reflectance geometry is not yet known.  Return the unused-channel
+	 * baseline while keeping the proven synchronization edges separate. */
+	return 0x00;
 }
 
 static void ban_onep_io1_write(void *opaque, uint8_t data, uint8_t direction)
@@ -364,6 +389,7 @@ static void configure_internal_cursor_watch(drgqst_core *core)
 	case DRGQST_CORE_EPO_BOWL_SENSOR_24C04:
 	case DRGQST_CORE_XAVIX2000_PARALLEL_NVRAM:
 	case DRGQST_CORE_XAVIX2000_PLAIN:
+	case DRGQST_CORE_EPO_HAMC_SENSOR:
 	default:
 		watch.enabled = 0;
 		break;
@@ -439,6 +465,16 @@ int drgqst_core_init_profile(drgqst_core *core, const uint8_t *rom,
 		hooks.write_io1 = xavix_base_io1_write;
 		hooks.read_anport = open_anport_read;
 		hooks.read_adc = unused_adc_read;
+	}
+	else if (profile == DRGQST_CORE_EPO_HAMC_SENSOR)
+	{
+		/* Ham Ham Dai Circus waits for P1.1/P1.2 edges around a 32-by-32 ADC
+		 * acquisition loop.  Preserve only those observed synchronization
+		 * requirements here; the reflector geometry remains unmodelled. */
+		hooks.read_io1 = epo_hamc_io1_read;
+		hooks.write_io1 = xavix_base_io1_write;
+		hooks.read_anport = open_anport_read;
+		hooks.read_adc = epo_hamc_adc_read;
 	}
 	else if (profile == DRGQST_CORE_BAN_ONEP ||
 		profile == DRGQST_CORE_BAN_OMT ||
@@ -740,7 +776,8 @@ void drgqst_core_set_mouse(drgqst_core *core, uint8_t x, uint8_t y,
 	if (!core)
 		return;
 	if (core->game_profile == DRGQST_CORE_XAVIX2000_PARALLEL_NVRAM ||
-		core->game_profile == DRGQST_CORE_XAVIX2000_PLAIN)
+		core->game_profile == DRGQST_CORE_XAVIX2000_PLAIN ||
+		core->game_profile == DRGQST_CORE_EPO_HAMC_SENSOR)
 		return;
 	if (core->game_profile == DRGQST_CORE_BAN_ONEP)
 	{

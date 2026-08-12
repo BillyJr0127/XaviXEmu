@@ -161,6 +161,15 @@ static const supported_rom SUPPORTED_ROMS[] = {
 		}
 	},
 	{
+		DRGQST_ROM_EPO_HAMC,
+		EPO_HAMC_ROM_SIZE,
+		EPO_HAMC_ROM_CRC32,
+		{
+			0xed, 0x01, 0x09, 0x6e, 0xbb, 0x63, 0xb7, 0x22, 0x67, 0xad,
+			0x7e, 0x0b, 0x21, 0x15, 0x22, 0x4b, 0xba, 0xb6, 0x40, 0x11
+		}
+	},
+	{
 		DRGQST_ROM_BAN_NARU,
 		BAN_NARU_ROM_SIZE,
 		BAN_NARU_ROM_CRC32,
@@ -237,6 +246,8 @@ const char *drgqst_rom_short_name(enum drgqst_rom_kind kind)
 		return "epo_ebox";
 	case DRGQST_ROM_EPO_ES2J:
 		return "epo_es2j";
+	case DRGQST_ROM_EPO_HAMC:
+		return "epo_hamc";
 	case DRGQST_ROM_BAN_NARU:
 		return "ban_naru";
 	case DRGQST_ROM_BAN_BLDJ:

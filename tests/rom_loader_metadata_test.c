@@ -29,6 +29,10 @@ int main(void)
 	CHECK(EPO_ES2J_ROM_CRC32 == UINT32_C(0x840aecb1));
 	CHECK(!strcmp(drgqst_rom_short_name(DRGQST_ROM_EPO_ES2J), "epo_es2j"));
 	CHECK(!drgqst_rom_is_xavix2(DRGQST_ROM_EPO_ES2J));
+	CHECK(EPO_HAMC_ROM_SIZE == 4194304);
+	CHECK(EPO_HAMC_ROM_CRC32 == UINT32_C(0xb1177813));
+	CHECK(!strcmp(drgqst_rom_short_name(DRGQST_ROM_EPO_HAMC), "epo_hamc"));
+	CHECK(!drgqst_rom_is_xavix2(DRGQST_ROM_EPO_HAMC));
 	puts("rom_loader_metadata_test: all tests passed");
 	return 0;
 }

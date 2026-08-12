@@ -295,6 +295,11 @@ static int persistence_profile(enum drgqst_rom_kind rom_kind,
 		0xad, 0x52, 0x44, 0x9f, 0xfc, 0x13, 0xaf, 0x5f, 0x4c, 0x67,
 		0xb2, 0xc3, 0xcf, 0x43, 0x8e, 0x7e, 0xcd, 0x80, 0xb9, 0xfb
 	};
+	static const uint8_t hamc_sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+	{
+		0xed, 0x01, 0x09, 0x6e, 0xbb, 0x63, 0xb7, 0x22, 0x67, 0xad,
+		0x7e, 0x0b, 0x21, 0x15, 0x22, 0x4b, 0xba, 0xb6, 0x40, 0x11
+	};
 	static const uint8_t hamd_sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
 	{
 		0xc6, 0x1d, 0x43, 0x6d, 0x6b, 0x80, 0x37, 0x17, 0xb8, 0xc8,
@@ -366,6 +371,11 @@ static int persistence_profile(enum drgqst_rom_kind rom_kind,
 	case DRGQST_ROM_EPO_ES2J:
 		*sha1 = es2j_sha1;
 		*state_kind = DRGQST_PERSISTENCE_EPO_ES2J_RUNTIME_STATE;
+		*eeprom_size = 0;
+		return 1;
+	case DRGQST_ROM_EPO_HAMC:
+		*sha1 = hamc_sha1;
+		*state_kind = DRGQST_PERSISTENCE_EPO_HAMC_RUNTIME_STATE;
 		*eeprom_size = 0;
 		return 1;
 	case DRGQST_ROM_EPO_HAMD:
@@ -478,6 +488,8 @@ int main(int argc, char **argv)
 			DRGQST_CORE_XAVIX2000_PARALLEL_NVRAM :
 		image.kind == DRGQST_ROM_EPO_ES2J ?
 			DRGQST_CORE_XAVIX2000_PLAIN :
+		image.kind == DRGQST_ROM_EPO_HAMC ?
+			DRGQST_CORE_EPO_HAMC_SENSOR :
 		image.kind == DRGQST_ROM_EPO_HAMD ? DRGQST_CORE_XAVIX_BASE :
 		image.kind == DRGQST_ROM_TVPC_DOR ? DRGQST_CORE_XAVIX_I2C_24C16 :
 		DRGQST_CORE_DRAGON_QUEST))
@@ -487,7 +499,8 @@ int main(int argc, char **argv)
 		return 2;
 	}
 	eeprom_size = (image.kind == DRGQST_ROM_EPO_HAMD ||
-		image.kind == DRGQST_ROM_EPO_ES2J) ? 0 :
+		image.kind == DRGQST_ROM_EPO_ES2J ||
+		image.kind == DRGQST_ROM_EPO_HAMC) ? 0 :
 		uses_parallel_nvram(image.kind) ?
 		DRGQST_PERSISTENCE_PARALLEL_NVRAM_SIZE :
 		image.kind == DRGQST_ROM_TVPC_DOR ?
@@ -989,7 +1002,8 @@ int main(int argc, char **argv)
 		pixels = drgqst_core_run_frame(core);
 		if (image.kind == DRGQST_ROM_TAK_CHQ ||
 			image.kind == DRGQST_ROM_EPO_EBOX ||
-			image.kind == DRGQST_ROM_EPO_ES2J)
+			image.kind == DRGQST_ROM_EPO_ES2J ||
+			image.kind == DRGQST_ROM_EPO_HAMC)
 		{
 			const int16_t *audio = drgqst_core_frame_audio(core);
 			unsigned sample;
@@ -1103,7 +1117,8 @@ int main(int argc, char **argv)
 		(unsigned long)core->machine.state.peripherals.eeprom.write_generation);
 	if (image.kind == DRGQST_ROM_TAK_CHQ ||
 		image.kind == DRGQST_ROM_EPO_EBOX ||
-		image.kind == DRGQST_ROM_EPO_ES2J)
+		image.kind == DRGQST_ROM_EPO_ES2J ||
+		image.kind == DRGQST_ROM_EPO_HAMC)
 	{
 		printf("pcm-samples=%llu nonzero=%llu peak=%u\n",
 			(unsigned long long)pcm_samples,
