@@ -255,6 +255,16 @@ static int persistence_profile(enum drgqst_rom_kind rom_kind,
 		0x40, 0x6f, 0x0b, 0xcc, 0xb0, 0x1c, 0xd4, 0xa2, 0x6f, 0xe4,
 		0xa5, 0x67, 0x5d, 0x7e, 0xbe, 0xcc, 0x78, 0xc5, 0x81, 0x47
 	};
+	static const uint8_t mx_sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+	{
+		0x13, 0x7f, 0x97, 0xd7, 0xd8, 0x57, 0x69, 0x7a, 0x13, 0xe0,
+		0xc8, 0x98, 0x45, 0x09, 0x99, 0x4d, 0xc7, 0xbc, 0x5f, 0xc5
+	};
+	static const uint8_t jump_sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+	{
+		0xbc, 0xa7, 0x53, 0x5b, 0xaa, 0x6a, 0x54, 0xad, 0x3e, 0xe0,
+		0x92, 0x9b, 0xd3, 0xb7, 0x4a, 0x22, 0xcb, 0x51, 0x39, 0xda
+	};
 	static const uint8_t hamd_sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
 	{
 		0xc6, 0x1d, 0x43, 0x6d, 0x6b, 0x80, 0x37, 0x17, 0xb8, 0xc8,
@@ -289,6 +299,16 @@ static int persistence_profile(enum drgqst_rom_kind rom_kind,
 		*sha1 = swj_sha1;
 		*eeprom_kind = DRGQST_PERSISTENCE_TTV_SWJ_EEPROM;
 		*state_kind = DRGQST_PERSISTENCE_TTV_SWJ_RUNTIME_STATE;
+		return 1;
+	case DRGQST_ROM_TTV_MX:
+		*sha1 = mx_sha1;
+		*eeprom_kind = DRGQST_PERSISTENCE_TTV_MX_EEPROM;
+		*state_kind = DRGQST_PERSISTENCE_TTV_MX_RUNTIME_STATE;
+		return 1;
+	case DRGQST_ROM_TOM_JUMP:
+		*sha1 = jump_sha1;
+		*eeprom_kind = DRGQST_PERSISTENCE_TOM_JUMP_EEPROM;
+		*state_kind = DRGQST_PERSISTENCE_TOM_JUMP_RUNTIME_STATE;
 		return 1;
 	case DRGQST_ROM_EPO_HAMD:
 		*sha1 = hamd_sha1;
@@ -381,6 +401,9 @@ int main(int argc, char **argv)
 		image.kind == DRGQST_ROM_TTV_LOTR ? DRGQST_CORE_TTV_CU5501_24C02 :
 		(image.kind == DRGQST_ROM_TTV_SW ||
 		 image.kind == DRGQST_ROM_TTV_SWJ) ? DRGQST_CORE_TTV_CU5501A_24C02 :
+		(image.kind == DRGQST_ROM_TTV_MX ||
+		 image.kind == DRGQST_ROM_TOM_JUMP) ?
+			DRGQST_CORE_XAVIX2000_I2C_24C04 :
 		image.kind == DRGQST_ROM_EPO_HAMD ? DRGQST_CORE_XAVIX_BASE :
 		image.kind == DRGQST_ROM_TVPC_DOR ? DRGQST_CORE_XAVIX_I2C_24C16 :
 		DRGQST_CORE_DRAGON_QUEST))

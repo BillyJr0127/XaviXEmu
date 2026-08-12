@@ -98,6 +98,24 @@ static const supported_rom SUPPORTED_ROMS[] = {
 		}
 	},
 	{
+		DRGQST_ROM_TTV_MX,
+		TTV_ROM_SIZE,
+		TTV_MX_ROM_CRC32,
+		{
+			0x13, 0x7f, 0x97, 0xd7, 0xd8, 0x57, 0x69, 0x7a, 0x13, 0xe0,
+			0xc8, 0x98, 0x45, 0x09, 0x99, 0x4d, 0xc7, 0xbc, 0x5f, 0xc5
+		}
+	},
+	{
+		DRGQST_ROM_TOM_JUMP,
+		TTV_ROM_SIZE,
+		TOM_JUMP_ROM_CRC32,
+		{
+			0xbc, 0xa7, 0x53, 0x5b, 0xaa, 0x6a, 0x54, 0xad, 0x3e, 0xe0,
+			0x92, 0x9b, 0xd3, 0xb7, 0x4a, 0x22, 0xcb, 0x51, 0x39, 0xda
+		}
+	},
+	{
 		DRGQST_ROM_BAN_NARU,
 		BAN_NARU_ROM_SIZE,
 		BAN_NARU_ROM_CRC32,
@@ -160,6 +178,10 @@ const char *drgqst_rom_short_name(enum drgqst_rom_kind kind)
 		return "ttv_sw";
 	case DRGQST_ROM_TTV_SWJ:
 		return "ttv_swj";
+	case DRGQST_ROM_TTV_MX:
+		return "ttv_mx";
+	case DRGQST_ROM_TOM_JUMP:
+		return "tom_jump";
 	case DRGQST_ROM_BAN_NARU:
 		return "ban_naru";
 	case DRGQST_ROM_BAN_BLDJ:

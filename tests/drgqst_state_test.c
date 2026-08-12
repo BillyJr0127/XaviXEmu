@@ -538,6 +538,23 @@ done:
 	return ok;
 }
 
+static void core_i2c_send_control(drgqst_core *core, uint8_t control)
+{
+	unsigned bit;
+
+	/* Drive P1.4=SCL and P1.3=SDA high, then lower SDA for START. */
+	xavix_machine_write_low(&core->machine, 0x7a01, 0x18);
+	xavix_machine_write_low(&core->machine, 0x7a03, 0x18);
+	xavix_machine_write_low(&core->machine, 0x7a01, 0x10);
+	for (bit = 0; bit < 8; ++bit)
+	{
+		const uint8_t sda = control & (uint8_t)(0x80U >> bit) ? 0x08 : 0;
+		xavix_machine_write_low(&core->machine, 0x7a01, sda);
+		xavix_machine_write_low(&core->machine, 0x7a01,
+			(uint8_t)(0x10 | sda));
+	}
+}
+
 static int test_early_xavix_profiles(void)
 {
 	uint8_t *rom = (uint8_t *)malloc(TEST_ROM_SIZE);
@@ -568,6 +585,28 @@ static int test_early_xavix_profiles(void)
 		xavix_machine_read_external(&core->machine, 0x600002) != 0x03 ||
 		xavix_machine_read_external(&core->machine, 0x610002) !=
 			rom[0x210002])
+		goto done;
+
+	if (!drgqst_core_init_profile(core, rom, TEST_ROM_SIZE,
+		DRGQST_CORE_XAVIX2000_I2C_24C04))
+		goto done;
+	core->machine.state.input0 = 0xa5;
+	if (xavix_machine_read_low(&core->machine, 0x7a00) != 0xa5)
+		goto done;
+	/* 24C04 control bit 1 selects address bit 8, while bit 2 remains a
+	 * device-select line tied low.  Accepting A2 and rejecting A4 proves
+	 * this profile is neither the 24C02 nor 24C08 wiring. */
+	core_i2c_send_control(core, 0xa2);
+	if (!core->machine.state.peripherals.eeprom.selected ||
+		core->machine.state.peripherals.eeprom.pending_state !=
+			XAVIX_I2C_RECEIVE_ADDRESS)
+		goto done;
+	if (!drgqst_core_init_profile(core, rom, TEST_ROM_SIZE,
+		DRGQST_CORE_XAVIX2000_I2C_24C04))
+		goto done;
+	core_i2c_send_control(core, 0xa4);
+	if (core->machine.state.peripherals.eeprom.selected ||
+		core->machine.state.peripherals.eeprom.pending_state != XAVIX_I2C_IGNORE)
 		goto done;
 	ok = 1;
 done:

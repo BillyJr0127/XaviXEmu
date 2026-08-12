@@ -11,6 +11,8 @@ identify exact, user-supplied images.
 | `ttv_lotr` | 8,388,608 | `a034ecd5` | `264a9d4327af0a075841ad6129db67d82cf741f1` |
 | `ttv_sw` | 8,388,608 | `51cae5fd` | `1ed8d556f31b4182259ca8c766d60c824d8d9744` |
 | `ttv_swj` | 8,388,608 | `a5c22ed0` | `406f0bccb01cd4a26fe4a5675d7ebecc78c58147` |
+| `ttv_mx` | 8,388,608 | `e64bf1a1` | `137f97d7d857697a13e0c8984509994dc7bc5fc5` |
+| `tom_jump` | 8,388,608 | `20bf5c17` | `bca7535baa6a54ad3ee0929bd3b74a22cb5139da` |
 | `epo_hamd` assembled image | 8,388,608 | `427cb00f` | `c61d436d6b803717b8c84d2022499380f71cced8` |
 | `tvpc_dor` | 4,194,304 | `6f2edbb2` | `98fa86f85e00aa40e7a585ff0bc930cb5ca88362` |
 | `ban_naru` | 8,388,608 | `e3465ad2` | `13e3d2de5d5a084635cab158f3639a1ea73265dc` |

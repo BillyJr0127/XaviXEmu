@@ -146,6 +146,16 @@ static void xavix_i2c24c16_io1_write(void *opaque, uint8_t data,
 		&core->machine.state.peripherals.eeprom, scl, sda);
 }
 
+static void xavix_i2c24c04_io1_write(void *opaque, uint8_t data,
+	uint8_t direction)
+{
+	drgqst_core *core = (drgqst_core *)opaque;
+	const int scl = (direction & 0x10) ? !!(data & 0x10) : 0;
+	const int sda = (direction & 0x08) ? !!(data & 0x08) : 1;
+	xavix_eeprom24c04_set_lines(
+		&core->machine.state.peripherals.eeprom, scl, sda);
+}
+
 static uint8_t tvpc_external_read(void *opaque, uint32_t address,
 	int *handled)
 {
@@ -320,6 +330,7 @@ static void configure_internal_cursor_watch(drgqst_core *core)
 	case DRGQST_CORE_BAN_OMT:
 	case DRGQST_CORE_XAVIX_BASE:
 	case DRGQST_CORE_XAVIX_I2C_24C16:
+	case DRGQST_CORE_XAVIX2000_I2C_24C04:
 	default:
 		watch.enabled = 0;
 		break;
@@ -356,6 +367,14 @@ int drgqst_core_init_profile(drgqst_core *core, const uint8_t *rom,
 		hooks.read_io1 = xavix_i2c_io1_read;
 		hooks.write_io1 = xavix_i2c24c16_io1_write;
 		hooks.read_external = tvpc_external_read;
+	}
+	else if (profile == DRGQST_CORE_XAVIX2000_I2C_24C04)
+	{
+		/* MX Dirt Rebel and IDATEN Jump use plain digital controls on IN0.
+		 * P1 carries only their 24C04 I2C EEPROM; no optical sensor or
+		 * synthetic camera synchronization source is attached. */
+		hooks.read_io1 = xavix_i2c_io1_read;
+		hooks.write_io1 = xavix_i2c24c04_io1_write;
 	}
 	else if (profile == DRGQST_CORE_BAN_ONEP ||
 		profile == DRGQST_CORE_BAN_OMT ||

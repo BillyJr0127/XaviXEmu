@@ -300,6 +300,16 @@ static const uint8_t TTV_SWJ_ROM_SHA1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
 	0x40, 0x6f, 0x0b, 0xcc, 0xb0, 0x1c, 0xd4, 0xa2, 0x6f, 0xe4,
 	0xa5, 0x67, 0x5d, 0x7e, 0xbe, 0xcc, 0x78, 0xc5, 0x81, 0x47
 };
+static const uint8_t TTV_MX_ROM_SHA1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+{
+	0x13, 0x7f, 0x97, 0xd7, 0xd8, 0x57, 0x69, 0x7a, 0x13, 0xe0,
+	0xc8, 0x98, 0x45, 0x09, 0x99, 0x4d, 0xc7, 0xbc, 0x5f, 0xc5
+};
+static const uint8_t TOM_JUMP_ROM_SHA1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+{
+	0xbc, 0xa7, 0x53, 0x5b, 0xaa, 0x6a, 0x54, 0xad, 0x3e, 0xe0,
+	0x92, 0x9b, 0xd3, 0xb7, 0x4a, 0x22, 0xcb, 0x51, 0x39, 0xda
+};
 static const uint8_t EPO_HAMD_ROM_SHA1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
 {
 	0xc6, 0x1d, 0x43, 0x6d, 0x6b, 0x80, 0x37, 0x17, 0xb8, 0xc8,
@@ -388,6 +398,11 @@ static int rom_uses_camera(enum drgqst_rom_kind kind)
 		kind == DRGQST_ROM_TTV_SWJ;
 }
 
+static int rom_uses_digital_tilt(enum drgqst_rom_kind kind)
+{
+	return kind == DRGQST_ROM_TTV_MX || kind == DRGQST_ROM_TOM_JUMP;
+}
+
 static int rom_has_internal_cursor(enum drgqst_rom_kind kind)
 {
 	if (kind == DRGQST_ROM_TTV_LOTR || kind == DRGQST_ROM_TTV_SW ||
@@ -411,6 +426,9 @@ static enum drgqst_core_profile core_profile_for_rom(
 		return kind == DRGQST_ROM_TTV_LOTR ?
 			DRGQST_CORE_TTV_CU5501_24C02 :
 			DRGQST_CORE_TTV_CU5501A_24C02;
+	case DRGQST_ROM_TTV_MX:
+	case DRGQST_ROM_TOM_JUMP:
+		return DRGQST_CORE_XAVIX2000_I2C_24C04;
 	case DRGQST_ROM_EPO_HAMD:
 		return DRGQST_CORE_XAVIX_BASE;
 	case DRGQST_ROM_TVPC_DOR:
@@ -436,6 +454,10 @@ static const uint8_t *rom_sha1_for_kind(enum drgqst_rom_kind kind)
 		return TTV_SW_ROM_SHA1;
 	case DRGQST_ROM_TTV_SWJ:
 		return TTV_SWJ_ROM_SHA1;
+	case DRGQST_ROM_TTV_MX:
+		return TTV_MX_ROM_SHA1;
+	case DRGQST_ROM_TOM_JUMP:
+		return TOM_JUMP_ROM_SHA1;
 	case DRGQST_ROM_EPO_HAMD:
 		return EPO_HAMD_ROM_SHA1;
 	case DRGQST_ROM_TVPC_DOR:
@@ -472,6 +494,14 @@ static enum drgqst_persistence_kind persistence_kind_for_rom(
 		return kind == DRGQST_PERSISTENCE_EEPROM ?
 			DRGQST_PERSISTENCE_TTV_SWJ_EEPROM :
 			DRGQST_PERSISTENCE_TTV_SWJ_RUNTIME_STATE;
+	case DRGQST_ROM_TTV_MX:
+		return kind == DRGQST_PERSISTENCE_EEPROM ?
+			DRGQST_PERSISTENCE_TTV_MX_EEPROM :
+			DRGQST_PERSISTENCE_TTV_MX_RUNTIME_STATE;
+	case DRGQST_ROM_TOM_JUMP:
+		return kind == DRGQST_PERSISTENCE_EEPROM ?
+			DRGQST_PERSISTENCE_TOM_JUMP_EEPROM :
+			DRGQST_PERSISTENCE_TOM_JUMP_RUNTIME_STATE;
 	case DRGQST_ROM_EPO_HAMD:
 		return kind == DRGQST_PERSISTENCE_RUNTIME_STATE ?
 			DRGQST_PERSISTENCE_EPO_HAMD_RUNTIME_STATE : kind;
@@ -972,6 +1002,54 @@ static void update_hamd_input(void)
 		g_core->machine.state.input0 &= (uint8_t)~0x01;
 }
 
+static void update_digital_tilt_input(void)
+{
+	uint8_t input = 0;
+	int up;
+	int down;
+	int left;
+	int right;
+
+	if (!g_core || !rom_uses_digital_tilt(g_rom.kind))
+		return;
+
+	/* The original tilt accessory exposes four active-high digital motion
+	 * switches.  Keyboard directions take priority; with no direction key
+	 * held, the mouse position acts as a virtual tilted controller with a
+	 * generous neutral region around the centre of the picture. */
+	up = (GetAsyncKeyState(VK_UP) & 0x8000) != 0 ||
+		(GetAsyncKeyState('W') & 0x8000) != 0;
+	down = (GetAsyncKeyState(VK_DOWN) & 0x8000) != 0 ||
+		(GetAsyncKeyState('S') & 0x8000) != 0;
+	left = (GetAsyncKeyState(VK_LEFT) & 0x8000) != 0 ||
+		(GetAsyncKeyState('A') & 0x8000) != 0;
+	right = (GetAsyncKeyState(VK_RIGHT) & 0x8000) != 0 ||
+		(GetAsyncKeyState('D') & 0x8000) != 0;
+	if (!up && !down && !left && !right)
+	{
+		up = g_mouse_y < 0x60;
+		down = g_mouse_y > 0x9f;
+		left = g_mouse_x < 0x60;
+		right = g_mouse_x > 0x9f;
+	}
+	if (up && !down)
+		input |= 0x10;
+	else if (down && !up)
+		input |= 0x20;
+	if (left && !right)
+		input |= 0x40;
+	else if (right && !left)
+		input |= 0x80;
+	if (g_left_button || (GetAsyncKeyState(VK_SPACE) & 0x8000))
+		input |= 0x01;
+	if (g_right_button || (GetAsyncKeyState(VK_CONTROL) & 0x8000))
+		input |= 0x02;
+	if ((GetAsyncKeyState(VK_MBUTTON) & 0x8000) ||
+		(GetAsyncKeyState('P') & 0x8000))
+		input |= 0x04;
+	g_core->machine.state.input0 = input;
+}
+
 static void release_held_host_inputs(HWND window)
 {
 	g_left_button = 0;
@@ -1341,6 +1419,7 @@ static void run_due_frames(HWND window)
 		{
 			update_hamd_input();
 			update_tvpc_keyboard();
+			update_digital_tilt_input();
 			update_core_mouse();
 			g_framebuffer = drgqst_core_run_frame(g_core);
 			advance_ttv_special_gesture();
@@ -1707,6 +1786,7 @@ static void draw_mouse_target(HDC device, const display_viewport *viewport)
 	if (!g_core || rom_has_internal_cursor(g_rom.kind) ||
 		g_rom.kind == DRGQST_ROM_EPO_HAMD ||
 		g_rom.kind == DRGQST_ROM_TVPC_DOR ||
+		rom_uses_digital_tilt(g_rom.kind) ||
 		(!rom_uses_camera(g_rom.kind) &&
 		drgqst_core_feather_visible(g_core)))
 		return;

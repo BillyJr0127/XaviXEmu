@@ -38,6 +38,10 @@ static const wchar_t TTV_SWJ_STATE_FILENAME[] = L"ttv_swj-runtime-state.sav";
 static const wchar_t EPO_HAMD_STATE_FILENAME[] = L"epo_hamd-runtime-state.sav";
 static const wchar_t TVPC_DOR_EEPROM_FILENAME[] = L"tvpc_dor-eeprom.sav";
 static const wchar_t TVPC_DOR_STATE_FILENAME[] = L"tvpc_dor-runtime-state.sav";
+static const wchar_t TTV_MX_EEPROM_FILENAME[] = L"ttv_mx-eeprom.sav";
+static const wchar_t TTV_MX_STATE_FILENAME[] = L"ttv_mx-runtime-state.sav";
+static const wchar_t TOM_JUMP_EEPROM_FILENAME[] = L"tom_jump-eeprom.sav";
+static const wchar_t TOM_JUMP_STATE_FILENAME[] = L"tom_jump-runtime-state.sav";
 static volatile LONG temporary_counter;
 
 static void clear_error(wchar_t *error, size_t error_length)
@@ -110,6 +114,14 @@ static const wchar_t *filename_for_kind(enum drgqst_persistence_kind kind)
 		return TVPC_DOR_EEPROM_FILENAME;
 	case DRGQST_PERSISTENCE_TVPC_DOR_RUNTIME_STATE:
 		return TVPC_DOR_STATE_FILENAME;
+	case DRGQST_PERSISTENCE_TTV_MX_EEPROM:
+		return TTV_MX_EEPROM_FILENAME;
+	case DRGQST_PERSISTENCE_TTV_MX_RUNTIME_STATE:
+		return TTV_MX_STATE_FILENAME;
+	case DRGQST_PERSISTENCE_TOM_JUMP_EEPROM:
+		return TOM_JUMP_EEPROM_FILENAME;
+	case DRGQST_PERSISTENCE_TOM_JUMP_RUNTIME_STATE:
+		return TOM_JUMP_STATE_FILENAME;
 	default:
 		return NULL;
 	}
@@ -126,7 +138,9 @@ static int validate_payload_size(
 		kind == DRGQST_PERSISTENCE_BAN_OMT_EEPROM ||
 		kind == DRGQST_PERSISTENCE_TTV_LOTR_EEPROM ||
 		kind == DRGQST_PERSISTENCE_TTV_SW_EEPROM ||
-		kind == DRGQST_PERSISTENCE_TTV_SWJ_EEPROM)
+		kind == DRGQST_PERSISTENCE_TTV_SWJ_EEPROM ||
+		kind == DRGQST_PERSISTENCE_TTV_MX_EEPROM ||
+		kind == DRGQST_PERSISTENCE_TOM_JUMP_EEPROM)
 	{
 		if (payload_size != DRGQST_PERSISTENCE_EEPROM_SIZE)
 		{
@@ -144,7 +158,6 @@ static int validate_payload_size(
 		}
 		return 1;
 	}
-
 	if (kind == DRGQST_PERSISTENCE_RUNTIME_STATE ||
 		kind == DRGQST_PERSISTENCE_BAN_ONEP_RUNTIME_STATE ||
 		kind == DRGQST_PERSISTENCE_BAN_OMT_RUNTIME_STATE ||
@@ -152,7 +165,9 @@ static int validate_payload_size(
 		kind == DRGQST_PERSISTENCE_TTV_SW_RUNTIME_STATE ||
 		kind == DRGQST_PERSISTENCE_TTV_SWJ_RUNTIME_STATE ||
 		kind == DRGQST_PERSISTENCE_EPO_HAMD_RUNTIME_STATE ||
-		kind == DRGQST_PERSISTENCE_TVPC_DOR_RUNTIME_STATE)
+		kind == DRGQST_PERSISTENCE_TVPC_DOR_RUNTIME_STATE ||
+		kind == DRGQST_PERSISTENCE_TTV_MX_RUNTIME_STATE ||
+		kind == DRGQST_PERSISTENCE_TOM_JUMP_RUNTIME_STATE)
 	{
 		if (!payload_size || payload_size > DRGQST_PERSISTENCE_MAX_STATE_SIZE)
 		{

@@ -478,10 +478,72 @@ static void test_persistence(void)
 	remove_test_tree(root);
 }
 
+static void test_xavix2000_24c04_persistence_kinds(void)
+{
+	wchar_t root[MAX_PATH];
+	wchar_t mx_eeprom_path[MAX_PATH] = { 0 };
+	wchar_t mx_state_path[MAX_PATH] = { 0 };
+	wchar_t jump_eeprom_path[MAX_PATH] = { 0 };
+	wchar_t jump_state_path[MAX_PATH] = { 0 };
+	wchar_t error[512];
+	uint8_t rom_sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] = { 0 };
+	uint8_t eeprom[DRGQST_PERSISTENCE_EEPROM_SIZE];
+	uint8_t output[DRGQST_PERSISTENCE_EEPROM_SIZE];
+	uint8_t state[3] = { 0x58, 0x32, 0x4b };
+	size_t output_size = 0;
+
+	if (!create_test_root(root))
+	{
+		CHECK(0 && "create 24C04 persistence root");
+		return;
+	}
+	memset(eeprom, 0xff, sizeof(eeprom));
+	rom_sha1[0] = 0x24;
+	rom_sha1[1] = 0xc0;
+	rom_sha1[2] = 0x04;
+	CHECK(drgqst_persistence_get_path(root, DRGQST_PERSISTENCE_TTV_MX_EEPROM,
+		mx_eeprom_path, MAX_PATH, error, sizeof(error) / sizeof(error[0])));
+	CHECK(drgqst_persistence_get_path(root,
+		DRGQST_PERSISTENCE_TTV_MX_RUNTIME_STATE, mx_state_path, MAX_PATH,
+		error, sizeof(error) / sizeof(error[0])));
+	CHECK(drgqst_persistence_get_path(root, DRGQST_PERSISTENCE_TOM_JUMP_EEPROM,
+		jump_eeprom_path, MAX_PATH, error, sizeof(error) / sizeof(error[0])));
+	CHECK(drgqst_persistence_get_path(root,
+		DRGQST_PERSISTENCE_TOM_JUMP_RUNTIME_STATE, jump_state_path, MAX_PATH,
+		error, sizeof(error) / sizeof(error[0])));
+	CHECK(wcsstr(mx_eeprom_path, L"\\ttv_mx-eeprom.sav") != NULL);
+	CHECK(wcsstr(mx_state_path, L"\\ttv_mx-runtime-state.sav") != NULL);
+	CHECK(wcsstr(jump_eeprom_path, L"\\tom_jump-eeprom.sav") != NULL);
+	CHECK(wcsstr(jump_state_path, L"\\tom_jump-runtime-state.sav") != NULL);
+	CHECK(wcscmp(mx_eeprom_path, jump_eeprom_path) != 0);
+	CHECK(drgqst_persistence_save(root, DRGQST_PERSISTENCE_TTV_MX_EEPROM,
+		rom_sha1, eeprom, sizeof(eeprom), error,
+		sizeof(error) / sizeof(error[0])));
+	CHECK(drgqst_persistence_save(root,
+		DRGQST_PERSISTENCE_TOM_JUMP_RUNTIME_STATE, rom_sha1,
+		state, sizeof(state), error, sizeof(error) / sizeof(error[0])));
+	CHECK(drgqst_persistence_load(root, DRGQST_PERSISTENCE_TTV_MX_EEPROM,
+		rom_sha1, output, sizeof(output), &output_size, error,
+		sizeof(error) / sizeof(error[0])));
+	CHECK(output_size == sizeof(eeprom));
+	CHECK(!memcmp(output, eeprom, sizeof(eeprom)));
+
+	if (*mx_eeprom_path)
+		DeleteFileW(mx_eeprom_path);
+	if (*mx_state_path)
+		DeleteFileW(mx_state_path);
+	if (*jump_eeprom_path)
+		DeleteFileW(jump_eeprom_path);
+	if (*jump_state_path)
+		DeleteFileW(jump_state_path);
+	RemoveDirectoryW(root);
+}
+
 int main(void)
 {
 	test_default_directory();
 	test_persistence();
+	test_xavix2000_24c04_persistence_kinds();
 
 	if (failures)
 	{

@@ -52,6 +52,22 @@ do not provide one.
   Hold Space for the lightsaber spin gesture; this rotates an elongated
   optical reflection through vertical, diagonal, and horizontal orientations.
 
+## `ttv_mx` and `tom_jump` (experimental)
+
+The original tilt controller reports four digital directions rather than an
+optical position. Move the mouse away from the centre of the game picture to
+tilt the virtual controller; a neutral region around the centre prevents small
+movements from steering. Keyboard directions take priority when held.
+
+- Mouse position or Up/Down/Left/Right or W/S/A/D: tilt direction.
+- Left mouse or Space: accelerator.
+- Right mouse or Ctrl: brake.
+- Middle mouse or P: pause.
+
+Rendering and the hardware input path are under active verification. These
+mappings are usability controls and do not claim to reproduce the physical
+shape or travel of the original accessory.
+
 ## `ban_naru` (experimental)
 
 - Mouse movement: first wrist reflector and game-owned cursor.
