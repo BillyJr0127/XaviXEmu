@@ -614,6 +614,16 @@ static int test_early_xavix_profiles(void)
 		core->machine.state.peripherals.eeprom.pending_state != XAVIX_I2C_IGNORE)
 		goto done;
 
+	/* Choro-Q uses the same plain 24C04 profile with a 4 MiB external ROM.
+	 * Verify that this exact board size is accepted and mirrored, without
+	 * attaching an optical-input profile. */
+	if (!drgqst_core_init_profile(core, rom, TEST_OMT_ROM_SIZE,
+		DRGQST_CORE_XAVIX2000_I2C_24C04) ||
+		core->machine.rom_size != TEST_OMT_ROM_SIZE ||
+		core->game_profile != DRGQST_CORE_XAVIX2000_I2C_24C04 ||
+		xavix_machine_read_external(&core->machine, 0x401234) != rom[0x001234])
+		goto done;
+
 	/* Excite Bowling is a 2 MiB image mirrored four times over the 8 MiB
 	 * external bus.  Keep the core whitelist strict while accepting exactly
 	 * that additional board size. */

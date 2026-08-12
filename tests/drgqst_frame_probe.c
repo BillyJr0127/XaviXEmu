@@ -275,6 +275,11 @@ static int persistence_profile(enum drgqst_rom_kind rom_kind,
 		0xeb, 0xe3, 0x79, 0x21, 0x72, 0xdc, 0x43, 0x90, 0x4b, 0x92,
 		0x26, 0xbe, 0xb2, 0x7f, 0x1d, 0xa8, 0x9d, 0x23, 0x88, 0xcc
 	};
+	static const uint8_t tak_chq_sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+	{
+		0xa3, 0x08, 0x84, 0xda, 0x55, 0x54, 0x48, 0x3e, 0xbf, 0xd0,
+		0x00, 0x9c, 0xf5, 0xdd, 0x17, 0x68, 0xbe, 0x8a, 0x99, 0xcb
+	};
 	static const uint8_t hamd_sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
 	{
 		0xc6, 0x1d, 0x43, 0x6d, 0x6b, 0x80, 0x37, 0x17, 0xb8, 0xc8,
@@ -331,6 +336,11 @@ static int persistence_profile(enum drgqst_rom_kind rom_kind,
 		*eeprom_kind = DRGQST_PERSISTENCE_EPO_BOWL_EEPROM;
 		*state_kind = DRGQST_PERSISTENCE_EPO_BOWL_RUNTIME_STATE;
 		return 1;
+	case DRGQST_ROM_TAK_CHQ:
+		*sha1 = tak_chq_sha1;
+		*eeprom_kind = DRGQST_PERSISTENCE_TAK_CHQ_EEPROM;
+		*state_kind = DRGQST_PERSISTENCE_TAK_CHQ_RUNTIME_STATE;
+		return 1;
 	case DRGQST_ROM_EPO_HAMD:
 		*sha1 = hamd_sha1;
 		*eeprom_kind = DRGQST_PERSISTENCE_EEPROM;
@@ -372,6 +382,9 @@ int main(int argc, char **argv)
 	unsigned sdb_p2_x = UINT_MAX;
 	unsigned sdb_p2_y = UINT_MAX;
 	unsigned last_cursor_visible = UINT_MAX;
+	unsigned pcm_peak = 0;
+	uint64_t pcm_samples = 0;
+	uint64_t pcm_nonzero = 0;
 	int state_loaded = 0;
 	int durable_eeprom_loaded = 0;
 	uint8_t initial_eeprom[DRGQST_PERSISTENCE_PARALLEL_NVRAM_SIZE];
@@ -429,7 +442,8 @@ int main(int argc, char **argv)
 		image.kind == DRGQST_ROM_EPO_BOWL ?
 			DRGQST_CORE_EPO_BOWL_SENSOR_24C04 :
 		(image.kind == DRGQST_ROM_TTV_MX ||
-		 image.kind == DRGQST_ROM_TOM_JUMP) ?
+		 image.kind == DRGQST_ROM_TOM_JUMP ||
+		 image.kind == DRGQST_ROM_TAK_CHQ) ?
 			DRGQST_CORE_XAVIX2000_I2C_24C04 :
 		image.kind == DRGQST_ROM_EPO_SDB ?
 			DRGQST_CORE_XAVIX2000_PARALLEL_NVRAM_SDB :
@@ -570,6 +584,23 @@ int main(int argc, char **argv)
 	{
 		if (!uses_glove_sensor(image.kind))
 			apply_calibration_sequence(core, frame - 1);
+		if (image.kind == DRGQST_ROM_TAK_CHQ)
+		{
+			if (fixed_x != UINT_MAX)
+				core->machine.state.anport_regs[2] = (uint8_t)fixed_x;
+			if (fixed_y != UINT_MAX)
+				core->machine.state.anport_regs[3] = (uint8_t)fixed_y;
+			/* Diagnostic-only prelude: enter the car-select screen before a
+			 * later P0 bit sweep.  No host control mapping is implied. */
+			if (trajectory == 29)
+			{
+				const unsigned offset = frame >= 1500 ? frame - 1500 : UINT_MAX;
+				if (offset != UINT_MAX && offset / 40 < 8 && offset % 40 < 4)
+					core->machine.state.input0 |= 0x80;
+				else
+					core->machine.state.input0 &= (uint8_t)~0x80;
+			}
+		}
 		if (image.kind == DRGQST_ROM_TVPC_DOR)
 		{
 			const int apply_delta = (trajectory < 25 || trajectory > 28) &&
@@ -914,6 +945,24 @@ int main(int argc, char **argv)
 				drgqst_core_trigger_hamd_packet(core, second);
 		}
 		pixels = drgqst_core_run_frame(core);
+		if (image.kind == DRGQST_ROM_TAK_CHQ)
+		{
+			const int16_t *audio = drgqst_core_frame_audio(core);
+			unsigned sample;
+			for (sample = 0;
+				sample < DRGQST_AUDIO_FRAMES_PER_VIDEO_FRAME * 2;
+				++sample)
+			{
+				const int value = audio[sample];
+				const unsigned magnitude = value < 0 ?
+					(unsigned)(-value) : (unsigned)value;
+				++pcm_samples;
+				if (value)
+					++pcm_nonzero;
+				if (magnitude > pcm_peak)
+					pcm_peak = magnitude;
+			}
+		}
 		if (image.kind == DRGQST_ROM_TVPC_DOR && trajectory == 25 &&
 			frame >= trajectory_start &&
 			(frame - trajectory_start) % 3 == 1)
@@ -1008,6 +1057,12 @@ int main(int argc, char **argv)
 		(unsigned)core->machine.state.peripherals.sensor.scan_y,
 		(unsigned)core->machine.state.peripherals.eeprom.dirty,
 		(unsigned long)core->machine.state.peripherals.eeprom.write_generation);
+	if (image.kind == DRGQST_ROM_TAK_CHQ)
+	{
+		printf("pcm-samples=%llu nonzero=%llu peak=%u\n",
+			(unsigned long long)pcm_samples,
+			(unsigned long long)pcm_nonzero, pcm_peak);
+	}
 	{
 		unsigned index;
 		for (index = 0; index < sizeof(io_trace.counters) /

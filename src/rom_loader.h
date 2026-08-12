@@ -17,6 +17,7 @@ enum
 	EPO_HAMD_ROM_SIZE = 0x800000,
 	EPO_SDB_ROM_SIZE = 0x400000,
 	EPO_BOWL_ROM_SIZE = 0x200000,
+	TAK_CHQ_ROM_SIZE = 0x400000,
 	TVPC_DOR_ROM_SIZE = 0x400000
 };
 
@@ -30,6 +31,7 @@ enum
 #define TOM_JUMP_ROM_CRC32 UINT32_C(0x20bf5c17)
 #define EPO_SDB_ROM_CRC32 UINT32_C(0xa004a764)
 #define EPO_BOWL_ROM_CRC32 UINT32_C(0xd34f8d9e)
+#define TAK_CHQ_ROM_CRC32 UINT32_C(0xffd2eb95)
 #define BAN_NARU_ROM_CRC32 UINT32_C(0xe3465ad2)
 #define BAN_BLDJ_ROM_CRC32 UINT32_C(0xaa865fe3)
 #define BAN_DB2J_ROM_CRC32 UINT32_C(0x7362ac0d)
@@ -56,7 +58,9 @@ enum drgqst_rom_kind
 	DRGQST_ROM_BAN_DBZ,
 	/* Experimental original-generation XaviX support. */
 	DRGQST_ROM_EPO_HAMD,
-	DRGQST_ROM_TVPC_DOR
+	DRGQST_ROM_TVPC_DOR,
+	/* Keep newly recognized images append-only for diagnostic stability. */
+	DRGQST_ROM_TAK_CHQ
 };
 
 typedef struct drgqst_rom_image

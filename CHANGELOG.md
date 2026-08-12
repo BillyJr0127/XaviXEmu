@@ -13,6 +13,8 @@ semantic versioning while experimental releases carry a pre-release suffix.
 - Recognize the exact 2 MiB `epo_bowl` image with mirrored external-ROM
   mapping, a dedicated 24C04 plus synthetic sensor profile, and independent
   EEPROM/runtime-state files.
+- Recognize the exact 4 MiB `tak_chq` image through the generic XaviX 2000
+  24C04 profile with independent EEPROM/runtime-state files.
 - Add ROM-independent tests for separate instruction fetching and interrupt
   acknowledgement/delivery.
 

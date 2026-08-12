@@ -223,6 +223,27 @@ if(BUILD_TESTING)
 		MINIZ_NO_ZLIB_COMPATIBLE_NAMES
 	)
 
+	add_executable(rom-loader-metadata-test
+		tests/rom_loader_metadata_test.c
+		src/rom_loader.c
+		src/sha1.c
+		${MINIZ_DIRECTORY}/miniz.c
+	)
+	target_include_directories(rom-loader-metadata-test PRIVATE
+		${CMAKE_CURRENT_SOURCE_DIR}/src
+		${MINIZ_DIRECTORY}
+	)
+	target_compile_definitions(rom-loader-metadata-test PRIVATE
+		WIN32_LEAN_AND_MEAN
+		NOMINMAX
+		MINIZ_NO_TIME
+		MINIZ_NO_STDIO
+		MINIZ_NO_ARCHIVE_WRITING_APIS
+		MINIZ_NO_ZLIB_APIS
+		MINIZ_NO_ZLIB_COMPATIBLE_NAMES
+	)
+	add_test(NAME rom-loader-metadata-test COMMAND rom-loader-metadata-test)
+
 	add_executable(drgqst-boot-probe
 		tests/drgqst_boot_probe.c
 		src/core/drgqst_core.c

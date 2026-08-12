@@ -92,6 +92,7 @@ still recorded to distinguish clean implementation from no upstream influence.
 | `tests/drgqst_frame_probe.c` | XaviXEmu diagnostic utility | — | — | — | Independent implementation | BSD-3-Clause | No captured frames or ROM-derived output is stored in the source tree. |
 | `tests/drgqst_state_test.c` | XaviXEmu test suite | — | — | — | Independent implementation | BSD-3-Clause | Tests the first-party save-state format. |
 | `tests/persistence_test.c` | XaviXEmu test suite | — | — | — | Independent implementation | BSD-3-Clause | Tests first-party file handling. |
+| `tests/rom_loader_metadata_test.c` | XaviXEmu test suite | — | — | — | Independent implementation | BSD-3-Clause | Verifies only public ROM-identification metadata and embeds no ROM data. |
 | `tests/rom_verify.c` | XaviXEmu verifier utility | — | — | — | Independent implementation | BSD-3-Clause | Uses metadata exposed by `rom_loader`; no ROM is embedded. |
 | `tests/screenshot_test.c` | XaviXEmu test suite | — | — | — | Independent implementation | BSD-3-Clause | Tests first-party WIC output. |
 | `tests/sha1_test.c` | Published SHA-1 test vectors and XaviXEmu test harness | — | — | — | Independent implementation | BSD-3-Clause | Standard test vectors are facts, not copied library code. |

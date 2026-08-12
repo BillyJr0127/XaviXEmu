@@ -320,6 +320,11 @@ static const uint8_t EPO_BOWL_ROM_SHA1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
 	0xeb, 0xe3, 0x79, 0x21, 0x72, 0xdc, 0x43, 0x90, 0x4b, 0x92,
 	0x26, 0xbe, 0xb2, 0x7f, 0x1d, 0xa8, 0x9d, 0x23, 0x88, 0xcc
 };
+static const uint8_t TAK_CHQ_ROM_SHA1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+{
+	0xa3, 0x08, 0x84, 0xda, 0x55, 0x54, 0x48, 0x3e, 0xbf, 0xd0,
+	0x00, 0x9c, 0xf5, 0xdd, 0x17, 0x68, 0xbe, 0x8a, 0x99, 0xcb
+};
 static const uint8_t EPO_HAMD_ROM_SHA1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
 {
 	0xc6, 0x1d, 0x43, 0x6d, 0x6b, 0x80, 0x37, 0x17, 0xb8, 0xc8,
@@ -441,6 +446,7 @@ static enum drgqst_core_profile core_profile_for_rom(
 			DRGQST_CORE_TTV_CU5501A_24C02;
 	case DRGQST_ROM_TTV_MX:
 	case DRGQST_ROM_TOM_JUMP:
+	case DRGQST_ROM_TAK_CHQ:
 		return DRGQST_CORE_XAVIX2000_I2C_24C04;
 	case DRGQST_ROM_EPO_BOWL:
 		return DRGQST_CORE_EPO_BOWL_SENSOR_24C04;
@@ -479,6 +485,8 @@ static const uint8_t *rom_sha1_for_kind(enum drgqst_rom_kind kind)
 		return EPO_SDB_ROM_SHA1;
 	case DRGQST_ROM_EPO_BOWL:
 		return EPO_BOWL_ROM_SHA1;
+	case DRGQST_ROM_TAK_CHQ:
+		return TAK_CHQ_ROM_SHA1;
 	case DRGQST_ROM_EPO_HAMD:
 		return EPO_HAMD_ROM_SHA1;
 	case DRGQST_ROM_TVPC_DOR:
@@ -531,6 +539,10 @@ static enum drgqst_persistence_kind persistence_kind_for_rom(
 		return kind == DRGQST_PERSISTENCE_EEPROM ?
 			DRGQST_PERSISTENCE_EPO_BOWL_EEPROM :
 			DRGQST_PERSISTENCE_EPO_BOWL_RUNTIME_STATE;
+	case DRGQST_ROM_TAK_CHQ:
+		return kind == DRGQST_PERSISTENCE_EEPROM ?
+			DRGQST_PERSISTENCE_TAK_CHQ_EEPROM :
+			DRGQST_PERSISTENCE_TAK_CHQ_RUNTIME_STATE;
 	case DRGQST_ROM_EPO_HAMD:
 		return kind == DRGQST_PERSISTENCE_RUNTIME_STATE ?
 			DRGQST_PERSISTENCE_EPO_HAMD_RUNTIME_STATE : kind;
@@ -1875,6 +1887,7 @@ static void draw_mouse_target(HDC device, const display_viewport *viewport)
 	if (!g_core || rom_has_internal_cursor(g_rom.kind) ||
 		g_rom.kind == DRGQST_ROM_EPO_HAMD ||
 		g_rom.kind == DRGQST_ROM_TVPC_DOR ||
+		g_rom.kind == DRGQST_ROM_TAK_CHQ ||
 		rom_uses_digital_tilt(g_rom.kind) ||
 		(!rom_uses_camera(g_rom.kind) &&
 		drgqst_core_feather_visible(g_core)))

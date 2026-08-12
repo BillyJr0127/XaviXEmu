@@ -134,6 +134,15 @@ static const supported_rom SUPPORTED_ROMS[] = {
 		}
 	},
 	{
+		DRGQST_ROM_TAK_CHQ,
+		TAK_CHQ_ROM_SIZE,
+		TAK_CHQ_ROM_CRC32,
+		{
+			0xa3, 0x08, 0x84, 0xda, 0x55, 0x54, 0x48, 0x3e, 0xbf, 0xd0,
+			0x00, 0x9c, 0xf5, 0xdd, 0x17, 0x68, 0xbe, 0x8a, 0x99, 0xcb
+		}
+	},
+	{
 		DRGQST_ROM_BAN_NARU,
 		BAN_NARU_ROM_SIZE,
 		BAN_NARU_ROM_CRC32,
@@ -204,6 +213,8 @@ const char *drgqst_rom_short_name(enum drgqst_rom_kind kind)
 		return "epo_sdb";
 	case DRGQST_ROM_EPO_BOWL:
 		return "epo_bowl";
+	case DRGQST_ROM_TAK_CHQ:
+		return "tak_chq";
 	case DRGQST_ROM_BAN_NARU:
 		return "ban_naru";
 	case DRGQST_ROM_BAN_BLDJ:
