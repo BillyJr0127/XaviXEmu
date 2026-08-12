@@ -664,7 +664,8 @@ int drgqst_state_load(drgqst_core *core, const uint8_t *input,
 		core->game_profile == DRGQST_CORE_TTV_CU5501_24C02 ||
 		core->game_profile == DRGQST_CORE_TTV_CU5501A_24C02 ||
 		core->game_profile == DRGQST_CORE_EPO_BOWL_SENSOR_24C04 ||
-		core->game_profile == DRGQST_CORE_EPO_HAMC_SENSOR)
+		core->game_profile == DRGQST_CORE_EPO_HAMC_SENSOR ||
+		core->game_profile == DRGQST_CORE_TOM_DPGM_SENSOR_24C08)
 	{
 		/* The synthetic camera sync source is live host input, not part of the
 		 * emulated machine checkpoint. */

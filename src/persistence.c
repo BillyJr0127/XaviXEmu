@@ -56,6 +56,8 @@ static const wchar_t TVPC_HAM_EEPROM_FILENAME[] = L"tvpc_ham-eeprom.sav";
 static const wchar_t TVPC_HAM_STATE_FILENAME[] = L"tvpc_ham-runtime-state.sav";
 static const wchar_t TVPC_HK_EEPROM_FILENAME[] = L"tvpc_hk-eeprom.sav";
 static const wchar_t TVPC_HK_STATE_FILENAME[] = L"tvpc_hk-runtime-state.sav";
+static const wchar_t TOM_DPGM_EEPROM_FILENAME[] = L"tom_dpgm-eeprom.sav";
+static const wchar_t TOM_DPGM_STATE_FILENAME[] = L"tom_dpgm-runtime-state.sav";
 static volatile LONG temporary_counter;
 
 static void clear_error(wchar_t *error, size_t error_length)
@@ -164,6 +166,10 @@ static const wchar_t *filename_for_kind(enum drgqst_persistence_kind kind)
 		return TVPC_HK_EEPROM_FILENAME;
 	case DRGQST_PERSISTENCE_TVPC_HK_RUNTIME_STATE:
 		return TVPC_HK_STATE_FILENAME;
+	case DRGQST_PERSISTENCE_TOM_DPGM_EEPROM:
+		return TOM_DPGM_EEPROM_FILENAME;
+	case DRGQST_PERSISTENCE_TOM_DPGM_RUNTIME_STATE:
+		return TOM_DPGM_STATE_FILENAME;
 	default:
 		return NULL;
 	}
@@ -184,7 +190,8 @@ static int validate_payload_size(
 		kind == DRGQST_PERSISTENCE_TTV_MX_EEPROM ||
 		kind == DRGQST_PERSISTENCE_TOM_JUMP_EEPROM ||
 		kind == DRGQST_PERSISTENCE_EPO_BOWL_EEPROM ||
-		kind == DRGQST_PERSISTENCE_TAK_CHQ_EEPROM)
+		kind == DRGQST_PERSISTENCE_TAK_CHQ_EEPROM ||
+		kind == DRGQST_PERSISTENCE_TOM_DPGM_EEPROM)
 	{
 		if (payload_size != DRGQST_PERSISTENCE_EEPROM_SIZE)
 		{
@@ -232,7 +239,8 @@ static int validate_payload_size(
 		kind == DRGQST_PERSISTENCE_EPO_ES2J_RUNTIME_STATE ||
 		kind == DRGQST_PERSISTENCE_EPO_HAMC_RUNTIME_STATE ||
 		kind == DRGQST_PERSISTENCE_TVPC_HAM_RUNTIME_STATE ||
-		kind == DRGQST_PERSISTENCE_TVPC_HK_RUNTIME_STATE)
+		kind == DRGQST_PERSISTENCE_TVPC_HK_RUNTIME_STATE ||
+		kind == DRGQST_PERSISTENCE_TOM_DPGM_RUNTIME_STATE)
 	{
 		if (!payload_size || payload_size > DRGQST_PERSISTENCE_MAX_STATE_SIZE)
 		{

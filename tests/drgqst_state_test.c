@@ -998,6 +998,73 @@ done:
 	return ok;
 }
 
+static int test_tom_dpgm_sensor_24c08_profile(void)
+{
+	static const uint8_t sync_values[4] = { 0x89, 0x8b, 0x8f, 0x8d };
+	uint8_t *rom = (uint8_t *)malloc(TEST_OMT_ROM_SIZE);
+	drgqst_core *core = (drgqst_core *)malloc(sizeof(*core));
+	uint8_t *state = (uint8_t *)malloc(drgqst_state_serialized_size());
+	size_t written = 0;
+	unsigned index;
+	int ok = 0;
+
+	if (!rom || !core || !state)
+		goto done;
+	make_test_rom_sized(rom, TEST_OMT_ROM_SIZE);
+	if (!drgqst_core_init_profile(core, rom, TEST_OMT_ROM_SIZE,
+		DRGQST_CORE_TOM_DPGM_SENSOR_24C08) ||
+		core->game_profile != DRGQST_CORE_TOM_DPGM_SENSOR_24C08 ||
+		core->machine.rom_size != TEST_OMT_ROM_SIZE ||
+		core->video.sprite_watch.enabled)
+		goto done;
+
+	core->machine.state.input1 = 0x81;
+	for (index = 0; index < sizeof(sync_values); ++index)
+	{
+		if (xavix_machine_read_low(&core->machine, 0x7a01) !=
+			sync_values[index])
+			goto done;
+	}
+
+	/* 24C08 accepts A4 as a bank-select control byte.  A 24C04 profile
+	 * rejects that same control byte because its second select pin is low. */
+	core_i2c_send_control(core, 0xa4);
+	if (!core->machine.state.peripherals.eeprom.selected ||
+		core->machine.state.peripherals.eeprom.pending_state !=
+			XAVIX_I2C_RECEIVE_ADDRESS)
+		goto done;
+
+	/* This profile uses the generic CU5501 write strobe, but deliberately has
+	 * no title-specific sprite watch or gameplay shortcut. */
+	drgqst_core_set_mouse(core, 0x31, 0xb7, 1, 0);
+	core->machine.state.peripherals.sensor.pixel = 37;
+	xavix_machine_write_low(&core->machine, 0x7a03, 0x21);
+	xavix_machine_write_low(&core->machine, 0x7a01, 0x21);
+	if (core->machine.state.peripherals.sensor.pixel ||
+		!core->machine.state.peripherals.sensor.illuminated ||
+		core->machine.state.peripherals.sensor.scan_x != 0x31 ||
+		core->machine.state.peripherals.sensor.scan_y != 0xb7 ||
+		core->machine.state.peripherals.sensor.scan_mode !=
+			XAVIX_SENSOR_BROADSIDE)
+		goto done;
+
+	if (!drgqst_state_save(core, state, drgqst_state_serialized_size(),
+		&written) || written != drgqst_state_serialized_size())
+		goto done;
+	core->ban_onep_sync_divider = 1;
+	core->ban_onep_sync_phase = 3;
+	if (!drgqst_state_load(core, state, written) ||
+		core->game_profile != DRGQST_CORE_TOM_DPGM_SENSOR_24C08 ||
+		core->ban_onep_sync_divider || core->ban_onep_sync_phase)
+		goto done;
+	ok = 1;
+done:
+	free(state);
+	free(core);
+	free(rom);
+	return ok;
+}
+
 int main(void)
 {
 	RUN_TEST(test_firmware_cursor_position());
@@ -1012,6 +1079,7 @@ int main(void)
 	RUN_TEST(test_generic_parallel_nvram_profile());
 	RUN_TEST(test_plain_xavix2000_profile());
 	RUN_TEST(test_epo_hamc_sensor_profile());
+	RUN_TEST(test_tom_dpgm_sensor_24c08_profile());
 	printf("drgqst_state_test: all tests passed (%llu-byte state)\n",
 		(unsigned long long)drgqst_state_serialized_size());
 	return EXIT_SUCCESS;

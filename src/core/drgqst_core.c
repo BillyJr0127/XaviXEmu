@@ -323,6 +323,9 @@ static void ban_onep_io1_write(void *opaque, uint8_t data, uint8_t direction)
 		core->game_profile == DRGQST_CORE_TTV_CU5501A_24C02)
 		xavix_eeprom24c02_set_lines(
 			&core->machine.state.peripherals.eeprom, scl, sda);
+	else if (core->game_profile == DRGQST_CORE_TOM_DPGM_SENSOR_24C08)
+		xavix_eeprom24c08_set_lines(
+			&core->machine.state.peripherals.eeprom, scl, sda);
 	else
 		xavix_eeprom24c04_set_lines(
 			&core->machine.state.peripherals.eeprom, scl, sda);
@@ -390,6 +393,7 @@ static void configure_internal_cursor_watch(drgqst_core *core)
 	case DRGQST_CORE_XAVIX2000_PARALLEL_NVRAM:
 	case DRGQST_CORE_XAVIX2000_PLAIN:
 	case DRGQST_CORE_EPO_HAMC_SENSOR:
+	case DRGQST_CORE_TOM_DPGM_SENSOR_24C08:
 	default:
 		watch.enabled = 0;
 		break;
@@ -480,11 +484,12 @@ int drgqst_core_init_profile(drgqst_core *core, const uint8_t *rom,
 		profile == DRGQST_CORE_BAN_OMT ||
 		profile == DRGQST_CORE_TTV_CU5501_24C02 ||
 		profile == DRGQST_CORE_TTV_CU5501A_24C02 ||
-		profile == DRGQST_CORE_EPO_BOWL_SENSOR_24C04)
+		profile == DRGQST_CORE_EPO_BOWL_SENSOR_24C04 ||
+		profile == DRGQST_CORE_TOM_DPGM_SENSOR_24C08)
 	{
-		/* Excite Bowling's downloaded acquisition loop waits for the same
+		/* Excite Bowling and Disney Princess wait for the same
 		 * two-bit sync sequence before reading a 32-by-32 sensor through ADC0.
-		 * Keep that wiring in its own 24C04 profile so plain digital 24C04
+		 * Keep that wiring in explicit EEPROM-sized profiles so plain digital
 		 * boards do not inherit synthetic optical signals. */
 		hooks.read_io1 = ban_onep_io1_read;
 		hooks.write_io1 = ban_onep_io1_write;

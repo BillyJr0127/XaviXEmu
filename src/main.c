@@ -360,6 +360,11 @@ static const uint8_t TVPC_HK_ROM_SHA1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
 	0x29, 0xa2, 0x84, 0xb9, 0x07, 0xab, 0xec, 0x17, 0x5d, 0x42,
 	0x89, 0xd2, 0x90, 0x49, 0x0a, 0xf1, 0x7a, 0x2a, 0x96, 0x3f
 };
+static const uint8_t TOM_DPGM_ROM_SHA1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+{
+	0xfa, 0x30, 0x06, 0x9d, 0x17, 0x70, 0x5f, 0x27, 0xe4, 0xff,
+	0x45, 0xe7, 0xf6, 0xcc, 0xf0, 0x69, 0x86, 0xe1, 0x38, 0xf3
+};
 
 static drgqst_rom_image g_rom;
 static drgqst_core *g_core;
@@ -489,6 +494,8 @@ static enum drgqst_core_profile core_profile_for_rom(
 		return DRGQST_CORE_XAVIX2000_PLAIN;
 	case DRGQST_ROM_EPO_HAMC:
 		return DRGQST_CORE_EPO_HAMC_SENSOR;
+	case DRGQST_ROM_TOM_DPGM:
+		return DRGQST_CORE_TOM_DPGM_SENSOR_24C08;
 	case DRGQST_ROM_EPO_HAMD:
 		return DRGQST_CORE_XAVIX_BASE;
 	case DRGQST_ROM_TVPC_DOR:
@@ -540,6 +547,8 @@ static const uint8_t *rom_sha1_for_kind(enum drgqst_rom_kind kind)
 		return TVPC_HAM_ROM_SHA1;
 	case DRGQST_ROM_TVPC_HK:
 		return TVPC_HK_ROM_SHA1;
+	case DRGQST_ROM_TOM_DPGM:
+		return TOM_DPGM_ROM_SHA1;
 	case DRGQST_ROM_DRAGON_QUEST:
 	case DRGQST_ROM_UNKNOWN:
 	default:
@@ -617,6 +626,10 @@ static enum drgqst_persistence_kind persistence_kind_for_rom(
 		return kind == DRGQST_PERSISTENCE_EEPROM ?
 			DRGQST_PERSISTENCE_TVPC_HK_EEPROM :
 			DRGQST_PERSISTENCE_TVPC_HK_RUNTIME_STATE;
+	case DRGQST_ROM_TOM_DPGM:
+		return kind == DRGQST_PERSISTENCE_EEPROM ?
+			DRGQST_PERSISTENCE_TOM_DPGM_EEPROM :
+			DRGQST_PERSISTENCE_TOM_DPGM_RUNTIME_STATE;
 	case DRGQST_ROM_DRAGON_QUEST:
 	case DRGQST_ROM_UNKNOWN:
 	default:
@@ -999,7 +1012,8 @@ static void update_core_mouse(void)
 	if (rom_uses_digital_direction_input(g_rom.kind))
 		return;
 	if (g_rom.kind == DRGQST_ROM_EPO_ES2J ||
-		g_rom.kind == DRGQST_ROM_EPO_HAMC)
+		g_rom.kind == DRGQST_ROM_EPO_HAMC ||
+		g_rom.kind == DRGQST_ROM_TOM_DPGM)
 		return;
 	drgqst_core_set_mouse(g_core, g_mouse_x, g_mouse_y,
 		g_left_button || (g_rom.kind == DRGQST_ROM_BAN_OMT &&
@@ -1965,6 +1979,7 @@ static void draw_mouse_target(HDC device, const display_viewport *viewport)
 		g_rom.kind == DRGQST_ROM_TAK_CHQ ||
 		g_rom.kind == DRGQST_ROM_EPO_ES2J ||
 		g_rom.kind == DRGQST_ROM_EPO_HAMC ||
+		g_rom.kind == DRGQST_ROM_TOM_DPGM ||
 		rom_uses_digital_direction_input(g_rom.kind) ||
 		(!rom_uses_camera(g_rom.kind) &&
 		drgqst_core_feather_visible(g_core)))

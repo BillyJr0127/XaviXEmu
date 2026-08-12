@@ -906,6 +906,68 @@ static void test_tvpc_pair_persistence(void)
 	RemoveDirectoryW(root);
 }
 
+static void test_tom_dpgm_persistence(void)
+{
+	static const uint8_t rom_sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+	{
+		0xfa, 0x30, 0x06, 0x9d, 0x17, 0x70, 0x5f, 0x27, 0xe4, 0xff,
+		0x45, 0xe7, 0xf6, 0xcc, 0xf0, 0x69, 0x86, 0xe1, 0x38, 0xf3
+	};
+	wchar_t root[MAX_PATH];
+	wchar_t eeprom_path[MAX_PATH] = { 0 };
+	wchar_t state_path[MAX_PATH] = { 0 };
+	wchar_t error[512];
+	uint8_t eeprom[DRGQST_PERSISTENCE_EEPROM_SIZE];
+	uint8_t output[DRGQST_PERSISTENCE_EEPROM_SIZE];
+	uint8_t state[5] = { 'D', 'P', 'G', 'M', 1 };
+	size_t output_size = 0;
+	size_t index;
+
+	if (!create_test_root(root))
+	{
+		CHECK(0 && "create tom_dpgm persistence root");
+		return;
+	}
+	for (index = 0; index < sizeof(eeprom); ++index)
+		eeprom[index] = (uint8_t)(index * 7 + 0x2d);
+	CHECK(drgqst_persistence_get_path(root,
+		DRGQST_PERSISTENCE_TOM_DPGM_EEPROM, eeprom_path, MAX_PATH,
+		error, sizeof(error) / sizeof(error[0])));
+	CHECK(drgqst_persistence_get_path(root,
+		DRGQST_PERSISTENCE_TOM_DPGM_RUNTIME_STATE, state_path, MAX_PATH,
+		error, sizeof(error) / sizeof(error[0])));
+	CHECK(wcsstr(eeprom_path, L"\\tom_dpgm-eeprom.sav") != NULL);
+	CHECK(wcsstr(state_path, L"\\tom_dpgm-runtime-state.sav") != NULL);
+	CHECK(!drgqst_persistence_save(root,
+		DRGQST_PERSISTENCE_TOM_DPGM_EEPROM, rom_sha1, eeprom,
+		sizeof(eeprom) - 1, error, sizeof(error) / sizeof(error[0])));
+	CHECK(drgqst_persistence_save(root,
+		DRGQST_PERSISTENCE_TOM_DPGM_EEPROM, rom_sha1, eeprom,
+		sizeof(eeprom), error, sizeof(error) / sizeof(error[0])));
+	CHECK(drgqst_persistence_save(root,
+		DRGQST_PERSISTENCE_TOM_DPGM_RUNTIME_STATE, rom_sha1, state,
+		sizeof(state), error, sizeof(error) / sizeof(error[0])));
+	CHECK(drgqst_persistence_load(root,
+		DRGQST_PERSISTENCE_TOM_DPGM_EEPROM, rom_sha1, output,
+		sizeof(output), &output_size, error,
+		sizeof(error) / sizeof(error[0])));
+	CHECK(output_size == sizeof(eeprom));
+	CHECK(!memcmp(output, eeprom, sizeof(eeprom)));
+	memset(output, 0, sizeof(output));
+	CHECK(drgqst_persistence_load(root,
+		DRGQST_PERSISTENCE_TOM_DPGM_RUNTIME_STATE, rom_sha1, output,
+		sizeof(output), &output_size, error,
+		sizeof(error) / sizeof(error[0])));
+	CHECK(output_size == sizeof(state));
+	CHECK(!memcmp(output, state, sizeof(state)));
+
+	if (*eeprom_path)
+		DeleteFileW(eeprom_path);
+	if (*state_path)
+		DeleteFileW(state_path);
+	RemoveDirectoryW(root);
+}
+
 int main(void)
 {
 	test_default_directory();
@@ -916,6 +978,7 @@ int main(void)
 	test_epo_es2j_runtime_state_persistence();
 	test_epo_hamc_runtime_state_persistence();
 	test_tvpc_pair_persistence();
+	test_tom_dpgm_persistence();
 
 	if (failures)
 	{

@@ -45,6 +45,11 @@ int main(void)
 	CHECK(drgqst_rom_is_tvpc(DRGQST_ROM_TVPC_HK));
 	CHECK(drgqst_rom_is_tvpc(DRGQST_ROM_TVPC_DOR));
 	CHECK(!drgqst_rom_is_tvpc(DRGQST_ROM_EPO_HAMC));
+	CHECK(TOM_DPGM_ROM_SIZE == 4194304);
+	CHECK(TOM_DPGM_ROM_CRC32 == UINT32_C(0x1dc181b3));
+	CHECK(!strcmp(drgqst_rom_short_name(DRGQST_ROM_TOM_DPGM), "tom_dpgm"));
+	CHECK(!drgqst_rom_is_xavix2(DRGQST_ROM_TOM_DPGM));
+	CHECK(!drgqst_rom_is_tvpc(DRGQST_ROM_TOM_DPGM));
 	puts("rom_loader_metadata_test: all tests passed");
 	return 0;
 }

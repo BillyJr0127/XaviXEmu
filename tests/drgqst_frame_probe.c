@@ -158,7 +158,7 @@ static int uses_glove_sensor(enum drgqst_rom_kind kind)
 {
 	return kind == DRGQST_ROM_BAN_ONEP || kind == DRGQST_ROM_BAN_OMT ||
 		kind == DRGQST_ROM_TTV_LOTR || kind == DRGQST_ROM_TTV_SW ||
-		kind == DRGQST_ROM_TTV_SWJ;
+		kind == DRGQST_ROM_TTV_SWJ || kind == DRGQST_ROM_TOM_DPGM;
 }
 
 static int uses_parallel_nvram(enum drgqst_rom_kind kind)
@@ -172,6 +172,7 @@ static int tracks_pcm(enum drgqst_rom_kind kind)
 		kind == DRGQST_ROM_EPO_EBOX ||
 		kind == DRGQST_ROM_EPO_ES2J ||
 		kind == DRGQST_ROM_EPO_HAMC ||
+		kind == DRGQST_ROM_TOM_DPGM ||
 		drgqst_rom_is_tvpc(kind);
 }
 
@@ -329,6 +330,11 @@ static int persistence_profile(enum drgqst_rom_kind rom_kind,
 		0x29, 0xa2, 0x84, 0xb9, 0x07, 0xab, 0xec, 0x17, 0x5d, 0x42,
 		0x89, 0xd2, 0x90, 0x49, 0x0a, 0xf1, 0x7a, 0x2a, 0x96, 0x3f
 	};
+	static const uint8_t dpgm_sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+	{
+		0xfa, 0x30, 0x06, 0x9d, 0x17, 0x70, 0x5f, 0x27, 0xe4, 0xff,
+		0x45, 0xe7, 0xf6, 0xcc, 0xf0, 0x69, 0x86, 0xe1, 0x38, 0xf3
+	};
 
 	*eeprom_kind = DRGQST_PERSISTENCE_EEPROM;
 	*eeprom_size = DRGQST_PERSISTENCE_EEPROM_SIZE;
@@ -420,6 +426,11 @@ static int persistence_profile(enum drgqst_rom_kind rom_kind,
 		*eeprom_kind = DRGQST_PERSISTENCE_TVPC_HK_EEPROM;
 		*state_kind = DRGQST_PERSISTENCE_TVPC_HK_RUNTIME_STATE;
 		*eeprom_size = DRGQST_PERSISTENCE_EEPROM24C16_SIZE;
+		return 1;
+	case DRGQST_ROM_TOM_DPGM:
+		*sha1 = dpgm_sha1;
+		*eeprom_kind = DRGQST_PERSISTENCE_TOM_DPGM_EEPROM;
+		*state_kind = DRGQST_PERSISTENCE_TOM_DPGM_RUNTIME_STATE;
 		return 1;
 	default:
 		return 0;
@@ -521,6 +532,8 @@ int main(int argc, char **argv)
 			DRGQST_CORE_XAVIX2000_PLAIN :
 		image.kind == DRGQST_ROM_EPO_HAMC ?
 			DRGQST_CORE_EPO_HAMC_SENSOR :
+		image.kind == DRGQST_ROM_TOM_DPGM ?
+			DRGQST_CORE_TOM_DPGM_SENSOR_24C08 :
 		image.kind == DRGQST_ROM_EPO_HAMD ? DRGQST_CORE_XAVIX_BASE :
 		drgqst_rom_is_tvpc(image.kind) ? DRGQST_CORE_XAVIX_I2C_24C16 :
 		DRGQST_CORE_DRAGON_QUEST))
