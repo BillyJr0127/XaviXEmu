@@ -52,6 +52,10 @@ static const wchar_t EPO_EBOX_NVRAM_FILENAME[] = L"epo_ebox-nvram.sav";
 static const wchar_t EPO_EBOX_STATE_FILENAME[] = L"epo_ebox-runtime-state.sav";
 static const wchar_t EPO_ES2J_STATE_FILENAME[] = L"epo_es2j-runtime-state.sav";
 static const wchar_t EPO_HAMC_STATE_FILENAME[] = L"epo_hamc-runtime-state.sav";
+static const wchar_t TVPC_HAM_EEPROM_FILENAME[] = L"tvpc_ham-eeprom.sav";
+static const wchar_t TVPC_HAM_STATE_FILENAME[] = L"tvpc_ham-runtime-state.sav";
+static const wchar_t TVPC_HK_EEPROM_FILENAME[] = L"tvpc_hk-eeprom.sav";
+static const wchar_t TVPC_HK_STATE_FILENAME[] = L"tvpc_hk-runtime-state.sav";
 static volatile LONG temporary_counter;
 
 static void clear_error(wchar_t *error, size_t error_length)
@@ -152,6 +156,14 @@ static const wchar_t *filename_for_kind(enum drgqst_persistence_kind kind)
 		return EPO_ES2J_STATE_FILENAME;
 	case DRGQST_PERSISTENCE_EPO_HAMC_RUNTIME_STATE:
 		return EPO_HAMC_STATE_FILENAME;
+	case DRGQST_PERSISTENCE_TVPC_HAM_EEPROM:
+		return TVPC_HAM_EEPROM_FILENAME;
+	case DRGQST_PERSISTENCE_TVPC_HAM_RUNTIME_STATE:
+		return TVPC_HAM_STATE_FILENAME;
+	case DRGQST_PERSISTENCE_TVPC_HK_EEPROM:
+		return TVPC_HK_EEPROM_FILENAME;
+	case DRGQST_PERSISTENCE_TVPC_HK_RUNTIME_STATE:
+		return TVPC_HK_STATE_FILENAME;
 	default:
 		return NULL;
 	}
@@ -181,7 +193,9 @@ static int validate_payload_size(
 		}
 		return 1;
 	}
-	if (kind == DRGQST_PERSISTENCE_TVPC_DOR_EEPROM)
+	if (kind == DRGQST_PERSISTENCE_TVPC_DOR_EEPROM ||
+		kind == DRGQST_PERSISTENCE_TVPC_HAM_EEPROM ||
+		kind == DRGQST_PERSISTENCE_TVPC_HK_EEPROM)
 	{
 		if (payload_size != DRGQST_PERSISTENCE_EEPROM24C16_SIZE)
 		{
@@ -216,7 +230,9 @@ static int validate_payload_size(
 		kind == DRGQST_PERSISTENCE_TAK_CHQ_RUNTIME_STATE ||
 		kind == DRGQST_PERSISTENCE_EPO_EBOX_RUNTIME_STATE ||
 		kind == DRGQST_PERSISTENCE_EPO_ES2J_RUNTIME_STATE ||
-		kind == DRGQST_PERSISTENCE_EPO_HAMC_RUNTIME_STATE)
+		kind == DRGQST_PERSISTENCE_EPO_HAMC_RUNTIME_STATE ||
+		kind == DRGQST_PERSISTENCE_TVPC_HAM_RUNTIME_STATE ||
+		kind == DRGQST_PERSISTENCE_TVPC_HK_RUNTIME_STATE)
 	{
 		if (!payload_size || payload_size > DRGQST_PERSISTENCE_MAX_STATE_SIZE)
 		{

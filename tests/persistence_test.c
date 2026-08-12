@@ -794,6 +794,118 @@ static void test_epo_hamc_runtime_state_persistence(void)
 	RemoveDirectoryW(root);
 }
 
+static void test_tvpc_pair_persistence(void)
+{
+	static const uint8_t ham_sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+	{
+		0x59, 0x98, 0xc0, 0x32, 0x92, 0xa1, 0x61, 0x07, 0xd0, 0xd7,
+		0xae, 0x00, 0xf7, 0x76, 0x77, 0x58, 0x26, 0x80, 0xf3, 0x23
+	};
+	static const uint8_t hk_sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+	{
+		0x29, 0xa2, 0x84, 0xb9, 0x07, 0xab, 0xec, 0x17, 0x5d, 0x42,
+		0x89, 0xd2, 0x90, 0x49, 0x0a, 0xf1, 0x7a, 0x2a, 0x96, 0x3f
+	};
+	wchar_t root[MAX_PATH];
+	wchar_t ham_eeprom_path[MAX_PATH] = { 0 };
+	wchar_t ham_state_path[MAX_PATH] = { 0 };
+	wchar_t hk_eeprom_path[MAX_PATH] = { 0 };
+	wchar_t hk_state_path[MAX_PATH] = { 0 };
+	wchar_t error[512];
+	uint8_t ham_eeprom[DRGQST_PERSISTENCE_EEPROM24C16_SIZE];
+	uint8_t hk_eeprom[DRGQST_PERSISTENCE_EEPROM24C16_SIZE];
+	uint8_t output[DRGQST_PERSISTENCE_EEPROM24C16_SIZE];
+	uint8_t ham_state[5] = { 'H', 'A', 'M', 0x00, 0x01 };
+	uint8_t hk_state[5] = { 'H', 'K', 0x00, 0x02, 0x03 };
+	size_t output_size = 0;
+	size_t index;
+
+	if (!create_test_root(root))
+	{
+		CHECK(0 && "create TV-PC persistence root");
+		return;
+	}
+	for (index = 0; index < sizeof(ham_eeprom); ++index)
+	{
+		ham_eeprom[index] = (uint8_t)(index * 3 + 0x19);
+		hk_eeprom[index] = (uint8_t)(index * 5 + 0x27);
+	}
+	CHECK(drgqst_persistence_get_path(root,
+		DRGQST_PERSISTENCE_TVPC_HAM_EEPROM, ham_eeprom_path, MAX_PATH,
+		error, sizeof(error) / sizeof(error[0])));
+	CHECK(drgqst_persistence_get_path(root,
+		DRGQST_PERSISTENCE_TVPC_HAM_RUNTIME_STATE, ham_state_path, MAX_PATH,
+		error, sizeof(error) / sizeof(error[0])));
+	CHECK(drgqst_persistence_get_path(root,
+		DRGQST_PERSISTENCE_TVPC_HK_EEPROM, hk_eeprom_path, MAX_PATH,
+		error, sizeof(error) / sizeof(error[0])));
+	CHECK(drgqst_persistence_get_path(root,
+		DRGQST_PERSISTENCE_TVPC_HK_RUNTIME_STATE, hk_state_path, MAX_PATH,
+		error, sizeof(error) / sizeof(error[0])));
+	CHECK(wcsstr(ham_eeprom_path, L"\\tvpc_ham-eeprom.sav") != NULL);
+	CHECK(wcsstr(ham_state_path, L"\\tvpc_ham-runtime-state.sav") != NULL);
+	CHECK(wcsstr(hk_eeprom_path, L"\\tvpc_hk-eeprom.sav") != NULL);
+	CHECK(wcsstr(hk_state_path, L"\\tvpc_hk-runtime-state.sav") != NULL);
+	CHECK(wcscmp(ham_eeprom_path, hk_eeprom_path) != 0);
+	CHECK(wcscmp(ham_state_path, hk_state_path) != 0);
+
+	CHECK(!drgqst_persistence_save(root,
+		DRGQST_PERSISTENCE_TVPC_HAM_EEPROM, ham_sha1, ham_eeprom,
+		sizeof(ham_eeprom) - 1, error, sizeof(error) / sizeof(error[0])));
+	CHECK(drgqst_persistence_save(root,
+		DRGQST_PERSISTENCE_TVPC_HAM_EEPROM, ham_sha1, ham_eeprom,
+		sizeof(ham_eeprom), error, sizeof(error) / sizeof(error[0])));
+	CHECK(drgqst_persistence_save(root,
+		DRGQST_PERSISTENCE_TVPC_HAM_RUNTIME_STATE, ham_sha1, ham_state,
+		sizeof(ham_state), error, sizeof(error) / sizeof(error[0])));
+	CHECK(drgqst_persistence_save(root,
+		DRGQST_PERSISTENCE_TVPC_HK_EEPROM, hk_sha1, hk_eeprom,
+		sizeof(hk_eeprom), error, sizeof(error) / sizeof(error[0])));
+	CHECK(drgqst_persistence_save(root,
+		DRGQST_PERSISTENCE_TVPC_HK_RUNTIME_STATE, hk_sha1, hk_state,
+		sizeof(hk_state), error, sizeof(error) / sizeof(error[0])));
+
+	memset(output, 0, sizeof(output));
+	CHECK(drgqst_persistence_load(root,
+		DRGQST_PERSISTENCE_TVPC_HAM_EEPROM, ham_sha1, output,
+		sizeof(output), &output_size, error, sizeof(error) / sizeof(error[0])));
+	CHECK(output_size == sizeof(ham_eeprom));
+	CHECK(!memcmp(output, ham_eeprom, sizeof(ham_eeprom)));
+	memset(output, 0, sizeof(output));
+	CHECK(drgqst_persistence_load(root,
+		DRGQST_PERSISTENCE_TVPC_HK_EEPROM, hk_sha1, output,
+		sizeof(output), &output_size, error, sizeof(error) / sizeof(error[0])));
+	CHECK(output_size == sizeof(hk_eeprom));
+	CHECK(!memcmp(output, hk_eeprom, sizeof(hk_eeprom)));
+	output_size = 99;
+	CHECK(!drgqst_persistence_load(root,
+		DRGQST_PERSISTENCE_TVPC_HAM_EEPROM, hk_sha1, output,
+		sizeof(output), &output_size, error, sizeof(error) / sizeof(error[0])));
+	CHECK(output_size == 0);
+	memset(output, 0, sizeof(output));
+	CHECK(drgqst_persistence_load(root,
+		DRGQST_PERSISTENCE_TVPC_HAM_RUNTIME_STATE, ham_sha1, output,
+		sizeof(output), &output_size, error, sizeof(error) / sizeof(error[0])));
+	CHECK(output_size == sizeof(ham_state));
+	CHECK(!memcmp(output, ham_state, sizeof(ham_state)));
+	memset(output, 0, sizeof(output));
+	CHECK(drgqst_persistence_load(root,
+		DRGQST_PERSISTENCE_TVPC_HK_RUNTIME_STATE, hk_sha1, output,
+		sizeof(output), &output_size, error, sizeof(error) / sizeof(error[0])));
+	CHECK(output_size == sizeof(hk_state));
+	CHECK(!memcmp(output, hk_state, sizeof(hk_state)));
+
+	if (*ham_eeprom_path)
+		DeleteFileW(ham_eeprom_path);
+	if (*ham_state_path)
+		DeleteFileW(ham_state_path);
+	if (*hk_eeprom_path)
+		DeleteFileW(hk_eeprom_path);
+	if (*hk_state_path)
+		DeleteFileW(hk_state_path);
+	RemoveDirectoryW(root);
+}
+
 int main(void)
 {
 	test_default_directory();
@@ -803,6 +915,7 @@ int main(void)
 	test_epo_ebox_parallel_nvram_persistence();
 	test_epo_es2j_runtime_state_persistence();
 	test_epo_hamc_runtime_state_persistence();
+	test_tvpc_pair_persistence();
 
 	if (failures)
 	{

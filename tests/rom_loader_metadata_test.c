@@ -33,6 +33,18 @@ int main(void)
 	CHECK(EPO_HAMC_ROM_CRC32 == UINT32_C(0xb1177813));
 	CHECK(!strcmp(drgqst_rom_short_name(DRGQST_ROM_EPO_HAMC), "epo_hamc"));
 	CHECK(!drgqst_rom_is_xavix2(DRGQST_ROM_EPO_HAMC));
+	CHECK(TVPC_HAM_ROM_SIZE == 4194304);
+	CHECK(TVPC_HAM_ROM_CRC32 == UINT32_C(0x76e8c854));
+	CHECK(!strcmp(drgqst_rom_short_name(DRGQST_ROM_TVPC_HAM), "tvpc_ham"));
+	CHECK(!drgqst_rom_is_xavix2(DRGQST_ROM_TVPC_HAM));
+	CHECK(drgqst_rom_is_tvpc(DRGQST_ROM_TVPC_HAM));
+	CHECK(TVPC_HK_ROM_SIZE == 4194304);
+	CHECK(TVPC_HK_ROM_CRC32 == UINT32_C(0x87fc2f73));
+	CHECK(!strcmp(drgqst_rom_short_name(DRGQST_ROM_TVPC_HK), "tvpc_hk"));
+	CHECK(!drgqst_rom_is_xavix2(DRGQST_ROM_TVPC_HK));
+	CHECK(drgqst_rom_is_tvpc(DRGQST_ROM_TVPC_HK));
+	CHECK(drgqst_rom_is_tvpc(DRGQST_ROM_TVPC_DOR));
+	CHECK(!drgqst_rom_is_tvpc(DRGQST_ROM_EPO_HAMC));
 	puts("rom_loader_metadata_test: all tests passed");
 	return 0;
 }

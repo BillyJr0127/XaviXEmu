@@ -213,6 +213,24 @@ static const supported_rom SUPPORTED_ROMS[] = {
 			0x98, 0xfa, 0x86, 0xf8, 0x5e, 0x00, 0xaa, 0x40, 0xe7, 0xa5,
 			0x85, 0xff, 0x0b, 0xc9, 0x30, 0xcb, 0x5c, 0xa8, 0x83, 0x62
 		}
+	},
+	{
+		DRGQST_ROM_TVPC_HAM,
+		TVPC_HAM_ROM_SIZE,
+		TVPC_HAM_ROM_CRC32,
+		{
+			0x59, 0x98, 0xc0, 0x32, 0x92, 0xa1, 0x61, 0x07, 0xd0, 0xd7,
+			0xae, 0x00, 0xf7, 0x76, 0x77, 0x58, 0x26, 0x80, 0xf3, 0x23
+		}
+	},
+	{
+		DRGQST_ROM_TVPC_HK,
+		TVPC_HK_ROM_SIZE,
+		TVPC_HK_ROM_CRC32,
+		{
+			0x29, 0xa2, 0x84, 0xb9, 0x07, 0xab, 0xec, 0x17, 0x5d, 0x42,
+			0x89, 0xd2, 0x90, 0x49, 0x0a, 0xf1, 0x7a, 0x2a, 0x96, 0x3f
+		}
 	}
 };
 
@@ -260,6 +278,10 @@ const char *drgqst_rom_short_name(enum drgqst_rom_kind kind)
 		return "epo_hamd";
 	case DRGQST_ROM_TVPC_DOR:
 		return "tvpc_dor";
+	case DRGQST_ROM_TVPC_HAM:
+		return "tvpc_ham";
+	case DRGQST_ROM_TVPC_HK:
+		return "tvpc_hk";
 	case DRGQST_ROM_UNKNOWN:
 	default:
 		return "unknown";
@@ -272,6 +294,13 @@ int drgqst_rom_is_xavix2(enum drgqst_rom_kind kind)
 		kind == DRGQST_ROM_BAN_BLDJ ||
 		kind == DRGQST_ROM_BAN_DB2J ||
 		kind == DRGQST_ROM_BAN_DBZ;
+}
+
+int drgqst_rom_is_tvpc(enum drgqst_rom_kind kind)
+{
+	return kind == DRGQST_ROM_TVPC_DOR ||
+		kind == DRGQST_ROM_TVPC_HAM ||
+		kind == DRGQST_ROM_TVPC_HK;
 }
 
 static void set_error(wchar_t *error, size_t error_length, const wchar_t *format, ...)

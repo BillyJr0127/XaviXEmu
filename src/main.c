@@ -350,6 +350,16 @@ static const uint8_t TVPC_DOR_ROM_SHA1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
 	0x98, 0xfa, 0x86, 0xf8, 0x5e, 0x00, 0xaa, 0x40, 0xe7, 0xa5,
 	0x85, 0xff, 0x0b, 0xc9, 0x30, 0xcb, 0x5c, 0xa8, 0x83, 0x62
 };
+static const uint8_t TVPC_HAM_ROM_SHA1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+{
+	0x59, 0x98, 0xc0, 0x32, 0x92, 0xa1, 0x61, 0x07, 0xd0, 0xd7,
+	0xae, 0x00, 0xf7, 0x76, 0x77, 0x58, 0x26, 0x80, 0xf3, 0x23
+};
+static const uint8_t TVPC_HK_ROM_SHA1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+{
+	0x29, 0xa2, 0x84, 0xb9, 0x07, 0xab, 0xec, 0x17, 0x5d, 0x42,
+	0x89, 0xd2, 0x90, 0x49, 0x0a, 0xf1, 0x7a, 0x2a, 0x96, 0x3f
+};
 
 static drgqst_rom_image g_rom;
 static drgqst_core *g_core;
@@ -482,6 +492,8 @@ static enum drgqst_core_profile core_profile_for_rom(
 	case DRGQST_ROM_EPO_HAMD:
 		return DRGQST_CORE_XAVIX_BASE;
 	case DRGQST_ROM_TVPC_DOR:
+	case DRGQST_ROM_TVPC_HAM:
+	case DRGQST_ROM_TVPC_HK:
 		return DRGQST_CORE_XAVIX_I2C_24C16;
 	case DRGQST_ROM_DRAGON_QUEST:
 	case DRGQST_ROM_UNKNOWN:
@@ -524,6 +536,10 @@ static const uint8_t *rom_sha1_for_kind(enum drgqst_rom_kind kind)
 		return EPO_HAMD_ROM_SHA1;
 	case DRGQST_ROM_TVPC_DOR:
 		return TVPC_DOR_ROM_SHA1;
+	case DRGQST_ROM_TVPC_HAM:
+		return TVPC_HAM_ROM_SHA1;
+	case DRGQST_ROM_TVPC_HK:
+		return TVPC_HK_ROM_SHA1;
 	case DRGQST_ROM_DRAGON_QUEST:
 	case DRGQST_ROM_UNKNOWN:
 	default:
@@ -593,6 +609,14 @@ static enum drgqst_persistence_kind persistence_kind_for_rom(
 		return kind == DRGQST_PERSISTENCE_EEPROM ?
 			DRGQST_PERSISTENCE_TVPC_DOR_EEPROM :
 			DRGQST_PERSISTENCE_TVPC_DOR_RUNTIME_STATE;
+	case DRGQST_ROM_TVPC_HAM:
+		return kind == DRGQST_PERSISTENCE_EEPROM ?
+			DRGQST_PERSISTENCE_TVPC_HAM_EEPROM :
+			DRGQST_PERSISTENCE_TVPC_HAM_RUNTIME_STATE;
+	case DRGQST_ROM_TVPC_HK:
+		return kind == DRGQST_PERSISTENCE_EEPROM ?
+			DRGQST_PERSISTENCE_TVPC_HK_EEPROM :
+			DRGQST_PERSISTENCE_TVPC_HK_RUNTIME_STATE;
 	case DRGQST_ROM_DRAGON_QUEST:
 	case DRGQST_ROM_UNKNOWN:
 	default:
@@ -607,7 +631,7 @@ static size_t eeprom_size_for_rom(enum drgqst_rom_kind kind)
 		rom_uses_parallel_nvram(kind) ||
 		kind == DRGQST_ROM_BAN_NARU)
 		return 0;
-	if (kind == DRGQST_ROM_TVPC_DOR)
+	if (drgqst_rom_is_tvpc(kind))
 		return DRGQST_PERSISTENCE_EEPROM24C16_SIZE;
 	return DRGQST_PERSISTENCE_EEPROM_SIZE;
 }

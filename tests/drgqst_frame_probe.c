@@ -74,9 +74,9 @@ static uint8_t probe_cpu_read(void *opaque, xavix_cpu_bus_t bus,
 	io_probe *probe = (io_probe *)opaque;
 	uint8_t value = probe->original_read(probe->original_opaque, bus, address);
 	if (probe->trace_tvpc_keyboard && bus == XAVIX_CPU_BUS_EXTERNAL &&
-		xavix_cpu_linear_pc(&probe->core->cpu) >= 0x028000 &&
-		xavix_cpu_linear_pc(&probe->core->cpu) < 0x028200 &&
-		address != xavix_cpu_linear_pc(&probe->core->cpu) &&
+		(address & UINT32_C(0x7fff00)) == UINT32_C(0x600000) &&
+		(uint8_t)address &&
+		!((uint8_t)address & (uint8_t)((uint8_t)address - 1)) &&
 		probe->external_read_logs < 256)
 	{
 		printf("tvpc-external-read pc=%06lX address=%06lX value=%02X\n",
@@ -164,6 +164,15 @@ static int uses_glove_sensor(enum drgqst_rom_kind kind)
 static int uses_parallel_nvram(enum drgqst_rom_kind kind)
 {
 	return kind == DRGQST_ROM_EPO_SDB || kind == DRGQST_ROM_EPO_EBOX;
+}
+
+static int tracks_pcm(enum drgqst_rom_kind kind)
+{
+	return kind == DRGQST_ROM_TAK_CHQ ||
+		kind == DRGQST_ROM_EPO_EBOX ||
+		kind == DRGQST_ROM_EPO_ES2J ||
+		kind == DRGQST_ROM_EPO_HAMC ||
+		drgqst_rom_is_tvpc(kind);
 }
 
 static void apply_calibration_sequence(drgqst_core *core, unsigned frame)
@@ -310,6 +319,16 @@ static int persistence_profile(enum drgqst_rom_kind rom_kind,
 		0x98, 0xfa, 0x86, 0xf8, 0x5e, 0x00, 0xaa, 0x40, 0xe7, 0xa5,
 		0x85, 0xff, 0x0b, 0xc9, 0x30, 0xcb, 0x5c, 0xa8, 0x83, 0x62
 	};
+	static const uint8_t tvpc_ham_sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+	{
+		0x59, 0x98, 0xc0, 0x32, 0x92, 0xa1, 0x61, 0x07, 0xd0, 0xd7,
+		0xae, 0x00, 0xf7, 0x76, 0x77, 0x58, 0x26, 0x80, 0xf3, 0x23
+	};
+	static const uint8_t tvpc_hk_sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+	{
+		0x29, 0xa2, 0x84, 0xb9, 0x07, 0xab, 0xec, 0x17, 0x5d, 0x42,
+		0x89, 0xd2, 0x90, 0x49, 0x0a, 0xf1, 0x7a, 0x2a, 0x96, 0x3f
+	};
 
 	*eeprom_kind = DRGQST_PERSISTENCE_EEPROM;
 	*eeprom_size = DRGQST_PERSISTENCE_EEPROM_SIZE;
@@ -388,6 +407,18 @@ static int persistence_profile(enum drgqst_rom_kind rom_kind,
 		*sha1 = dor_sha1;
 		*eeprom_kind = DRGQST_PERSISTENCE_TVPC_DOR_EEPROM;
 		*state_kind = DRGQST_PERSISTENCE_TVPC_DOR_RUNTIME_STATE;
+		*eeprom_size = DRGQST_PERSISTENCE_EEPROM24C16_SIZE;
+		return 1;
+	case DRGQST_ROM_TVPC_HAM:
+		*sha1 = tvpc_ham_sha1;
+		*eeprom_kind = DRGQST_PERSISTENCE_TVPC_HAM_EEPROM;
+		*state_kind = DRGQST_PERSISTENCE_TVPC_HAM_RUNTIME_STATE;
+		*eeprom_size = DRGQST_PERSISTENCE_EEPROM24C16_SIZE;
+		return 1;
+	case DRGQST_ROM_TVPC_HK:
+		*sha1 = tvpc_hk_sha1;
+		*eeprom_kind = DRGQST_PERSISTENCE_TVPC_HK_EEPROM;
+		*state_kind = DRGQST_PERSISTENCE_TVPC_HK_RUNTIME_STATE;
 		*eeprom_size = DRGQST_PERSISTENCE_EEPROM24C16_SIZE;
 		return 1;
 	default:
@@ -491,7 +522,7 @@ int main(int argc, char **argv)
 		image.kind == DRGQST_ROM_EPO_HAMC ?
 			DRGQST_CORE_EPO_HAMC_SENSOR :
 		image.kind == DRGQST_ROM_EPO_HAMD ? DRGQST_CORE_XAVIX_BASE :
-		image.kind == DRGQST_ROM_TVPC_DOR ? DRGQST_CORE_XAVIX_I2C_24C16 :
+		drgqst_rom_is_tvpc(image.kind) ? DRGQST_CORE_XAVIX_I2C_24C16 :
 		DRGQST_CORE_DRAGON_QUEST))
 	{
 		free(core);
@@ -503,7 +534,7 @@ int main(int argc, char **argv)
 		image.kind == DRGQST_ROM_EPO_HAMC) ? 0 :
 		uses_parallel_nvram(image.kind) ?
 		DRGQST_PERSISTENCE_PARALLEL_NVRAM_SIZE :
-		image.kind == DRGQST_ROM_TVPC_DOR ?
+		drgqst_rom_is_tvpc(image.kind) ?
 		DRGQST_PERSISTENCE_EEPROM24C16_SIZE :
 		DRGQST_PERSISTENCE_EEPROM_SIZE;
 	io_trace.original_read = core->cpu.read8;
@@ -545,7 +576,8 @@ int main(int argc, char **argv)
 		sdb_p2_x = (unsigned)strtoul(argv[18], NULL, 0) & 0xff;
 	if (argc >= 20)
 		sdb_p2_y = (unsigned)strtoul(argv[19], NULL, 0) & 0xff;
-	io_trace.trace_tvpc_keyboard = trajectory == 25;
+	io_trace.trace_tvpc_keyboard = drgqst_rom_is_tvpc(image.kind) &&
+		trajectory == 25;
 	if (argc >= 5 && strcmp(argv[4], "-"))
 	{
 		const uint8_t *rom_sha1 = NULL;
@@ -628,7 +660,8 @@ int main(int argc, char **argv)
 	for (frame = 1; frame <= frames && !core->cpu.stopped; ++frame)
 	{
 		if (!uses_glove_sensor(image.kind) &&
-			image.kind != DRGQST_ROM_EPO_ES2J)
+			image.kind != DRGQST_ROM_EPO_ES2J &&
+			!drgqst_rom_is_tvpc(image.kind))
 			apply_calibration_sequence(core, frame - 1);
 		if (image.kind == DRGQST_ROM_TAK_CHQ)
 		{
@@ -647,7 +680,7 @@ int main(int argc, char **argv)
 					core->machine.state.input0 &= (uint8_t)~0x80;
 			}
 		}
-		if (image.kind == DRGQST_ROM_TVPC_DOR)
+		if (drgqst_rom_is_tvpc(image.kind))
 		{
 			const int apply_delta = (trajectory < 25 || trajectory > 28) &&
 				(trajectory != 17 ||
@@ -1000,10 +1033,7 @@ int main(int argc, char **argv)
 				drgqst_core_trigger_hamd_packet(core, second);
 		}
 		pixels = drgqst_core_run_frame(core);
-		if (image.kind == DRGQST_ROM_TAK_CHQ ||
-			image.kind == DRGQST_ROM_EPO_EBOX ||
-			image.kind == DRGQST_ROM_EPO_ES2J ||
-			image.kind == DRGQST_ROM_EPO_HAMC)
+		if (tracks_pcm(image.kind))
 		{
 			const int16_t *audio = drgqst_core_frame_audio(core);
 			unsigned sample;
@@ -1115,10 +1145,7 @@ int main(int argc, char **argv)
 		(unsigned)core->machine.state.peripherals.sensor.scan_y,
 		(unsigned)core->machine.state.peripherals.eeprom.dirty,
 		(unsigned long)core->machine.state.peripherals.eeprom.write_generation);
-	if (image.kind == DRGQST_ROM_TAK_CHQ ||
-		image.kind == DRGQST_ROM_EPO_EBOX ||
-		image.kind == DRGQST_ROM_EPO_ES2J ||
-		image.kind == DRGQST_ROM_EPO_HAMC)
+	if (tracks_pcm(image.kind))
 	{
 		printf("pcm-samples=%llu nonzero=%llu peak=%u\n",
 			(unsigned long long)pcm_samples,

@@ -21,7 +21,9 @@ enum
 	EPO_EBOX_ROM_SIZE = 0x400000,
 	EPO_ES2J_ROM_SIZE = 0x400000,
 	EPO_HAMC_ROM_SIZE = 0x400000,
-	TVPC_DOR_ROM_SIZE = 0x400000
+	TVPC_DOR_ROM_SIZE = 0x400000,
+	TVPC_HAM_ROM_SIZE = 0x400000,
+	TVPC_HK_ROM_SIZE = 0x400000
 };
 
 #define DRGQST_ROM_CRC32 UINT32_C(0x3d24413f)
@@ -43,6 +45,8 @@ enum
 #define BAN_DB2J_ROM_CRC32 UINT32_C(0x7362ac0d)
 #define BAN_DBZ_ROM_CRC32 UINT32_C(0x7e535ea2)
 #define TVPC_DOR_ROM_CRC32 UINT32_C(0x6f2edbb2)
+#define TVPC_HAM_ROM_CRC32 UINT32_C(0x76e8c854)
+#define TVPC_HK_ROM_CRC32 UINT32_C(0x87fc2f73)
 
 enum drgqst_rom_kind
 {
@@ -69,7 +73,9 @@ enum drgqst_rom_kind
 	DRGQST_ROM_TAK_CHQ,
 	DRGQST_ROM_EPO_EBOX,
 	DRGQST_ROM_EPO_ES2J,
-	DRGQST_ROM_EPO_HAMC
+	DRGQST_ROM_EPO_HAMC,
+	DRGQST_ROM_TVPC_HAM,
+	DRGQST_ROM_TVPC_HK
 };
 
 typedef struct drgqst_rom_image
@@ -82,6 +88,7 @@ typedef struct drgqst_rom_image
 
 const char *drgqst_rom_short_name(enum drgqst_rom_kind kind);
 int drgqst_rom_is_xavix2(enum drgqst_rom_kind kind);
+int drgqst_rom_is_tvpc(enum drgqst_rom_kind kind);
 
 int drgqst_rom_load_zip(
 	const wchar_t *path,

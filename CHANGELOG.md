@@ -24,6 +24,12 @@ semantic versioning while experimental releases carry a pre-release suffix.
 - Recognize the exact 4 MiB `epo_hamc` image with a dedicated no-EEPROM
   synchronization profile, independent runtime states, and verified EPOCH,
   animated-title, and PCM milestones.
+- Recognize the exact 4 MiB `tvpc_ham` and `tvpc_hk` images through the shared
+  TV-PC 24C16 profile, with verified title/main-menu, EEPROM-initialization,
+  and PCM milestones.
+- Add independent 2 KiB EEPROM and runtime-state identities for `tvpc_ham`
+  and `tvpc_hk`, plus ROM-independent TV-PC diagnostic probes. The existing
+  `tvpc_dor` host controls remain scoped to that title.
 - Add ROM-independent tests for separate instruction fetching and interrupt
   acknowledgement/delivery.
 

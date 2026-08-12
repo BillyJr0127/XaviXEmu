@@ -85,3 +85,37 @@ in the source tree, builds, or research notes.
 Most TV-PC key labels and the complete gameplay flow remain unknown. The
 verified flight checkpoint is an Experimental milestone, not a complete-play
 or Playable claim.
+
+## `tvpc_ham` and `tvpc_hk`
+
+- Observed symptom: neither exact 4 MiB image was recognized by the standalone
+  loader, so the existing shared TV-PC hardware path could not be evaluated.
+- Address / interface: both MAME definitions use the same
+  `xavix_i2c_24c16_4mb` machine configuration and `tvpc_tom` input definition
+  as `tvpc_dor`. This indicates the same 2 KiB 24C16 board-level storage, but
+  does not establish identical host controls or keyboard meanings.
+- Hypothesis: strict image recognition plus the existing XaviX+24C16 profile
+  is sufficient to reach an initial visual milestone without copying the
+  Doraemon-specific host mappings.
+- Experiment: verify each image by size, CRC32, and SHA-1, then run deterministic
+  600-, 1,800-, and 3,600-frame probes with no guest patches. Track CPU
+  execution, frame hashes, EEPROM commits, PCM samples, ANPORT reads, and the
+  external keyboard window.
+- Result: both titles display stable, correctly composed title/main-menu
+  screens and remain live through frame 3,600. `tvpc_ham` ends at PC `$003eb1`
+  with frame hash `4a9385e9c754e984`; `tvpc_hk` ends at PC `$00224f` with
+  frame hash `a709ae6ce2ec487b`. Both initialize 48 EEPROM bytes across 11
+  committed generations and produce nonzero PCM output.
+- I/O result: both read motion counters at `$7b10/$7b11`, the ADC path at
+  `$7b80`, and the external one-hot keyboard addresses `$600001-$600080`.
+  The observed `$7b80` value is `ff`; no hardware change is justified by that
+  observation because neither title blocks before the verified menu.
+- Code changed: add exact loader metadata, route both titles through the
+  shared 24C16 board profile, assign independent EEPROM/runtime-state
+  identities, and generalize only the ROM-independent TV-PC diagnostic trace.
+  Mouse pulses, cursor-key mappings, Escape handling, and host-target
+  suppression remain specific to `tvpc_dor` until their meanings are traced.
+
+Gameplay, keyboard meanings, later programs, and audio accuracy have not been
+verified. These are Experimental graphics/audio baselines, not Playable
+claims.

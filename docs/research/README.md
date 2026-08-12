@@ -15,6 +15,6 @@ expectations are documented in `../compatibility.md`.
 - [`epo_es2j`](epo-es2j.md)
 - [`epo_hamc`](epo-hamc.md)
 - [`tak_chq`](tak-chq.md)
-- [Early XaviX (`epo_hamd` and `tvpc_dor`)](early-xavix.md)
+- [Early XaviX and TV-PC](early-xavix.md)
 - [TTV optical sensors](ttv-sensors.md)
 - [XaviX 2](xavix2.md)

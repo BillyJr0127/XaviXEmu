@@ -43,6 +43,8 @@ holders or MAMEdev. See [the legal notes](docs/legal.md).
 | XaviX 2000 | `tak_chq` | Experimental | Animated attract/title/race screens, diagnostic P0/ANPORT input, 24C04 persistence, and PCM output |
 | XaviX | `epo_hamd` | Experimental | Animated title, decoded dual wireless controllers, activity-menu entry, and menu confirmation |
 | XaviX | `tvpc_dor` | Experimental | Title, main menu, mouse, cursor-key matrix, 24C16 EEPROM, and verified flight-game input |
+| XaviX | `tvpc_ham` | Experimental | Title/main menu, 24C16 EEPROM initialization, independent persistence, and PCM output |
+| XaviX | `tvpc_hk` | Experimental | Title/main menu, 24C16 EEPROM initialization, independent persistence, and PCM output |
 | XaviX 2 | `ban_naru` | Experimental | Title, menus, character selection, story path, and provisional PCM audio |
 | XaviX 2 | `ban_bldj` | Experimental | Boots through the Japanese safety warning to the title screen |
 | XaviX 2 | `ban_db2j` | Experimental | Boots through the BANDAI and safety screens to the title/menu screen |
