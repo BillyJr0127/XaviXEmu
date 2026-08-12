@@ -36,6 +36,7 @@ holders or MAMEdev. See [the legal notes](docs/legal.md).
 | XaviX 2000 | `ttv_mx` | Experimental | Title, career menu, digital tilt/accelerator input, 24C04 persistence, and PCM output |
 | XaviX 2000 | `tom_jump` | Experimental | Title, start menu, digital tilt/accelerator input, 24C04 persistence, and PCM output |
 | XaviX 2000 | `epo_sdb` | Experimental | Safety/title screens, four controller channels, two buttons, and 4 KiB parallel NVRAM |
+| XaviX 2000 | `epo_ebox` | Experimental | EPOCH/title/character/level screens, digital controls, 4 KiB parallel NVRAM, and PCM output |
 | XaviX 2000 | `epo_bowl` | Experimental | Safety/title/menu screens, synthetic sensor acquisition, and 24C04 persistence |
 | XaviX 2000 | `tak_chq` | Experimental | Animated attract/title/race screens, diagnostic P0/ANPORT input, 24C04 persistence, and PCM output |
 | XaviX | `epo_hamd` | Experimental | Animated title, decoded dual wireless controllers, activity-menu entry, and menu confirmation |

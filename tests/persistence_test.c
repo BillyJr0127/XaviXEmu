@@ -662,12 +662,67 @@ static void test_epo_sdb_parallel_nvram_persistence(void)
 	RemoveDirectoryW(root);
 }
 
+static void test_epo_ebox_parallel_nvram_persistence(void)
+{
+	wchar_t root[MAX_PATH];
+	wchar_t nvram_path[MAX_PATH] = { 0 };
+	wchar_t state_path[MAX_PATH] = { 0 };
+	wchar_t error[512];
+	uint8_t rom_sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] = { 0 };
+	uint8_t nvram[DRGQST_PERSISTENCE_PARALLEL_NVRAM_SIZE];
+	uint8_t output[DRGQST_PERSISTENCE_PARALLEL_NVRAM_SIZE];
+	uint8_t state[4] = { 0x45, 0x42, 0x4f, 0x58 };
+	size_t output_size = 0;
+	size_t index;
+
+	if (!create_test_root(root))
+	{
+		CHECK(0 && "create epo_ebox persistence root");
+		return;
+	}
+	for (index = 0; index < sizeof(nvram); ++index)
+		nvram[index] = (uint8_t)(0xa5 ^ index ^ (index >> 3));
+	rom_sha1[0] = 0x7f;
+	rom_sha1[1] = 0x7b;
+	CHECK(drgqst_persistence_get_path(root,
+		DRGQST_PERSISTENCE_EPO_EBOX_NVRAM, nvram_path, MAX_PATH,
+		error, sizeof(error) / sizeof(error[0])));
+	CHECK(drgqst_persistence_get_path(root,
+		DRGQST_PERSISTENCE_EPO_EBOX_RUNTIME_STATE, state_path, MAX_PATH,
+		error, sizeof(error) / sizeof(error[0])));
+	CHECK(wcsstr(nvram_path, L"\\epo_ebox-nvram.sav") != NULL);
+	CHECK(wcsstr(state_path, L"\\epo_ebox-runtime-state.sav") != NULL);
+	CHECK(!drgqst_persistence_save(root,
+		DRGQST_PERSISTENCE_EPO_EBOX_NVRAM, rom_sha1, nvram,
+		sizeof(nvram) - 1, error, sizeof(error) / sizeof(error[0])));
+	CHECK(drgqst_persistence_save(root,
+		DRGQST_PERSISTENCE_EPO_EBOX_NVRAM, rom_sha1, nvram,
+		sizeof(nvram), error, sizeof(error) / sizeof(error[0])));
+	CHECK(drgqst_persistence_save(root,
+		DRGQST_PERSISTENCE_EPO_EBOX_RUNTIME_STATE, rom_sha1, state,
+		sizeof(state), error, sizeof(error) / sizeof(error[0])));
+	memset(output, 0, sizeof(output));
+	CHECK(drgqst_persistence_load(root,
+		DRGQST_PERSISTENCE_EPO_EBOX_NVRAM, rom_sha1, output,
+		sizeof(output), &output_size, error,
+		sizeof(error) / sizeof(error[0])));
+	CHECK(output_size == sizeof(nvram));
+	CHECK(!memcmp(output, nvram, sizeof(nvram)));
+
+	if (*nvram_path)
+		DeleteFileW(nvram_path);
+	if (*state_path)
+		DeleteFileW(state_path);
+	RemoveDirectoryW(root);
+}
+
 int main(void)
 {
 	test_default_directory();
 	test_persistence();
 	test_xavix2000_24c04_persistence_kinds();
 	test_epo_sdb_parallel_nvram_persistence();
+	test_epo_ebox_parallel_nvram_persistence();
 
 	if (failures)
 	{

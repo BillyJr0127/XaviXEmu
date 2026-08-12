@@ -125,6 +125,26 @@ static void xavix_base_io1_write(void *opaque, uint8_t data,
 	(void)direction;
 }
 
+static uint8_t unused_adc_read(void *opaque, unsigned channel)
+{
+	(void)opaque;
+	(void)channel;
+	return 0x00;
+}
+
+static uint8_t open_anport_read(void *opaque, unsigned channel)
+{
+	(void)opaque;
+	(void)channel;
+	return 0xff;
+}
+
+static int profile_uses_parallel_nvram(enum drgqst_core_profile profile)
+{
+	return profile == DRGQST_CORE_XAVIX2000_PARALLEL_NVRAM ||
+		profile == DRGQST_CORE_XAVIX2000_PARALLEL_NVRAM_SDB;
+}
+
 static uint8_t xavix_i2c_io1_read(void *opaque, uint8_t direction)
 {
 	drgqst_core *core = (drgqst_core *)opaque;
@@ -342,6 +362,7 @@ static void configure_internal_cursor_watch(drgqst_core *core)
 	case DRGQST_CORE_XAVIX2000_I2C_24C04:
 	case DRGQST_CORE_XAVIX2000_PARALLEL_NVRAM_SDB:
 	case DRGQST_CORE_EPO_BOWL_SENSOR_24C04:
+	case DRGQST_CORE_XAVIX2000_PARALLEL_NVRAM:
 	default:
 		watch.enabled = 0;
 		break;
@@ -397,6 +418,17 @@ int drgqst_core_init_profile(drgqst_core *core, const uint8_t *rom,
 		hooks.write_io1 = xavix_base_io1_write;
 		hooks.read_anport = sdb_anport_read;
 	}
+	else if (profile == DRGQST_CORE_XAVIX2000_PARALLEL_NVRAM)
+	{
+		/* Excite Boxing uses only digital P0 controls and battery-backed
+		 * internal RAM.  Its unconnected ANPORT callbacks read high, while its
+		 * unused ADC input ports read low.  Neither may inherit the synthetic
+		 * optical sensor installed by the Dragon Quest profile. */
+		hooks.read_io1 = xavix_base_io1_read;
+		hooks.write_io1 = xavix_base_io1_write;
+		hooks.read_anport = open_anport_read;
+		hooks.read_adc = unused_adc_read;
+	}
 	else if (profile == DRGQST_CORE_BAN_ONEP ||
 		profile == DRGQST_CORE_BAN_OMT ||
 		profile == DRGQST_CORE_TTV_CU5501_24C02 ||
@@ -436,8 +468,8 @@ int drgqst_core_init(drgqst_core *core, const uint8_t *rom, size_t rom_size)
 void drgqst_core_reset(drgqst_core *core)
 {
 	uint8_t parallel_nvram[XAVIX_PARALLEL_NVRAM_SIZE];
-	const int preserve_parallel_nvram = core && core->game_profile ==
-		DRGQST_CORE_XAVIX2000_PARALLEL_NVRAM_SDB;
+	const int preserve_parallel_nvram = core && profile_uses_parallel_nvram(
+		(enum drgqst_core_profile)core->game_profile);
 
 	if (!core)
 		return;
@@ -450,8 +482,9 @@ void drgqst_core_reset(drgqst_core *core)
 	{
 		memcpy(core->machine.state.main_ram + XAVIX_PARALLEL_NVRAM_BASE,
 			parallel_nvram, sizeof(parallel_nvram));
-		memset(core->machine.state.anport_regs, 0x01,
-			sizeof(core->machine.state.anport_regs));
+		if (core->game_profile == DRGQST_CORE_XAVIX2000_PARALLEL_NVRAM_SDB)
+			memset(core->machine.state.anport_regs, 0x01,
+				sizeof(core->machine.state.anport_regs));
 	}
 	xavix_cpu_reset(&core->cpu);
 	xavix_audio_reset(&core->audio);
@@ -694,6 +727,8 @@ void drgqst_core_set_mouse(drgqst_core *core, uint8_t x, uint8_t y,
 {
 	enum xavix_sensor_mode mode = XAVIX_SENSOR_NARROW;
 	if (!core)
+		return;
+	if (core->game_profile == DRGQST_CORE_XAVIX2000_PARALLEL_NVRAM)
 		return;
 	if (core->game_profile == DRGQST_CORE_BAN_ONEP)
 	{

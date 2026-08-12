@@ -15,6 +15,9 @@ semantic versioning while experimental releases carry a pre-release suffix.
   EEPROM/runtime-state files.
 - Recognize the exact 4 MiB `tak_chq` image through the generic XaviX 2000
   24C04 profile with independent EEPROM/runtime-state files.
+- Recognize the exact 4 MiB `epo_ebox` image with digital controls, isolated
+  ANPORT/ADC inputs, independent 4 KiB parallel NVRAM/runtime-state files, and
+  verified title, character, level-selection, and PCM milestones.
 - Add ROM-independent tests for separate instruction fetching and interrupt
   acknowledgement/delivery.
 

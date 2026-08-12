@@ -143,6 +143,15 @@ static const supported_rom SUPPORTED_ROMS[] = {
 		}
 	},
 	{
+		DRGQST_ROM_EPO_EBOX,
+		EPO_EBOX_ROM_SIZE,
+		EPO_EBOX_ROM_CRC32,
+		{
+			0x7f, 0x7b, 0x61, 0x3f, 0x0a, 0xb8, 0xf4, 0x3f, 0x5c, 0xad,
+			0x0d, 0x13, 0xde, 0x53, 0x89, 0x21, 0xe7, 0x7c, 0xae, 0x9c
+		}
+	},
+	{
 		DRGQST_ROM_BAN_NARU,
 		BAN_NARU_ROM_SIZE,
 		BAN_NARU_ROM_CRC32,
@@ -215,6 +224,8 @@ const char *drgqst_rom_short_name(enum drgqst_rom_kind kind)
 		return "epo_bowl";
 	case DRGQST_ROM_TAK_CHQ:
 		return "tak_chq";
+	case DRGQST_ROM_EPO_EBOX:
+		return "epo_ebox";
 	case DRGQST_ROM_BAN_NARU:
 		return "ban_naru";
 	case DRGQST_ROM_BAN_BLDJ:

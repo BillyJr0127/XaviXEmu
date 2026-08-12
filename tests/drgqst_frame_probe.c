@@ -161,6 +161,11 @@ static int uses_glove_sensor(enum drgqst_rom_kind kind)
 		kind == DRGQST_ROM_TTV_SWJ;
 }
 
+static int uses_parallel_nvram(enum drgqst_rom_kind kind)
+{
+	return kind == DRGQST_ROM_EPO_SDB || kind == DRGQST_ROM_EPO_EBOX;
+}
+
 static void apply_calibration_sequence(drgqst_core *core, unsigned frame)
 {
 	uint8_t x = 0x80;
@@ -280,6 +285,11 @@ static int persistence_profile(enum drgqst_rom_kind rom_kind,
 		0xa3, 0x08, 0x84, 0xda, 0x55, 0x54, 0x48, 0x3e, 0xbf, 0xd0,
 		0x00, 0x9c, 0xf5, 0xdd, 0x17, 0x68, 0xbe, 0x8a, 0x99, 0xcb
 	};
+	static const uint8_t ebox_sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+	{
+		0x7f, 0x7b, 0x61, 0x3f, 0x0a, 0xb8, 0xf4, 0x3f, 0x5c, 0xad,
+		0x0d, 0x13, 0xde, 0x53, 0x89, 0x21, 0xe7, 0x7c, 0xae, 0x9c
+	};
 	static const uint8_t hamd_sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
 	{
 		0xc6, 0x1d, 0x43, 0x6d, 0x6b, 0x80, 0x37, 0x17, 0xb8, 0xc8,
@@ -340,6 +350,12 @@ static int persistence_profile(enum drgqst_rom_kind rom_kind,
 		*sha1 = tak_chq_sha1;
 		*eeprom_kind = DRGQST_PERSISTENCE_TAK_CHQ_EEPROM;
 		*state_kind = DRGQST_PERSISTENCE_TAK_CHQ_RUNTIME_STATE;
+		return 1;
+	case DRGQST_ROM_EPO_EBOX:
+		*sha1 = ebox_sha1;
+		*eeprom_kind = DRGQST_PERSISTENCE_EPO_EBOX_NVRAM;
+		*state_kind = DRGQST_PERSISTENCE_EPO_EBOX_RUNTIME_STATE;
+		*eeprom_size = DRGQST_PERSISTENCE_PARALLEL_NVRAM_SIZE;
 		return 1;
 	case DRGQST_ROM_EPO_HAMD:
 		*sha1 = hamd_sha1;
@@ -447,6 +463,8 @@ int main(int argc, char **argv)
 			DRGQST_CORE_XAVIX2000_I2C_24C04 :
 		image.kind == DRGQST_ROM_EPO_SDB ?
 			DRGQST_CORE_XAVIX2000_PARALLEL_NVRAM_SDB :
+		image.kind == DRGQST_ROM_EPO_EBOX ?
+			DRGQST_CORE_XAVIX2000_PARALLEL_NVRAM :
 		image.kind == DRGQST_ROM_EPO_HAMD ? DRGQST_CORE_XAVIX_BASE :
 		image.kind == DRGQST_ROM_TVPC_DOR ? DRGQST_CORE_XAVIX_I2C_24C16 :
 		DRGQST_CORE_DRAGON_QUEST))
@@ -456,7 +474,7 @@ int main(int argc, char **argv)
 		return 2;
 	}
 	eeprom_size = image.kind == DRGQST_ROM_EPO_HAMD ? 0 :
-		image.kind == DRGQST_ROM_EPO_SDB ?
+		uses_parallel_nvram(image.kind) ?
 		DRGQST_PERSISTENCE_PARALLEL_NVRAM_SIZE :
 		image.kind == DRGQST_ROM_TVPC_DOR ?
 		DRGQST_PERSISTENCE_EEPROM24C16_SIZE :
@@ -521,7 +539,7 @@ int main(int argc, char **argv)
 				(unsigned)image.kind);
 			return 2;
 		}
-		if (image.kind == DRGQST_ROM_EPO_SDB)
+		if (uses_parallel_nvram(image.kind))
 			memcpy(durable_eeprom,
 				core->machine.state.main_ram + XAVIX_PARALLEL_NVRAM_BASE,
 				eeprom_size);
@@ -533,7 +551,7 @@ int main(int argc, char **argv)
 			rom_sha1, durable_eeprom, eeprom_size, &loaded_size, error,
 			sizeof(error) / sizeof(error[0])) && loaded_size == eeprom_size)
 		{
-			if (image.kind == DRGQST_ROM_EPO_SDB)
+			if (uses_parallel_nvram(image.kind))
 				memcpy(core->machine.state.main_ram +
 					XAVIX_PARALLEL_NVRAM_BASE, durable_eeprom, eeprom_size);
 			else
@@ -559,7 +577,7 @@ int main(int argc, char **argv)
 			}
 			/* Match the GUI: F7 restores the machine checkpoint but never
 			 * rewinds the game's durable EEPROM contents. */
-			if (image.kind == DRGQST_ROM_EPO_SDB)
+			if (uses_parallel_nvram(image.kind))
 				memcpy(core->machine.state.main_ram +
 					XAVIX_PARALLEL_NVRAM_BASE, durable_eeprom, eeprom_size);
 			else if (eeprom_size)
@@ -573,7 +591,7 @@ int main(int argc, char **argv)
 		if (sync_period)
 			core->ban_onep_sync_period = (uint8_t)sync_period;
 	}
-	if (image.kind == DRGQST_ROM_EPO_SDB)
+	if (uses_parallel_nvram(image.kind))
 		memcpy(initial_eeprom,
 			core->machine.state.main_ram + XAVIX_PARALLEL_NVRAM_BASE,
 			eeprom_size);
@@ -909,6 +927,15 @@ int main(int argc, char **argv)
 				offset % 60 < 4)
 				core->machine.state.input0 = patterns[offset / 60];
 		}
+		if (image.kind == DRGQST_ROM_EPO_EBOX && trajectory == 30)
+		{
+			/* Diagnostic-only prelude: enter character selection before a
+			 * later P0 direction/back sweep.  GUI behavior is unaffected. */
+			if (frame >= 1500 && frame < 1504)
+				core->machine.state.input0 |= 0x01;
+			else
+				core->machine.state.input0 &= (uint8_t)~0x01;
+		}
 		if (image.kind == DRGQST_ROM_EPO_HAMD && trajectory == 19 &&
 			frame >= trajectory_start)
 		{
@@ -945,7 +972,8 @@ int main(int argc, char **argv)
 				drgqst_core_trigger_hamd_packet(core, second);
 		}
 		pixels = drgqst_core_run_frame(core);
-		if (image.kind == DRGQST_ROM_TAK_CHQ)
+		if (image.kind == DRGQST_ROM_TAK_CHQ ||
+			image.kind == DRGQST_ROM_EPO_EBOX)
 		{
 			const int16_t *audio = drgqst_core_frame_audio(core);
 			unsigned sample;
@@ -1057,7 +1085,8 @@ int main(int argc, char **argv)
 		(unsigned)core->machine.state.peripherals.sensor.scan_y,
 		(unsigned)core->machine.state.peripherals.eeprom.dirty,
 		(unsigned long)core->machine.state.peripherals.eeprom.write_generation);
-	if (image.kind == DRGQST_ROM_TAK_CHQ)
+	if (image.kind == DRGQST_ROM_TAK_CHQ ||
+		image.kind == DRGQST_ROM_EPO_EBOX)
 	{
 		printf("pcm-samples=%llu nonzero=%llu peak=%u\n",
 			(unsigned long long)pcm_samples,
@@ -1112,7 +1141,7 @@ int main(int argc, char **argv)
 		unsigned address;
 		for (address = 0; address < eeprom_size; ++address)
 		{
-			const uint8_t value = image.kind == DRGQST_ROM_EPO_SDB ?
+			const uint8_t value = uses_parallel_nvram(image.kind) ?
 				core->machine.state.main_ram[
 					XAVIX_PARALLEL_NVRAM_BASE + address] :
 				core->machine.state.peripherals.eeprom.data[address];
@@ -1120,13 +1149,13 @@ int main(int argc, char **argv)
 			{
 				if (changed < 64)
 					printf("%s-change %03X %02X->%02X\n",
-						image.kind == DRGQST_ROM_EPO_SDB ? "nvram" : "eeprom", address,
+						uses_parallel_nvram(image.kind) ? "nvram" : "eeprom", address,
 						initial_eeprom[address], value);
 				++changed;
 			}
 		}
 		printf("%s-diff=%u durable-loaded=%u\n",
-			image.kind == DRGQST_ROM_EPO_SDB ? "nvram" : "eeprom", changed,
+			uses_parallel_nvram(image.kind) ? "nvram" : "eeprom", changed,
 			(unsigned)durable_eeprom_loaded);
 	}
 	free(core);

@@ -68,6 +68,20 @@ Rendering and the hardware input path are under active verification. These
 mappings are usability controls and do not claim to reproduce the physical
 shape or travel of the original accessory.
 
+## `epo_ebox` (experimental)
+
+The original boxing controller exposes ordinary active-high digital controls;
+it does not use the optical-sensor or ANPORT models.
+
+- Left mouse or Space: select/OK.
+- Right mouse or Ctrl: back/cancel.
+- Mouse position outside the central neutral area, or Up/Down/Left/Right or
+  W/S/A/D: menu and game directions.
+
+Bits `$04` and `$08` are intentionally unbound. The game draws its own menu
+selection graphics, so XaviXEmu does not overlay the blue target. Gameplay and
+control feel remain experimental.
+
 ## `ban_naru` (experimental)
 
 - Mouse movement: first wrist reflector and game-owned cursor.

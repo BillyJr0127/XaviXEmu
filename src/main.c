@@ -325,6 +325,11 @@ static const uint8_t TAK_CHQ_ROM_SHA1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
 	0xa3, 0x08, 0x84, 0xda, 0x55, 0x54, 0x48, 0x3e, 0xbf, 0xd0,
 	0x00, 0x9c, 0xf5, 0xdd, 0x17, 0x68, 0xbe, 0x8a, 0x99, 0xcb
 };
+static const uint8_t EPO_EBOX_ROM_SHA1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+{
+	0x7f, 0x7b, 0x61, 0x3f, 0x0a, 0xb8, 0xf4, 0x3f, 0x5c, 0xad,
+	0x0d, 0x13, 0xde, 0x53, 0x89, 0x21, 0xe7, 0x7c, 0xae, 0x9c
+};
 static const uint8_t EPO_HAMD_ROM_SHA1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
 {
 	0xc6, 0x1d, 0x43, 0x6d, 0x6b, 0x80, 0x37, 0x17, 0xb8, 0xc8,
@@ -416,9 +421,15 @@ static int rom_uses_camera(enum drgqst_rom_kind kind)
 		kind == DRGQST_ROM_TTV_SWJ || kind == DRGQST_ROM_EPO_BOWL;
 }
 
-static int rom_uses_digital_tilt(enum drgqst_rom_kind kind)
+static int rom_uses_digital_direction_input(enum drgqst_rom_kind kind)
 {
-	return kind == DRGQST_ROM_TTV_MX || kind == DRGQST_ROM_TOM_JUMP;
+	return kind == DRGQST_ROM_TTV_MX || kind == DRGQST_ROM_TOM_JUMP ||
+		kind == DRGQST_ROM_EPO_EBOX;
+}
+
+static int rom_uses_parallel_nvram(enum drgqst_rom_kind kind)
+{
+	return kind == DRGQST_ROM_EPO_SDB || kind == DRGQST_ROM_EPO_EBOX;
 }
 
 static int rom_has_internal_cursor(enum drgqst_rom_kind kind)
@@ -452,6 +463,8 @@ static enum drgqst_core_profile core_profile_for_rom(
 		return DRGQST_CORE_EPO_BOWL_SENSOR_24C04;
 	case DRGQST_ROM_EPO_SDB:
 		return DRGQST_CORE_XAVIX2000_PARALLEL_NVRAM_SDB;
+	case DRGQST_ROM_EPO_EBOX:
+		return DRGQST_CORE_XAVIX2000_PARALLEL_NVRAM;
 	case DRGQST_ROM_EPO_HAMD:
 		return DRGQST_CORE_XAVIX_BASE;
 	case DRGQST_ROM_TVPC_DOR:
@@ -487,6 +500,8 @@ static const uint8_t *rom_sha1_for_kind(enum drgqst_rom_kind kind)
 		return EPO_BOWL_ROM_SHA1;
 	case DRGQST_ROM_TAK_CHQ:
 		return TAK_CHQ_ROM_SHA1;
+	case DRGQST_ROM_EPO_EBOX:
+		return EPO_EBOX_ROM_SHA1;
 	case DRGQST_ROM_EPO_HAMD:
 		return EPO_HAMD_ROM_SHA1;
 	case DRGQST_ROM_TVPC_DOR:
@@ -535,6 +550,10 @@ static enum drgqst_persistence_kind persistence_kind_for_rom(
 		return kind == DRGQST_PERSISTENCE_RUNTIME_STATE ?
 			DRGQST_PERSISTENCE_EPO_SDB_RUNTIME_STATE :
 			DRGQST_PERSISTENCE_EPO_SDB_NVRAM;
+	case DRGQST_ROM_EPO_EBOX:
+		return kind == DRGQST_PERSISTENCE_RUNTIME_STATE ?
+			DRGQST_PERSISTENCE_EPO_EBOX_RUNTIME_STATE :
+			DRGQST_PERSISTENCE_EPO_EBOX_NVRAM;
 	case DRGQST_ROM_EPO_BOWL:
 		return kind == DRGQST_PERSISTENCE_EEPROM ?
 			DRGQST_PERSISTENCE_EPO_BOWL_EEPROM :
@@ -559,7 +578,7 @@ static enum drgqst_persistence_kind persistence_kind_for_rom(
 
 static size_t eeprom_size_for_rom(enum drgqst_rom_kind kind)
 {
-	if (kind == DRGQST_ROM_EPO_HAMD || kind == DRGQST_ROM_EPO_SDB ||
+	if (kind == DRGQST_ROM_EPO_HAMD || rom_uses_parallel_nvram(kind) ||
 		kind == DRGQST_ROM_BAN_NARU)
 		return 0;
 	if (kind == DRGQST_ROM_TVPC_DOR)
@@ -927,6 +946,8 @@ static void update_core_mouse(void)
 			g_core->machine.state.input0 &= (uint8_t)~0x80;
 		return;
 	}
+	if (rom_uses_digital_direction_input(g_rom.kind))
+		return;
 	drgqst_core_set_mouse(g_core, g_mouse_x, g_mouse_y,
 		g_left_button || (g_rom.kind == DRGQST_ROM_BAN_OMT &&
 			g_omt_backside),
@@ -1044,7 +1065,7 @@ static void update_hamd_input(void)
 		g_core->machine.state.input0 &= (uint8_t)~0x01;
 }
 
-static void update_digital_tilt_input(void)
+static void update_digital_direction_input(void)
 {
 	uint8_t input = 0;
 	int up;
@@ -1052,13 +1073,12 @@ static void update_digital_tilt_input(void)
 	int left;
 	int right;
 
-	if (!g_core || !rom_uses_digital_tilt(g_rom.kind))
+	if (!g_core || !rom_uses_digital_direction_input(g_rom.kind))
 		return;
 
-	/* The original tilt accessory exposes four active-high digital motion
-	 * switches.  Keyboard directions take priority; with no direction key
-	 * held, the mouse position acts as a virtual tilted controller with a
-	 * generous neutral region around the centre of the picture. */
+	/* These boards expose active-high digital directions.  Keyboard directions
+	 * take priority; with no direction key held, the mouse position supplies a
+	 * virtual tilt or boxing-pad direction with a generous centre dead zone. */
 	up = (GetAsyncKeyState(VK_UP) & 0x8000) != 0 ||
 		(GetAsyncKeyState('W') & 0x8000) != 0;
 	down = (GetAsyncKeyState(VK_DOWN) & 0x8000) != 0 ||
@@ -1086,8 +1106,9 @@ static void update_digital_tilt_input(void)
 		input |= 0x01;
 	if (g_right_button || (GetAsyncKeyState(VK_CONTROL) & 0x8000))
 		input |= 0x02;
-	if ((GetAsyncKeyState(VK_MBUTTON) & 0x8000) ||
-		(GetAsyncKeyState('P') & 0x8000))
+	if (g_rom.kind != DRGQST_ROM_EPO_EBOX &&
+		((GetAsyncKeyState(VK_MBUTTON) & 0x8000) ||
+		(GetAsyncKeyState('P') & 0x8000)))
 		input |= 0x04;
 	g_core->machine.state.input0 = input;
 }
@@ -1225,7 +1246,7 @@ static void load_persistent_eeprom(HWND window, drgqst_core *core,
 	const interface_strings *text = interface_text();
 	uint8_t image[DRGQST_PERSISTENCE_PARALLEL_NVRAM_SIZE];
 	wchar_t error[384];
-	size_t expected_size = rom_kind == DRGQST_ROM_EPO_SDB ?
+	size_t expected_size = rom_uses_parallel_nvram(rom_kind) ?
 		DRGQST_PERSISTENCE_PARALLEL_NVRAM_SIZE :
 		eeprom_size_for_rom(rom_kind);
 	size_t size = 0;
@@ -1238,7 +1259,7 @@ static void load_persistent_eeprom(HWND window, drgqst_core *core,
 		sizeof(error) / sizeof(error[0]), &loaded_from_legacy) &&
 		size == expected_size)
 	{
-		if (rom_kind == DRGQST_ROM_EPO_SDB)
+		if (rom_uses_parallel_nvram(rom_kind))
 			memcpy(core->machine.state.main_ram + XAVIX_PARALLEL_NVRAM_BASE,
 				image, size);
 		else
@@ -1264,10 +1285,11 @@ static int save_persistent_eeprom(HWND window, int show_error)
 
 	if (!g_core)
 		return 1;
-	if (g_rom.kind == DRGQST_ROM_EPO_SDB)
+	if (rom_uses_parallel_nvram(g_rom.kind))
 	{
 		if (!drgqst_persistence_save(g_executable_directory,
-			DRGQST_PERSISTENCE_EPO_SDB_NVRAM, EPO_SDB_ROM_SHA1,
+			persistence_kind_for_rom(DRGQST_PERSISTENCE_EEPROM, g_rom.kind),
+			rom_sha1_for_kind(g_rom.kind),
 			g_core->machine.state.main_ram + XAVIX_PARALLEL_NVRAM_BASE,
 			DRGQST_PERSISTENCE_PARALLEL_NVRAM_SIZE, error,
 			sizeof(error) / sizeof(error[0])))
@@ -1316,7 +1338,7 @@ static void poll_persistent_eeprom(HWND window)
 
 	if (!g_core)
 		return;
-	if (g_rom.kind == DRGQST_ROM_EPO_SDB)
+	if (rom_uses_parallel_nvram(g_rom.kind))
 	{
 		generation = g_core->machine.nvram_write_generation;
 		if (generation != g_parallel_nvram_generation)
@@ -1506,7 +1528,7 @@ static void run_due_frames(HWND window)
 		{
 			update_hamd_input();
 			update_tvpc_keyboard();
-			update_digital_tilt_input();
+			update_digital_direction_input();
 			update_core_mouse();
 			g_framebuffer = drgqst_core_run_frame(g_core);
 			advance_ttv_special_gesture();
@@ -1616,7 +1638,7 @@ static int load_runtime_state(HWND window)
 	eeprom = &g_core->machine.state.peripherals.eeprom;
 	if (eeprom_size)
 		xavix_eeprom_copy_image(eeprom, eeprom_image, eeprom_size);
-	if (g_rom.kind == DRGQST_ROM_EPO_SDB)
+	if (rom_uses_parallel_nvram(g_rom.kind))
 		memcpy(parallel_nvram_image,
 			g_core->machine.state.main_ram + XAVIX_PARALLEL_NVRAM_BASE,
 			sizeof(parallel_nvram_image));
@@ -1640,7 +1662,7 @@ static int load_runtime_state(HWND window)
 	eeprom = &g_core->machine.state.peripherals.eeprom;
 	if (eeprom_size)
 		memcpy(eeprom->data, eeprom_image, eeprom_size);
-	if (g_rom.kind == DRGQST_ROM_EPO_SDB)
+	if (rom_uses_parallel_nvram(g_rom.kind))
 		memcpy(g_core->machine.state.main_ram + XAVIX_PARALLEL_NVRAM_BASE,
 			parallel_nvram_image, sizeof(parallel_nvram_image));
 	eeprom->dirty = 0;
@@ -1888,7 +1910,7 @@ static void draw_mouse_target(HDC device, const display_viewport *viewport)
 		g_rom.kind == DRGQST_ROM_EPO_HAMD ||
 		g_rom.kind == DRGQST_ROM_TVPC_DOR ||
 		g_rom.kind == DRGQST_ROM_TAK_CHQ ||
-		rom_uses_digital_tilt(g_rom.kind) ||
+		rom_uses_digital_direction_input(g_rom.kind) ||
 		(!rom_uses_camera(g_rom.kind) &&
 		drgqst_core_feather_visible(g_core)))
 		return;

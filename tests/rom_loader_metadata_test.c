@@ -21,6 +21,10 @@ int main(void)
 	CHECK(TAK_CHQ_ROM_CRC32 == UINT32_C(0xffd2eb95));
 	CHECK(!strcmp(drgqst_rom_short_name(DRGQST_ROM_TAK_CHQ), "tak_chq"));
 	CHECK(!drgqst_rom_is_xavix2(DRGQST_ROM_TAK_CHQ));
+	CHECK(EPO_EBOX_ROM_SIZE == 4194304);
+	CHECK(EPO_EBOX_ROM_CRC32 == UINT32_C(0xe25ae4f5));
+	CHECK(!strcmp(drgqst_rom_short_name(DRGQST_ROM_EPO_EBOX), "epo_ebox"));
+	CHECK(!drgqst_rom_is_xavix2(DRGQST_ROM_EPO_EBOX));
 	puts("rom_loader_metadata_test: all tests passed");
 	return 0;
 }
