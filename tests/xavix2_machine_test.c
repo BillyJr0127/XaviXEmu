@@ -54,6 +54,54 @@ int main(void)
 	CHECK(machine->cpu.pc == 1);
 	CHECK(machine->cpu.unimplemented_count == 0);
 
+	/* EC48 combines a firmware-owned two-bit debounce counter with a
+	 * read-only controller/power-good input.  Reset starts with an empty
+	 * counter and the normal status line asserted. */
+	machine->program_ram[4] = 0x12;
+	machine->program_ram[5] = 0x08;
+	machine->program_ram[6] = 0x00;
+	machine->program_ram[7] = 0x00;
+	machine->cpu.r[1] = UINT32_C(0xffffec48);
+	machine->cpu.pc = 4;
+	CHECK(xavix2_cpu_execute(&machine->cpu, 4) == 4);
+	CHECK(machine->cpu.r[0] == 0x04);
+	CHECK(machine->mmio[0xc48] == 0x00);
+
+	/* Writes retain only the firmware counter; reads restore status bit 2. */
+	machine->program_ram[4] = 0x1a;
+	machine->cpu.r[0] = 0xff;
+	machine->cpu.r[1] = UINT32_C(0xffffec48);
+	machine->cpu.pc = 4;
+	CHECK(xavix2_cpu_execute(&machine->cpu, 4) == 4);
+	CHECK(machine->mmio[0xc48] == 0x03);
+	machine->program_ram[4] = 0x12;
+	machine->cpu.r[1] = UINT32_C(0xffffec48);
+	machine->cpu.pc = 4;
+	CHECK(xavix2_cpu_execute(&machine->cpu, 4) == 4);
+	CHECK(machine->cpu.r[0] == 0x07);
+	machine->program_ram[4] = 0x1a;
+	machine->cpu.r[0] = 0x00;
+	machine->cpu.r[1] = UINT32_C(0xffffec48);
+	machine->cpu.pc = 4;
+	CHECK(xavix2_cpu_execute(&machine->cpu, 4) == 4);
+	CHECK(machine->mmio[0xc48] == 0x00);
+	machine->program_ram[4] = 0x12;
+	machine->cpu.r[1] = UINT32_C(0xffffec48);
+	machine->cpu.pc = 4;
+	CHECK(xavix2_cpu_execute(&machine->cpu, 4) == 4);
+	CHECK(machine->cpu.r[0] == 0x04);
+
+	xavix2_machine_reset(machine);
+	CHECK(machine->mmio[0xc48] == 0x00);
+	machine->program_ram[4] = 0x12;
+	machine->program_ram[5] = 0x08;
+	machine->program_ram[6] = 0x00;
+	machine->program_ram[7] = 0x00;
+	machine->cpu.r[1] = UINT32_C(0xffffec48);
+	machine->cpu.pc = 4;
+	CHECK(xavix2_cpu_execute(&machine->cpu, 4) == 4);
+	CHECK(machine->cpu.r[0] == 0x04);
+
 	/* Low-address DMA seeds both views; later CPU stores change only data. */
 	rom[0x20] = 0xa5;
 	rom[0x21] = 0x5a;

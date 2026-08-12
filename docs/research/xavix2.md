@@ -389,3 +389,24 @@ on the user's machine before any clock change is considered.
   around 47.7 seconds and `ban_dbz` around 46.1 seconds. At 60 seconds all
   four images report active voices and non-zero PCM. No additional audio IRQ,
   title delay bypass, or ROM-specific start command was introduced.
+
+## Shared controller/power status register (2026-08-12)
+
+- Observed symptom: `ban_bldj` displayed a blinking crossed-battery warning in
+  the upper-right corner even though the emulated controller has no battery
+  failure state.
+- GPU evidence: command zero at low RAM `$6d30` draws a 32x16 2-bpp object from
+  ROM `$786b80`.  The command is added only when the firmware's debounced status
+  is zero; RAM `$0c84` bit 4 controls only its blink phase.
+- Register evidence: `ban_bldj`, `ban_db2j`, `ban_dbz`, and `ban_naru` contain
+  the same routine for `$ffffec48`.  It treats bits 1:0 as a firmware-written
+  saturating debounce counter and bit 2 as an externally supplied status line.
+  The corresponding routine entry points are `$40058c01`, `$40076401`,
+  `$4005392a`, and `$40054cee`.
+- Correction: reads preserve the two-bit counter and report the normal
+  controller/power status line high; writes update only the counter and cannot
+  clear bit 2.  This lets the original firmware converge to its ready state
+  without hiding a sprite or checking a ROM name.
+- Remaining uncertainty: the exact physical source of the status line has not
+  been confirmed from a schematic or PCB trace, so the model deliberately does
+  not claim a specific battery-monitor circuit.

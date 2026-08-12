@@ -13,7 +13,10 @@ enum
 	IRQ_TIMER = 7,
 	IRQ_MOTION = 10,
 	IRQ_DMA = 12,
-	AUDIO_DESCRIPTOR_RAM_OFFSET = 0xf800
+	AUDIO_DESCRIPTOR_RAM_OFFSET = 0xf800,
+	CONTROLLER_POWER_STATUS_REGISTER = 0xc48,
+	CONTROLLER_POWER_STATUS_COUNTER_MASK = 0x03,
+	CONTROLLER_POWER_STATUS_GOOD = 0x04
 };
 
 static uint8_t machine_read8(void *opaque, uint32_t address);
@@ -503,6 +506,15 @@ static uint8_t machine_read8(void *opaque, uint32_t address)
 			if (offset == 0x60b) return 0x02;
 			if (offset == 0x630 || offset == 0x632) return 0x10;
 			if (offset == 0x631 || offset == 0x633) return 0x02;
+			/*
+			 * Firmware in multiple titles uses bits 1:0 as a debounce
+			 * counter while bit 2 reflects an external controller/power
+			 * status line.  A write must not clear that input line.
+			 */
+			if (offset == CONTROLLER_POWER_STATUS_REGISTER)
+				return (machine->mmio[offset] &
+					CONTROLLER_POWER_STATUS_COUNTER_MASK) |
+					CONTROLLER_POWER_STATUS_GOOD;
 			if (offset >= 0xa10 && offset <= 0xa17)
 				return xavix2_audio_status(&machine->audio, offset - 0xa10);
 			if (offset == 0x1c00)
@@ -741,7 +753,11 @@ static void machine_write8(void *opaque, uint32_t address, uint8_t data)
 			machine->mmio_write_counts[offset]++;
 			machine->mmio_last_write_pc[offset] = machine->cpu.pc;
 			note_audio_mmio_access(machine, offset, data, 1);
-			machine->mmio[offset] = data;
+			if (offset == CONTROLLER_POWER_STATUS_REGISTER)
+				machine->mmio[offset] = data &
+					CONTROLLER_POWER_STATUS_COUNTER_MASK;
+			else
+				machine->mmio[offset] = data;
 			if (offset == 0xa0b)
 				xavix2_audio_command(&machine->audio,
 					load16(machine->mmio + 0xa0a),
