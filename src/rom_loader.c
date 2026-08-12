@@ -116,6 +116,15 @@ static const supported_rom SUPPORTED_ROMS[] = {
 		}
 	},
 	{
+		DRGQST_ROM_EPO_SDB,
+		EPO_SDB_ROM_SIZE,
+		EPO_SDB_ROM_CRC32,
+		{
+			0x47, 0xa9, 0x68, 0x22, 0xd4, 0xd7, 0xd6, 0xa0, 0xf6, 0xbe,
+			0x5c, 0xd7, 0x29, 0xc3, 0x74, 0x7d, 0xba, 0xb6, 0x59, 0x79
+		}
+	},
+	{
 		DRGQST_ROM_BAN_NARU,
 		BAN_NARU_ROM_SIZE,
 		BAN_NARU_ROM_CRC32,
@@ -182,6 +191,8 @@ const char *drgqst_rom_short_name(enum drgqst_rom_kind kind)
 		return "ttv_mx";
 	case DRGQST_ROM_TOM_JUMP:
 		return "tom_jump";
+	case DRGQST_ROM_EPO_SDB:
+		return "epo_sdb";
 	case DRGQST_ROM_BAN_NARU:
 		return "ban_naru";
 	case DRGQST_ROM_BAN_BLDJ:

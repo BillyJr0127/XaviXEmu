@@ -310,6 +310,11 @@ static const uint8_t TOM_JUMP_ROM_SHA1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
 	0xbc, 0xa7, 0x53, 0x5b, 0xaa, 0x6a, 0x54, 0xad, 0x3e, 0xe0,
 	0x92, 0x9b, 0xd3, 0xb7, 0x4a, 0x22, 0xcb, 0x51, 0x39, 0xda
 };
+static const uint8_t EPO_SDB_ROM_SHA1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+{
+	0x47, 0xa9, 0x68, 0x22, 0xd4, 0xd7, 0xd6, 0xa0, 0xf6, 0xbe,
+	0x5c, 0xd7, 0x29, 0xc3, 0x74, 0x7d, 0xba, 0xb6, 0x59, 0x79
+};
 static const uint8_t EPO_HAMD_ROM_SHA1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
 {
 	0xc6, 0x1d, 0x43, 0x6d, 0x6b, 0x80, 0x37, 0x17, 0xb8, 0xc8,
@@ -378,6 +383,9 @@ static uint8_t g_ban_onep_menu_input;
 static unsigned g_ban_onep_menu_input_frames;
 static uint32_t g_eeprom_generation;
 static unsigned g_eeprom_settle_frames;
+static uint32_t g_parallel_nvram_generation;
+static unsigned g_parallel_nvram_settle_frames;
+static int g_parallel_nvram_save_pending;
 static int g_eeprom_error_shown;
 static wchar_t g_executable_directory[MAX_PATH];
 
@@ -429,6 +437,8 @@ static enum drgqst_core_profile core_profile_for_rom(
 	case DRGQST_ROM_TTV_MX:
 	case DRGQST_ROM_TOM_JUMP:
 		return DRGQST_CORE_XAVIX2000_I2C_24C04;
+	case DRGQST_ROM_EPO_SDB:
+		return DRGQST_CORE_XAVIX2000_PARALLEL_NVRAM_SDB;
 	case DRGQST_ROM_EPO_HAMD:
 		return DRGQST_CORE_XAVIX_BASE;
 	case DRGQST_ROM_TVPC_DOR:
@@ -458,6 +468,8 @@ static const uint8_t *rom_sha1_for_kind(enum drgqst_rom_kind kind)
 		return TTV_MX_ROM_SHA1;
 	case DRGQST_ROM_TOM_JUMP:
 		return TOM_JUMP_ROM_SHA1;
+	case DRGQST_ROM_EPO_SDB:
+		return EPO_SDB_ROM_SHA1;
 	case DRGQST_ROM_EPO_HAMD:
 		return EPO_HAMD_ROM_SHA1;
 	case DRGQST_ROM_TVPC_DOR:
@@ -502,6 +514,10 @@ static enum drgqst_persistence_kind persistence_kind_for_rom(
 		return kind == DRGQST_PERSISTENCE_EEPROM ?
 			DRGQST_PERSISTENCE_TOM_JUMP_EEPROM :
 			DRGQST_PERSISTENCE_TOM_JUMP_RUNTIME_STATE;
+	case DRGQST_ROM_EPO_SDB:
+		return kind == DRGQST_PERSISTENCE_RUNTIME_STATE ?
+			DRGQST_PERSISTENCE_EPO_SDB_RUNTIME_STATE :
+			DRGQST_PERSISTENCE_EPO_SDB_NVRAM;
 	case DRGQST_ROM_EPO_HAMD:
 		return kind == DRGQST_PERSISTENCE_RUNTIME_STATE ?
 			DRGQST_PERSISTENCE_EPO_HAMD_RUNTIME_STATE : kind;
@@ -518,7 +534,8 @@ static enum drgqst_persistence_kind persistence_kind_for_rom(
 
 static size_t eeprom_size_for_rom(enum drgqst_rom_kind kind)
 {
-	if (kind == DRGQST_ROM_EPO_HAMD || kind == DRGQST_ROM_BAN_NARU)
+	if (kind == DRGQST_ROM_EPO_HAMD || kind == DRGQST_ROM_EPO_SDB ||
+		kind == DRGQST_ROM_BAN_NARU)
 		return 0;
 	if (kind == DRGQST_ROM_TVPC_DOR)
 		return DRGQST_PERSISTENCE_EEPROM24C16_SIZE;
@@ -1181,9 +1198,11 @@ static void load_persistent_eeprom(HWND window, drgqst_core *core,
 	enum drgqst_rom_kind rom_kind)
 {
 	const interface_strings *text = interface_text();
-	uint8_t image[DRGQST_PERSISTENCE_EEPROM24C16_SIZE];
+	uint8_t image[DRGQST_PERSISTENCE_PARALLEL_NVRAM_SIZE];
 	wchar_t error[384];
-	size_t expected_size = eeprom_size_for_rom(rom_kind);
+	size_t expected_size = rom_kind == DRGQST_ROM_EPO_SDB ?
+		DRGQST_PERSISTENCE_PARALLEL_NVRAM_SIZE :
+		eeprom_size_for_rom(rom_kind);
 	size_t size = 0;
 	int loaded_from_legacy = 0;
 
@@ -1194,8 +1213,12 @@ static void load_persistent_eeprom(HWND window, drgqst_core *core,
 		sizeof(error) / sizeof(error[0]), &loaded_from_legacy) &&
 		size == expected_size)
 	{
-		xavix_eeprom_load_image(
-			&core->machine.state.peripherals.eeprom, image, size);
+		if (rom_kind == DRGQST_ROM_EPO_SDB)
+			memcpy(core->machine.state.main_ram + XAVIX_PARALLEL_NVRAM_BASE,
+				image, size);
+		else
+			xavix_eeprom_load_image(
+				&core->machine.state.peripherals.eeprom, image, size);
 		if (loaded_from_legacy &&
 			!drgqst_persistence_save(g_executable_directory,
 				persistence_kind_for_rom(DRGQST_PERSISTENCE_EEPROM, rom_kind),
@@ -1216,6 +1239,27 @@ static int save_persistent_eeprom(HWND window, int show_error)
 
 	if (!g_core)
 		return 1;
+	if (g_rom.kind == DRGQST_ROM_EPO_SDB)
+	{
+		if (!drgqst_persistence_save(g_executable_directory,
+			DRGQST_PERSISTENCE_EPO_SDB_NVRAM, EPO_SDB_ROM_SHA1,
+			g_core->machine.state.main_ram + XAVIX_PARALLEL_NVRAM_BASE,
+			DRGQST_PERSISTENCE_PARALLEL_NVRAM_SIZE, error,
+			sizeof(error) / sizeof(error[0])))
+		{
+			if (show_error || !g_eeprom_error_shown)
+				MessageBoxW(window, text->eeprom_save_error,
+					text->eeprom_save_title, MB_OK | MB_ICONWARNING);
+			g_eeprom_error_shown = 1;
+			return 0;
+		}
+		g_parallel_nvram_generation =
+			g_core->machine.nvram_write_generation;
+		g_parallel_nvram_settle_frames = 0;
+		g_parallel_nvram_save_pending = 0;
+		g_eeprom_error_shown = 0;
+		return 1;
+	}
 	size = eeprom_size_for_rom(g_rom.kind);
 	if (!size)
 		return 1;
@@ -1245,7 +1289,25 @@ static void poll_persistent_eeprom(HWND window)
 	xavix_eeprom24c08 *eeprom;
 	uint32_t generation;
 
-	if (!g_core || !eeprom_size_for_rom(g_rom.kind))
+	if (!g_core)
+		return;
+	if (g_rom.kind == DRGQST_ROM_EPO_SDB)
+	{
+		generation = g_core->machine.nvram_write_generation;
+		if (generation != g_parallel_nvram_generation)
+		{
+			g_parallel_nvram_generation = generation;
+			g_parallel_nvram_settle_frames = 30;
+			g_parallel_nvram_save_pending = 1;
+		}
+		else if (g_parallel_nvram_settle_frames)
+			--g_parallel_nvram_settle_frames;
+		if (g_parallel_nvram_save_pending &&
+			!g_parallel_nvram_settle_frames)
+			save_persistent_eeprom(window, 0);
+		return;
+	}
+	if (!eeprom_size_for_rom(g_rom.kind))
 		return;
 	eeprom = &g_core->machine.state.peripherals.eeprom;
 	generation = eeprom->write_generation;
@@ -1494,6 +1556,7 @@ static int load_runtime_state(HWND window)
 	const interface_strings *text = interface_text();
 	uint8_t *state;
 	uint8_t eeprom_image[DRGQST_PERSISTENCE_EEPROM24C16_SIZE];
+	uint8_t parallel_nvram_image[DRGQST_PERSISTENCE_PARALLEL_NVRAM_SIZE];
 	size_t state_size;
 	size_t loaded = 0;
 	size_t eeprom_size = eeprom_size_for_rom(g_rom.kind);
@@ -1528,6 +1591,10 @@ static int load_runtime_state(HWND window)
 	eeprom = &g_core->machine.state.peripherals.eeprom;
 	if (eeprom_size)
 		xavix_eeprom_copy_image(eeprom, eeprom_image, eeprom_size);
+	if (g_rom.kind == DRGQST_ROM_EPO_SDB)
+		memcpy(parallel_nvram_image,
+			g_core->machine.state.main_ram + XAVIX_PARALLEL_NVRAM_BASE,
+			sizeof(parallel_nvram_image));
 	eeprom_generation = eeprom->write_generation;
 	success = drgqst_state_load(g_core, state, loaded);
 	if (!success)
@@ -1548,10 +1615,16 @@ static int load_runtime_state(HWND window)
 	eeprom = &g_core->machine.state.peripherals.eeprom;
 	if (eeprom_size)
 		memcpy(eeprom->data, eeprom_image, eeprom_size);
+	if (g_rom.kind == DRGQST_ROM_EPO_SDB)
+		memcpy(g_core->machine.state.main_ram + XAVIX_PARALLEL_NVRAM_BASE,
+			parallel_nvram_image, sizeof(parallel_nvram_image));
 	eeprom->dirty = 0;
 	eeprom->write_generation = eeprom_generation;
 	g_eeprom_generation = eeprom_generation;
 	g_eeprom_settle_frames = 0;
+	g_parallel_nvram_generation = g_core->machine.nvram_write_generation;
+	g_parallel_nvram_settle_frames = 0;
+	g_parallel_nvram_save_pending = 0;
 	g_ban_onep_menu_input = 0;
 	g_ban_onep_menu_input_frames = 0;
 	g_omt_backside = 0;
@@ -1719,6 +1792,9 @@ static int load_rom(HWND window, const wchar_t *path, int show_error)
 	g_eeprom_generation =
 		g_core->machine.state.peripherals.eeprom.write_generation;
 	g_eeprom_settle_frames = 0;
+	g_parallel_nvram_generation = g_core->machine.nvram_write_generation;
+	g_parallel_nvram_settle_frames = 0;
+	g_parallel_nvram_save_pending = 0;
 	win_audio_shutdown(&g_audio_output);
 	win_audio_init(&g_audio_output);
 	win_audio_open(&g_audio_output);

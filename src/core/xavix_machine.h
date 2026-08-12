@@ -23,6 +23,8 @@ enum
 	XAVIX_FRAME_WIDTH = 256,
 	XAVIX_FRAME_HEIGHT = 224,
 	XAVIX_MAIN_RAM_SIZE = 0x4000,
+	XAVIX_PARALLEL_NVRAM_SIZE = 0x1000,
+	XAVIX_PARALLEL_NVRAM_BASE = XAVIX_MAIN_RAM_SIZE - XAVIX_PARALLEL_NVRAM_SIZE,
 	XAVIX_FRAGMENT_RAM_SIZE = 0x0800,
 	XAVIX_SOUND_RAM_SIZE = 0x0180
 };
@@ -30,6 +32,7 @@ enum
 typedef uint8_t (*xavix_io_read_fn)(void *context, uint8_t direction);
 typedef void (*xavix_io_write_fn)(void *context, uint8_t data, uint8_t direction);
 typedef uint8_t (*xavix_adc_read_fn)(void *context, unsigned channel);
+typedef uint8_t (*xavix_anport_read_fn)(void *context, unsigned channel);
 typedef uint8_t (*xavix_sound_read_fn)(void *context, unsigned offset);
 typedef void (*xavix_sound_write_fn)(void *context, unsigned offset, uint8_t data);
 typedef uint8_t (*xavix_external_read_fn)(void *context, uint32_t address,
@@ -41,6 +44,7 @@ typedef struct xavix_machine_hooks
 	xavix_io_read_fn read_io1;
 	xavix_io_write_fn write_io1;
 	xavix_adc_read_fn read_adc;
+	xavix_anport_read_fn read_anport;
 	xavix_sound_read_fn read_sound;
 	xavix_sound_write_fn write_sound;
 	xavix_external_read_fn read_external;
@@ -106,6 +110,8 @@ typedef struct xavix_machine
 	size_t rom_size;
 	xavix_machine_hooks hooks;
 	xavix_machine_state state;
+	/* Host persistence bookkeeping; not visible through guest registers. */
+	uint32_t nvram_write_generation;
 } xavix_machine;
 
 void xavix_machine_init(xavix_machine *machine, const uint8_t *rom, size_t rom_size);

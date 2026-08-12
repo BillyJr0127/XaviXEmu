@@ -615,6 +615,63 @@ done:
 	return ok;
 }
 
+static int test_super_dash_ball_anport_and_nvram(void)
+{
+	uint8_t *rom = (uint8_t *)malloc(TEST_OMT_ROM_SIZE);
+	drgqst_core *core = (drgqst_core *)malloc(sizeof(*core));
+	uint32_t generation;
+	int ok = 0;
+
+	if (!rom || !core)
+		goto done;
+	make_test_rom_sized(rom, TEST_OMT_ROM_SIZE);
+	if (!drgqst_core_init_profile(core, rom, TEST_OMT_ROM_SIZE,
+		DRGQST_CORE_XAVIX2000_PARALLEL_NVRAM_SDB))
+		goto done;
+	if (xavix_machine_read_low(&core->machine, 0x7b00) != 0x7f ||
+		xavix_machine_read_low(&core->machine, 0x7b01) != 0x7f ||
+		xavix_machine_read_low(&core->machine, 0x7b10) != 0x7f ||
+		xavix_machine_read_low(&core->machine, 0x7b11) != 0x7f)
+		goto done;
+	drgqst_core_set_sdb_input(core, 0, 0x11, 0x81, 1);
+	drgqst_core_set_sdb_input(core, 1, 0xfe, 0x40, 1);
+	if (xavix_machine_read_low(&core->machine, 0x7b00) != 0x6f ||
+		xavix_machine_read_low(&core->machine, 0x7b01) != 0xff ||
+		xavix_machine_read_low(&core->machine, 0x7b10) != 0x82 ||
+		xavix_machine_read_low(&core->machine, 0x7b11) != 0x40 ||
+		!(core->machine.state.input1 & 0x01) ||
+		!(core->machine.state.input0 & 0x10))
+		goto done;
+	xavix_machine_write_low(&core->machine, 0x7b00, 0xaa);
+	if (xavix_machine_read_low(&core->machine, 0x7b00) != 0x6f ||
+		core->machine.state.anport_regs[0] != 0x11)
+		goto done;
+	drgqst_core_set_sdb_input(core, 0, 0x00, 0xff, 0);
+	if (core->machine.state.anport_regs[0] != 0x01 ||
+		core->machine.state.anport_regs[1] != 0xfe ||
+		xavix_machine_read_low(&core->machine, 0x7b00) != 0x7f ||
+		xavix_machine_read_low(&core->machine, 0x7b01) != 0x82)
+		goto done;
+	generation = core->machine.nvram_write_generation;
+	xavix_machine_write_low(&core->machine,
+		XAVIX_PARALLEL_NVRAM_BASE + 7, 0x5a);
+	core->machine.state.main_ram[XAVIX_PARALLEL_NVRAM_BASE - 1] = 0x33;
+	if (core->machine.nvram_write_generation != generation + 1)
+		goto done;
+	drgqst_core_reset(core);
+	if (core->machine.state.main_ram[XAVIX_PARALLEL_NVRAM_BASE + 7] != 0x5a ||
+		core->machine.state.main_ram[XAVIX_PARALLEL_NVRAM_BASE - 1] != 0xff ||
+		xavix_machine_read_low(&core->machine, 0x7b00) != 0x7f ||
+		(core->machine.state.input0 & 0x10) ||
+		(core->machine.state.input1 & 0x01))
+		goto done;
+	ok = 1;
+done:
+	free(core);
+	free(rom);
+	return ok;
+}
+
 int main(void)
 {
 	CHECK(test_firmware_cursor_position());
@@ -625,6 +682,7 @@ int main(void)
 	CHECK(test_one_piece_bazooka_gesture());
 	CHECK(test_onmyou_4mb_sensor_profile());
 	CHECK(test_early_xavix_profiles());
+	CHECK(test_super_dash_ball_anport_and_nvram());
 	printf("drgqst_state_test: all tests passed (%llu-byte state)\n",
 		(unsigned long long)drgqst_state_serialized_size());
 	return 0;

@@ -156,6 +156,15 @@ static void xavix_i2c24c04_io1_write(void *opaque, uint8_t data,
 		&core->machine.state.peripherals.eeprom, scl, sda);
 }
 
+static uint8_t sdb_anport_read(void *opaque, unsigned channel)
+{
+	drgqst_core *core = (drgqst_core *)opaque;
+	const uint8_t raw = channel < 4 ?
+		core->machine.state.anport_regs[channel] : 0x01;
+
+	return (uint8_t)((raw ^ 0x7fU) + 1U);
+}
+
 static uint8_t tvpc_external_read(void *opaque, uint32_t address,
 	int *handled)
 {
@@ -331,6 +340,7 @@ static void configure_internal_cursor_watch(drgqst_core *core)
 	case DRGQST_CORE_XAVIX_BASE:
 	case DRGQST_CORE_XAVIX_I2C_24C16:
 	case DRGQST_CORE_XAVIX2000_I2C_24C04:
+	case DRGQST_CORE_XAVIX2000_PARALLEL_NVRAM_SDB:
 	default:
 		watch.enabled = 0;
 		break;
@@ -376,6 +386,14 @@ int drgqst_core_init_profile(drgqst_core *core, const uint8_t *rom,
 		hooks.read_io1 = xavix_i2c_io1_read;
 		hooks.write_io1 = xavix_i2c24c04_io1_write;
 	}
+	else if (profile == DRGQST_CORE_XAVIX2000_PARALLEL_NVRAM_SDB)
+	{
+		/* This board has four controller channels and parallel-backed RAM;
+		 * it does not have the serial EEPROM or optical sensor. */
+		hooks.read_io1 = xavix_base_io1_read;
+		hooks.write_io1 = xavix_base_io1_write;
+		hooks.read_anport = sdb_anport_read;
+	}
 	else if (profile == DRGQST_CORE_BAN_ONEP ||
 		profile == DRGQST_CORE_BAN_OMT ||
 		profile == DRGQST_CORE_TTV_CU5501_24C02 ||
@@ -387,6 +405,9 @@ int drgqst_core_init_profile(drgqst_core *core, const uint8_t *rom,
 			hooks.read_adc = ban_onep_adc_read;
 	}
 	xavix_machine_set_hooks(&core->machine, &hooks);
+	if (profile == DRGQST_CORE_XAVIX2000_PARALLEL_NVRAM_SDB)
+		memset(core->machine.state.anport_regs, 0x01,
+			sizeof(core->machine.state.anport_regs));
 	xavix_video_init(&core->video);
 	configure_internal_cursor_watch(core);
 	core->ban_onep_aim_x = 0x80;
@@ -406,9 +427,24 @@ int drgqst_core_init(drgqst_core *core, const uint8_t *rom, size_t rom_size)
 
 void drgqst_core_reset(drgqst_core *core)
 {
+	uint8_t parallel_nvram[XAVIX_PARALLEL_NVRAM_SIZE];
+	const int preserve_parallel_nvram = core && core->game_profile ==
+		DRGQST_CORE_XAVIX2000_PARALLEL_NVRAM_SDB;
+
 	if (!core)
 		return;
+	if (preserve_parallel_nvram)
+		memcpy(parallel_nvram,
+			core->machine.state.main_ram + XAVIX_PARALLEL_NVRAM_BASE,
+			sizeof(parallel_nvram));
 	xavix_machine_reset(&core->machine);
+	if (preserve_parallel_nvram)
+	{
+		memcpy(core->machine.state.main_ram + XAVIX_PARALLEL_NVRAM_BASE,
+			parallel_nvram, sizeof(parallel_nvram));
+		memset(core->machine.state.anport_regs, 0x01,
+			sizeof(core->machine.state.anport_regs));
+	}
 	xavix_cpu_reset(&core->cpu);
 	xavix_audio_reset(&core->audio);
 	xavix_video_reset(&core->video);
@@ -749,6 +785,38 @@ void drgqst_core_set_mouse(drgqst_core *core, uint8_t x, uint8_t y,
 	else if (broadside)
 		mode = XAVIX_SENSOR_BROADSIDE;
 	xavix_machine_set_sword_input(&core->machine, x, y, mode);
+}
+
+void drgqst_core_set_sdb_input(drgqst_core *core, unsigned player,
+	uint8_t raw_x, uint8_t raw_y, int button_pressed)
+{
+	if (!core || core->game_profile !=
+		DRGQST_CORE_XAVIX2000_PARALLEL_NVRAM_SDB || player >= 2)
+		return;
+	if (raw_x < 0x01)
+		raw_x = 0x01;
+	else if (raw_x > 0xfe)
+		raw_x = 0xfe;
+	if (raw_y < 0x01)
+		raw_y = 0x01;
+	else if (raw_y > 0xfe)
+		raw_y = 0xfe;
+	core->machine.state.anport_regs[player * 2] = raw_x;
+	core->machine.state.anport_regs[player * 2 + 1] = raw_y;
+	if (!player)
+	{
+		if (button_pressed)
+			core->machine.state.input1 |= 0x01;
+		else
+			core->machine.state.input1 &= (uint8_t)~0x01;
+	}
+	else
+	{
+		if (button_pressed)
+			core->machine.state.input0 |= 0x10;
+		else
+			core->machine.state.input0 &= (uint8_t)~0x10;
+	}
 }
 
 void drgqst_core_trigger_bazooka(drgqst_core *core)

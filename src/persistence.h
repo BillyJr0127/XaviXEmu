@@ -17,6 +17,7 @@ enum
 	DRGQST_PERSISTENCE_ROM_SHA1_SIZE = 20,
 	DRGQST_PERSISTENCE_EEPROM_SIZE = 1024,
 	DRGQST_PERSISTENCE_EEPROM24C16_SIZE = 2048,
+	DRGQST_PERSISTENCE_PARALLEL_NVRAM_SIZE = 4096,
 	DRGQST_PERSISTENCE_HEADER_SIZE = 40,
 	DRGQST_PERSISTENCE_MAX_STATE_SIZE = 128 * 1024 * 1024
 };
@@ -41,7 +42,9 @@ enum drgqst_persistence_kind
 	DRGQST_PERSISTENCE_TTV_MX_EEPROM = 16,
 	DRGQST_PERSISTENCE_TTV_MX_RUNTIME_STATE = 17,
 	DRGQST_PERSISTENCE_TOM_JUMP_EEPROM = 18,
-	DRGQST_PERSISTENCE_TOM_JUMP_RUNTIME_STATE = 19
+	DRGQST_PERSISTENCE_TOM_JUMP_RUNTIME_STATE = 19,
+	DRGQST_PERSISTENCE_EPO_SDB_NVRAM = 20,
+	DRGQST_PERSISTENCE_EPO_SDB_RUNTIME_STATE = 21
 };
 
 /*
@@ -74,9 +77,9 @@ int drgqst_persistence_get_path(
 	size_t error_length);
 
 /*
- * Save accepts an opaque caller-owned blob.  EEPROM payloads must match the
- * capacity selected by their kind; runtime states are opaque and independent
- * of core structures.
+ * Save accepts an opaque caller-owned blob.  EEPROM and parallel-NVRAM
+ * payloads must match the capacity selected by their kind; runtime states are
+ * opaque and independent of core structures.
  */
 int drgqst_persistence_save(
 	const wchar_t *directory_override,

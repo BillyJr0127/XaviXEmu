@@ -265,6 +265,11 @@ static int persistence_profile(enum drgqst_rom_kind rom_kind,
 		0xbc, 0xa7, 0x53, 0x5b, 0xaa, 0x6a, 0x54, 0xad, 0x3e, 0xe0,
 		0x92, 0x9b, 0xd3, 0xb7, 0x4a, 0x22, 0xcb, 0x51, 0x39, 0xda
 	};
+	static const uint8_t sdb_sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+	{
+		0x47, 0xa9, 0x68, 0x22, 0xd4, 0xd7, 0xd6, 0xa0, 0xf6, 0xbe,
+		0x5c, 0xd7, 0x29, 0xc3, 0x74, 0x7d, 0xba, 0xb6, 0x59, 0x79
+	};
 	static const uint8_t hamd_sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
 	{
 		0xc6, 0x1d, 0x43, 0x6d, 0x6b, 0x80, 0x37, 0x17, 0xb8, 0xc8,
@@ -310,6 +315,12 @@ static int persistence_profile(enum drgqst_rom_kind rom_kind,
 		*eeprom_kind = DRGQST_PERSISTENCE_TOM_JUMP_EEPROM;
 		*state_kind = DRGQST_PERSISTENCE_TOM_JUMP_RUNTIME_STATE;
 		return 1;
+	case DRGQST_ROM_EPO_SDB:
+		*sha1 = sdb_sha1;
+		*eeprom_kind = DRGQST_PERSISTENCE_EPO_SDB_NVRAM;
+		*state_kind = DRGQST_PERSISTENCE_EPO_SDB_RUNTIME_STATE;
+		*eeprom_size = DRGQST_PERSISTENCE_PARALLEL_NVRAM_SIZE;
+		return 1;
 	case DRGQST_ROM_EPO_HAMD:
 		*sha1 = hamd_sha1;
 		*eeprom_kind = DRGQST_PERSISTENCE_EEPROM;
@@ -346,10 +357,14 @@ int main(int argc, char **argv)
 	unsigned input_pulses = 1;
 	unsigned guard_hold = 0;
 	unsigned trajectory_interval = 0;
+	unsigned sdb_p1_x = UINT_MAX;
+	unsigned sdb_p1_y = UINT_MAX;
+	unsigned sdb_p2_x = UINT_MAX;
+	unsigned sdb_p2_y = UINT_MAX;
 	unsigned last_cursor_visible = UINT_MAX;
 	int state_loaded = 0;
 	int durable_eeprom_loaded = 0;
-	uint8_t initial_eeprom[DRGQST_PERSISTENCE_EEPROM24C16_SIZE];
+	uint8_t initial_eeprom[DRGQST_PERSISTENCE_PARALLEL_NVRAM_SIZE];
 	size_t eeprom_size;
 	const uint32_t *pixels = NULL;
 	io_probe io_trace =
@@ -385,7 +400,7 @@ int main(int argc, char **argv)
 	if (argc < 3 || !MultiByteToWideChar(CP_ACP, 0, argv[1], -1, path,
 		(int)(sizeof(path) / sizeof(path[0]))))
 	{
-		fprintf(stderr, "usage: drgqst-frame-probe <rom.zip> <frames> [output.bmp] [save-dir] [input-bit] [punch-mask] [sync-period] [trajectory] [trajectory-start] [load-state] [fixed-x] [fixed-y] [input-pulses] [guard-hold] [trajectory-interval]\n");
+		fprintf(stderr, "usage: drgqst-frame-probe <rom.zip> <frames> [output.bmp] [save-dir] [input-bit] [punch-mask] [sync-period] [trajectory] [trajectory-start] [load-state] [fixed-x] [fixed-y] [input-pulses] [guard-hold] [trajectory-interval] [sdb-p1-x] [sdb-p1-y] [sdb-p2-x] [sdb-p2-y]\n");
 		return 2;
 	}
 	frames = (unsigned)strtoul(argv[2], NULL, 0);
@@ -404,6 +419,8 @@ int main(int argc, char **argv)
 		(image.kind == DRGQST_ROM_TTV_MX ||
 		 image.kind == DRGQST_ROM_TOM_JUMP) ?
 			DRGQST_CORE_XAVIX2000_I2C_24C04 :
+		image.kind == DRGQST_ROM_EPO_SDB ?
+			DRGQST_CORE_XAVIX2000_PARALLEL_NVRAM_SDB :
 		image.kind == DRGQST_ROM_EPO_HAMD ? DRGQST_CORE_XAVIX_BASE :
 		image.kind == DRGQST_ROM_TVPC_DOR ? DRGQST_CORE_XAVIX_I2C_24C16 :
 		DRGQST_CORE_DRAGON_QUEST))
@@ -413,6 +430,8 @@ int main(int argc, char **argv)
 		return 2;
 	}
 	eeprom_size = image.kind == DRGQST_ROM_EPO_HAMD ? 0 :
+		image.kind == DRGQST_ROM_EPO_SDB ?
+		DRGQST_PERSISTENCE_PARALLEL_NVRAM_SIZE :
 		image.kind == DRGQST_ROM_TVPC_DOR ?
 		DRGQST_PERSISTENCE_EEPROM24C16_SIZE :
 		DRGQST_PERSISTENCE_EEPROM_SIZE;
@@ -447,6 +466,14 @@ int main(int argc, char **argv)
 		guard_hold = (unsigned)strtoul(argv[14], NULL, 0);
 	if (argc >= 16)
 		trajectory_interval = (unsigned)strtoul(argv[15], NULL, 0);
+	if (argc >= 17)
+		sdb_p1_x = (unsigned)strtoul(argv[16], NULL, 0) & 0xff;
+	if (argc >= 18)
+		sdb_p1_y = (unsigned)strtoul(argv[17], NULL, 0) & 0xff;
+	if (argc >= 19)
+		sdb_p2_x = (unsigned)strtoul(argv[18], NULL, 0) & 0xff;
+	if (argc >= 20)
+		sdb_p2_y = (unsigned)strtoul(argv[19], NULL, 0) & 0xff;
 	io_trace.trace_tvpc_keyboard = trajectory == 25;
 	if (argc >= 5 && strcmp(argv[4], "-"))
 	{
@@ -455,7 +482,7 @@ int main(int argc, char **argv)
 		enum drgqst_persistence_kind state_kind;
 		wchar_t save_directory[32768];
 		uint8_t *state = NULL;
-		uint8_t durable_eeprom[DRGQST_PERSISTENCE_EEPROM24C16_SIZE];
+		uint8_t durable_eeprom[DRGQST_PERSISTENCE_PARALLEL_NVRAM_SIZE];
 		size_t state_size = drgqst_state_serialized_size();
 		size_t loaded_size = 0;
 		if (!MultiByteToWideChar(CP_ACP, 0, argv[4], -1, save_directory,
@@ -468,7 +495,11 @@ int main(int argc, char **argv)
 				(unsigned)image.kind);
 			return 2;
 		}
-		if (eeprom_size)
+		if (image.kind == DRGQST_ROM_EPO_SDB)
+			memcpy(durable_eeprom,
+				core->machine.state.main_ram + XAVIX_PARALLEL_NVRAM_BASE,
+				eeprom_size);
+		else if (eeprom_size)
 			xavix_eeprom_copy_image(&core->machine.state.peripherals.eeprom,
 				durable_eeprom, eeprom_size);
 		loaded_size = 0;
@@ -476,8 +507,12 @@ int main(int argc, char **argv)
 			rom_sha1, durable_eeprom, eeprom_size, &loaded_size, error,
 			sizeof(error) / sizeof(error[0])) && loaded_size == eeprom_size)
 		{
-			xavix_eeprom_load_image(&core->machine.state.peripherals.eeprom,
-				durable_eeprom, eeprom_size);
+			if (image.kind == DRGQST_ROM_EPO_SDB)
+				memcpy(core->machine.state.main_ram +
+					XAVIX_PARALLEL_NVRAM_BASE, durable_eeprom, eeprom_size);
+			else
+				xavix_eeprom_load_image(&core->machine.state.peripherals.eeprom,
+					durable_eeprom, eeprom_size);
 			durable_eeprom_loaded = 1;
 		}
 		if (load_state)
@@ -498,7 +533,10 @@ int main(int argc, char **argv)
 			}
 			/* Match the GUI: F7 restores the machine checkpoint but never
 			 * rewinds the game's durable EEPROM contents. */
-			if (eeprom_size)
+			if (image.kind == DRGQST_ROM_EPO_SDB)
+				memcpy(core->machine.state.main_ram +
+					XAVIX_PARALLEL_NVRAM_BASE, durable_eeprom, eeprom_size);
+			else if (eeprom_size)
 				memcpy(core->machine.state.peripherals.eeprom.data,
 					durable_eeprom, eeprom_size);
 			core->machine.state.peripherals.eeprom.dirty = 0;
@@ -509,7 +547,11 @@ int main(int argc, char **argv)
 		if (sync_period)
 			core->ban_onep_sync_period = (uint8_t)sync_period;
 	}
-	if (eeprom_size)
+	if (image.kind == DRGQST_ROM_EPO_SDB)
+		memcpy(initial_eeprom,
+			core->machine.state.main_ram + XAVIX_PARALLEL_NVRAM_BASE,
+			eeprom_size);
+	else if (eeprom_size)
 		xavix_eeprom_copy_image(&core->machine.state.peripherals.eeprom,
 			initial_eeprom, eeprom_size);
 	for (frame = 1; frame <= frames && !core->cpu.stopped; ++frame)
@@ -566,6 +608,25 @@ int main(int argc, char **argv)
 					drgqst_core_set_tvpc_keyboard_row(core, fixed_y / 8,
 						(uint8_t)(1U << (fixed_y & 7)));
 			}
+		}
+		if (image.kind == DRGQST_ROM_EPO_SDB)
+		{
+			const unsigned offset = frame >= trajectory_start ?
+				frame - trajectory_start : UINT_MAX;
+			const int pulse = offset != UINT_MAX &&
+				offset / 40 < input_pulses && offset % 40 < 4;
+			const uint8_t p1x = sdb_p1_x == UINT_MAX ?
+				core->machine.state.anport_regs[0] : (uint8_t)sdb_p1_x;
+			const uint8_t p1y = sdb_p1_y == UINT_MAX ?
+				core->machine.state.anport_regs[1] : (uint8_t)sdb_p1_y;
+			const uint8_t p2x = sdb_p2_x == UINT_MAX ?
+				core->machine.state.anport_regs[2] : (uint8_t)sdb_p2_x;
+			const uint8_t p2y = sdb_p2_y == UINT_MAX ?
+				core->machine.state.anport_regs[3] : (uint8_t)sdb_p2_y;
+			drgqst_core_set_sdb_input(core, 0, p1x, p1y,
+				pulse && (punch_mask & 1));
+			drgqst_core_set_sdb_input(core, 1, p2x, p2y,
+				pulse && (punch_mask & 2));
 		}
 		if (uses_glove_sensor(image.kind))
 		{
@@ -984,16 +1045,21 @@ int main(int argc, char **argv)
 		unsigned address;
 		for (address = 0; address < eeprom_size; ++address)
 		{
-			const uint8_t value = core->machine.state.peripherals.eeprom.data[address];
+			const uint8_t value = image.kind == DRGQST_ROM_EPO_SDB ?
+				core->machine.state.main_ram[
+					XAVIX_PARALLEL_NVRAM_BASE + address] :
+				core->machine.state.peripherals.eeprom.data[address];
 			if (value != initial_eeprom[address])
 			{
 				if (changed < 64)
-					printf("eeprom-change %03X %02X->%02X\n", address,
+					printf("%s-change %03X %02X->%02X\n",
+						image.kind == DRGQST_ROM_EPO_SDB ? "nvram" : "eeprom", address,
 						initial_eeprom[address], value);
 				++changed;
 			}
 		}
-		printf("eeprom-diff=%u durable-loaded=%u\n", changed,
+		printf("%s-diff=%u durable-loaded=%u\n",
+			image.kind == DRGQST_ROM_EPO_SDB ? "nvram" : "eeprom", changed,
 			(unsigned)durable_eeprom_loaded);
 	}
 	free(core);

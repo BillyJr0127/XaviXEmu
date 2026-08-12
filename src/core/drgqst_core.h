@@ -26,7 +26,8 @@ enum drgqst_core_profile
 	DRGQST_CORE_TTV_CU5501A_24C02 = 4,
 	DRGQST_CORE_XAVIX_BASE = 5,
 	DRGQST_CORE_XAVIX_I2C_24C16 = 6,
-	DRGQST_CORE_XAVIX2000_I2C_24C04 = 7
+	DRGQST_CORE_XAVIX2000_I2C_24C04 = 7,
+	DRGQST_CORE_XAVIX2000_PARALLEL_NVRAM_SDB = 8
 };
 
 typedef struct drgqst_core
@@ -90,6 +91,10 @@ int drgqst_core_sword_cursor_position(const drgqst_core *core, int *x, int *y);
 
 void drgqst_core_set_mouse(drgqst_core *core, uint8_t x, uint8_t y,
 	int broadside, int step_forward);
+
+/* Set one Super Dash Ball controller's raw MAME-style analog channels. */
+void drgqst_core_set_sdb_input(drgqst_core *core, unsigned player,
+	uint8_t raw_x, uint8_t raw_y, int button_pressed);
 
 /* Emit one two-reflector forward-thrust gesture for the One Piece game. */
 void drgqst_core_trigger_bazooka(drgqst_core *core);

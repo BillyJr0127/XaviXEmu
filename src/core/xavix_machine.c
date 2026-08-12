@@ -350,7 +350,12 @@ uint8_t xavix_machine_read_low(void *context, uint16_t address)
 	if (address == 0x7a81)
 		return state->ioevent_active;
 	if (address == 0x7b00 || address == 0x7b01 || address == 0x7b10 || address == 0x7b11)
-		return state->anport_regs[((address >> 4) & 1) * 2 + (address & 1)];
+	{
+		const unsigned channel = ((address >> 4) & 1) * 2 + (address & 1);
+		return machine->hooks.read_anport ?
+			machine->hooks.read_anport(machine->hooks.context, channel) :
+			state->anport_regs[channel];
+	}
 	if (address == 0x7b80)
 		return state->adc_latch;
 	if (address == 0x7b81)
@@ -379,6 +384,9 @@ void xavix_machine_write_low(void *context, uint16_t address, uint8_t data)
 	address &= 0x7fff;
 	if (address < 0x4000)
 	{
+		if (address >= XAVIX_PARALLEL_NVRAM_BASE &&
+			state->main_ram[address] != data)
+			++machine->nvram_write_generation;
 		state->main_ram[address] = data;
 		return;
 	}
@@ -485,7 +493,12 @@ void xavix_machine_write_low(void *context, uint16_t address, uint8_t data)
 		update_irq(state);
 	}
 	else if (address == 0x7b00 || address == 0x7b01 || address == 0x7b10 || address == 0x7b11)
-		state->anport_regs[((address >> 4) & 1) * 2 + (address & 1)] = data;
+	{
+		/* A callback-backed hardware ANPORT is read-only to guest writes. */
+		if (!machine->hooks.read_anport)
+			state->anport_regs[((address >> 4) & 1) * 2 +
+				(address & 1)] = data;
+	}
 	else if (address == 0x7b81)
 	{
 		unsigned channel = data & 0x13;
