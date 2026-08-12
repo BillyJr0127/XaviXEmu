@@ -315,6 +315,11 @@ static const uint8_t EPO_SDB_ROM_SHA1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
 	0x47, 0xa9, 0x68, 0x22, 0xd4, 0xd7, 0xd6, 0xa0, 0xf6, 0xbe,
 	0x5c, 0xd7, 0x29, 0xc3, 0x74, 0x7d, 0xba, 0xb6, 0x59, 0x79
 };
+static const uint8_t EPO_BOWL_ROM_SHA1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+{
+	0xeb, 0xe3, 0x79, 0x21, 0x72, 0xdc, 0x43, 0x90, 0x4b, 0x92,
+	0x26, 0xbe, 0xb2, 0x7f, 0x1d, 0xa8, 0x9d, 0x23, 0x88, 0xcc
+};
 static const uint8_t EPO_HAMD_ROM_SHA1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
 {
 	0xc6, 0x1d, 0x43, 0x6d, 0x6b, 0x80, 0x37, 0x17, 0xb8, 0xc8,
@@ -403,7 +408,7 @@ static int rom_uses_camera(enum drgqst_rom_kind kind)
 {
 	return kind == DRGQST_ROM_BAN_ONEP || kind == DRGQST_ROM_BAN_OMT ||
 		kind == DRGQST_ROM_TTV_LOTR || kind == DRGQST_ROM_TTV_SW ||
-		kind == DRGQST_ROM_TTV_SWJ;
+		kind == DRGQST_ROM_TTV_SWJ || kind == DRGQST_ROM_EPO_BOWL;
 }
 
 static int rom_uses_digital_tilt(enum drgqst_rom_kind kind)
@@ -437,6 +442,8 @@ static enum drgqst_core_profile core_profile_for_rom(
 	case DRGQST_ROM_TTV_MX:
 	case DRGQST_ROM_TOM_JUMP:
 		return DRGQST_CORE_XAVIX2000_I2C_24C04;
+	case DRGQST_ROM_EPO_BOWL:
+		return DRGQST_CORE_EPO_BOWL_SENSOR_24C04;
 	case DRGQST_ROM_EPO_SDB:
 		return DRGQST_CORE_XAVIX2000_PARALLEL_NVRAM_SDB;
 	case DRGQST_ROM_EPO_HAMD:
@@ -470,6 +477,8 @@ static const uint8_t *rom_sha1_for_kind(enum drgqst_rom_kind kind)
 		return TOM_JUMP_ROM_SHA1;
 	case DRGQST_ROM_EPO_SDB:
 		return EPO_SDB_ROM_SHA1;
+	case DRGQST_ROM_EPO_BOWL:
+		return EPO_BOWL_ROM_SHA1;
 	case DRGQST_ROM_EPO_HAMD:
 		return EPO_HAMD_ROM_SHA1;
 	case DRGQST_ROM_TVPC_DOR:
@@ -518,6 +527,10 @@ static enum drgqst_persistence_kind persistence_kind_for_rom(
 		return kind == DRGQST_PERSISTENCE_RUNTIME_STATE ?
 			DRGQST_PERSISTENCE_EPO_SDB_RUNTIME_STATE :
 			DRGQST_PERSISTENCE_EPO_SDB_NVRAM;
+	case DRGQST_ROM_EPO_BOWL:
+		return kind == DRGQST_PERSISTENCE_EEPROM ?
+			DRGQST_PERSISTENCE_EPO_BOWL_EEPROM :
+			DRGQST_PERSISTENCE_EPO_BOWL_RUNTIME_STATE;
 	case DRGQST_ROM_EPO_HAMD:
 		return kind == DRGQST_PERSISTENCE_RUNTIME_STATE ?
 			DRGQST_PERSISTENCE_EPO_HAMD_RUNTIME_STATE : kind;

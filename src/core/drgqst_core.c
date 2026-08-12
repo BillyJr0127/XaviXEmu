@@ -341,6 +341,7 @@ static void configure_internal_cursor_watch(drgqst_core *core)
 	case DRGQST_CORE_XAVIX_I2C_24C16:
 	case DRGQST_CORE_XAVIX2000_I2C_24C04:
 	case DRGQST_CORE_XAVIX2000_PARALLEL_NVRAM_SDB:
+	case DRGQST_CORE_EPO_BOWL_SENSOR_24C04:
 	default:
 		watch.enabled = 0;
 		break;
@@ -353,7 +354,9 @@ int drgqst_core_init_profile(drgqst_core *core, const uint8_t *rom,
 {
 	xavix_machine_hooks hooks;
 	if (!core || !rom || (rom_size != UINT32_C(0x800000) &&
-		rom_size != UINT32_C(0x400000)))
+		rom_size != UINT32_C(0x400000) &&
+		(rom_size != UINT32_C(0x200000) ||
+			profile != DRGQST_CORE_EPO_BOWL_SENSOR_24C04)))
 		return 0;
 	memset(core, 0, sizeof(*core));
 	core->game_profile = (uint8_t)profile;
@@ -397,8 +400,13 @@ int drgqst_core_init_profile(drgqst_core *core, const uint8_t *rom,
 	else if (profile == DRGQST_CORE_BAN_ONEP ||
 		profile == DRGQST_CORE_BAN_OMT ||
 		profile == DRGQST_CORE_TTV_CU5501_24C02 ||
-		profile == DRGQST_CORE_TTV_CU5501A_24C02)
+		profile == DRGQST_CORE_TTV_CU5501A_24C02 ||
+		profile == DRGQST_CORE_EPO_BOWL_SENSOR_24C04)
 	{
+		/* Excite Bowling's downloaded acquisition loop waits for the same
+		 * two-bit sync sequence before reading a 32-by-32 sensor through ADC0.
+		 * Keep that wiring in its own 24C04 profile so plain digital 24C04
+		 * boards do not inherit synthetic optical signals. */
 		hooks.read_io1 = ban_onep_io1_read;
 		hooks.write_io1 = ban_onep_io1_write;
 		if (profile == DRGQST_CORE_BAN_ONEP)

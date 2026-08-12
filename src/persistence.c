@@ -44,6 +44,8 @@ static const wchar_t TOM_JUMP_EEPROM_FILENAME[] = L"tom_jump-eeprom.sav";
 static const wchar_t TOM_JUMP_STATE_FILENAME[] = L"tom_jump-runtime-state.sav";
 static const wchar_t EPO_SDB_NVRAM_FILENAME[] = L"epo_sdb-nvram.sav";
 static const wchar_t EPO_SDB_STATE_FILENAME[] = L"epo_sdb-runtime-state.sav";
+static const wchar_t EPO_BOWL_EEPROM_FILENAME[] = L"epo_bowl-eeprom.sav";
+static const wchar_t EPO_BOWL_STATE_FILENAME[] = L"epo_bowl-runtime-state.sav";
 static volatile LONG temporary_counter;
 
 static void clear_error(wchar_t *error, size_t error_length)
@@ -128,6 +130,10 @@ static const wchar_t *filename_for_kind(enum drgqst_persistence_kind kind)
 		return EPO_SDB_NVRAM_FILENAME;
 	case DRGQST_PERSISTENCE_EPO_SDB_RUNTIME_STATE:
 		return EPO_SDB_STATE_FILENAME;
+	case DRGQST_PERSISTENCE_EPO_BOWL_EEPROM:
+		return EPO_BOWL_EEPROM_FILENAME;
+	case DRGQST_PERSISTENCE_EPO_BOWL_RUNTIME_STATE:
+		return EPO_BOWL_STATE_FILENAME;
 	default:
 		return NULL;
 	}
@@ -146,7 +152,8 @@ static int validate_payload_size(
 		kind == DRGQST_PERSISTENCE_TTV_SW_EEPROM ||
 		kind == DRGQST_PERSISTENCE_TTV_SWJ_EEPROM ||
 		kind == DRGQST_PERSISTENCE_TTV_MX_EEPROM ||
-		kind == DRGQST_PERSISTENCE_TOM_JUMP_EEPROM)
+		kind == DRGQST_PERSISTENCE_TOM_JUMP_EEPROM ||
+		kind == DRGQST_PERSISTENCE_EPO_BOWL_EEPROM)
 	{
 		if (payload_size != DRGQST_PERSISTENCE_EEPROM_SIZE)
 		{
@@ -184,7 +191,8 @@ static int validate_payload_size(
 		kind == DRGQST_PERSISTENCE_TVPC_DOR_RUNTIME_STATE ||
 		kind == DRGQST_PERSISTENCE_TTV_MX_RUNTIME_STATE ||
 		kind == DRGQST_PERSISTENCE_TOM_JUMP_RUNTIME_STATE ||
-		kind == DRGQST_PERSISTENCE_EPO_SDB_RUNTIME_STATE)
+		kind == DRGQST_PERSISTENCE_EPO_SDB_RUNTIME_STATE ||
+		kind == DRGQST_PERSISTENCE_EPO_BOWL_RUNTIME_STATE)
 	{
 		if (!payload_size || payload_size > DRGQST_PERSISTENCE_MAX_STATE_SIZE)
 		{

@@ -270,6 +270,11 @@ static int persistence_profile(enum drgqst_rom_kind rom_kind,
 		0x47, 0xa9, 0x68, 0x22, 0xd4, 0xd7, 0xd6, 0xa0, 0xf6, 0xbe,
 		0x5c, 0xd7, 0x29, 0xc3, 0x74, 0x7d, 0xba, 0xb6, 0x59, 0x79
 	};
+	static const uint8_t bowl_sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+	{
+		0xeb, 0xe3, 0x79, 0x21, 0x72, 0xdc, 0x43, 0x90, 0x4b, 0x92,
+		0x26, 0xbe, 0xb2, 0x7f, 0x1d, 0xa8, 0x9d, 0x23, 0x88, 0xcc
+	};
 	static const uint8_t hamd_sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
 	{
 		0xc6, 0x1d, 0x43, 0x6d, 0x6b, 0x80, 0x37, 0x17, 0xb8, 0xc8,
@@ -320,6 +325,11 @@ static int persistence_profile(enum drgqst_rom_kind rom_kind,
 		*eeprom_kind = DRGQST_PERSISTENCE_EPO_SDB_NVRAM;
 		*state_kind = DRGQST_PERSISTENCE_EPO_SDB_RUNTIME_STATE;
 		*eeprom_size = DRGQST_PERSISTENCE_PARALLEL_NVRAM_SIZE;
+		return 1;
+	case DRGQST_ROM_EPO_BOWL:
+		*sha1 = bowl_sha1;
+		*eeprom_kind = DRGQST_PERSISTENCE_EPO_BOWL_EEPROM;
+		*state_kind = DRGQST_PERSISTENCE_EPO_BOWL_RUNTIME_STATE;
 		return 1;
 	case DRGQST_ROM_EPO_HAMD:
 		*sha1 = hamd_sha1;
@@ -416,6 +426,8 @@ int main(int argc, char **argv)
 		image.kind == DRGQST_ROM_TTV_LOTR ? DRGQST_CORE_TTV_CU5501_24C02 :
 		(image.kind == DRGQST_ROM_TTV_SW ||
 		 image.kind == DRGQST_ROM_TTV_SWJ) ? DRGQST_CORE_TTV_CU5501A_24C02 :
+		image.kind == DRGQST_ROM_EPO_BOWL ?
+			DRGQST_CORE_EPO_BOWL_SENSOR_24C04 :
 		(image.kind == DRGQST_ROM_TTV_MX ||
 		 image.kind == DRGQST_ROM_TOM_JUMP) ?
 			DRGQST_CORE_XAVIX2000_I2C_24C04 :

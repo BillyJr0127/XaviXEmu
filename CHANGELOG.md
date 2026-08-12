@@ -10,6 +10,9 @@ semantic versioning while experimental releases carry a pre-release suffix.
 - Recognize the exact `ban_bldj`, `ban_db2j`, and `ban_dbz` XaviX 2 images.
 - Recognize the exact `ttv_mx`, `tom_jump`, and `epo_sdb` XaviX 2000
   images, including their verified controller and persistent-storage paths.
+- Recognize the exact 2 MiB `epo_bowl` image with mirrored external-ROM
+  mapping, a dedicated 24C04 plus synthetic sensor profile, and independent
+  EEPROM/runtime-state files.
 - Add ROM-independent tests for separate instruction fetching and interrupt
   acknowledgement/delivery.
 

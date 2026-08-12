@@ -485,6 +485,8 @@ static void test_xavix2000_24c04_persistence_kinds(void)
 	wchar_t mx_state_path[MAX_PATH] = { 0 };
 	wchar_t jump_eeprom_path[MAX_PATH] = { 0 };
 	wchar_t jump_state_path[MAX_PATH] = { 0 };
+	wchar_t bowl_eeprom_path[MAX_PATH] = { 0 };
+	wchar_t bowl_state_path[MAX_PATH] = { 0 };
 	wchar_t error[512];
 	uint8_t rom_sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] = { 0 };
 	uint8_t eeprom[DRGQST_PERSISTENCE_EEPROM_SIZE];
@@ -511,11 +513,20 @@ static void test_xavix2000_24c04_persistence_kinds(void)
 	CHECK(drgqst_persistence_get_path(root,
 		DRGQST_PERSISTENCE_TOM_JUMP_RUNTIME_STATE, jump_state_path, MAX_PATH,
 		error, sizeof(error) / sizeof(error[0])));
+	CHECK(drgqst_persistence_get_path(root, DRGQST_PERSISTENCE_EPO_BOWL_EEPROM,
+		bowl_eeprom_path, MAX_PATH, error, sizeof(error) / sizeof(error[0])));
+	CHECK(drgqst_persistence_get_path(root,
+		DRGQST_PERSISTENCE_EPO_BOWL_RUNTIME_STATE, bowl_state_path, MAX_PATH,
+		error, sizeof(error) / sizeof(error[0])));
 	CHECK(wcsstr(mx_eeprom_path, L"\\ttv_mx-eeprom.sav") != NULL);
 	CHECK(wcsstr(mx_state_path, L"\\ttv_mx-runtime-state.sav") != NULL);
 	CHECK(wcsstr(jump_eeprom_path, L"\\tom_jump-eeprom.sav") != NULL);
 	CHECK(wcsstr(jump_state_path, L"\\tom_jump-runtime-state.sav") != NULL);
+	CHECK(wcsstr(bowl_eeprom_path, L"\\epo_bowl-eeprom.sav") != NULL);
+	CHECK(wcsstr(bowl_state_path, L"\\epo_bowl-runtime-state.sav") != NULL);
 	CHECK(wcscmp(mx_eeprom_path, jump_eeprom_path) != 0);
+	CHECK(wcscmp(mx_eeprom_path, bowl_eeprom_path) != 0);
+	CHECK(wcscmp(jump_eeprom_path, bowl_eeprom_path) != 0);
 	CHECK(drgqst_persistence_save(root, DRGQST_PERSISTENCE_TTV_MX_EEPROM,
 		rom_sha1, eeprom, sizeof(eeprom), error,
 		sizeof(error) / sizeof(error[0])));
@@ -523,6 +534,20 @@ static void test_xavix2000_24c04_persistence_kinds(void)
 		DRGQST_PERSISTENCE_TOM_JUMP_RUNTIME_STATE, rom_sha1,
 		state, sizeof(state), error, sizeof(error) / sizeof(error[0])));
 	CHECK(drgqst_persistence_load(root, DRGQST_PERSISTENCE_TTV_MX_EEPROM,
+		rom_sha1, output, sizeof(output), &output_size, error,
+		sizeof(error) / sizeof(error[0])));
+	CHECK(output_size == sizeof(eeprom));
+	CHECK(!memcmp(output, eeprom, sizeof(eeprom)));
+	eeprom[0] = 0xb0;
+	CHECK(drgqst_persistence_save(root, DRGQST_PERSISTENCE_EPO_BOWL_EEPROM,
+		rom_sha1, eeprom, sizeof(eeprom), error,
+		sizeof(error) / sizeof(error[0])));
+	CHECK(drgqst_persistence_save(root,
+		DRGQST_PERSISTENCE_EPO_BOWL_RUNTIME_STATE, rom_sha1,
+		state, sizeof(state), error, sizeof(error) / sizeof(error[0])));
+	memset(output, 0, sizeof(output));
+	output_size = 0;
+	CHECK(drgqst_persistence_load(root, DRGQST_PERSISTENCE_EPO_BOWL_EEPROM,
 		rom_sha1, output, sizeof(output), &output_size, error,
 		sizeof(error) / sizeof(error[0])));
 	CHECK(output_size == sizeof(eeprom));
@@ -536,6 +561,10 @@ static void test_xavix2000_24c04_persistence_kinds(void)
 		DeleteFileW(jump_eeprom_path);
 	if (*jump_state_path)
 		DeleteFileW(jump_state_path);
+	if (*bowl_eeprom_path)
+		DeleteFileW(bowl_eeprom_path);
+	if (*bowl_state_path)
+		DeleteFileW(bowl_state_path);
 	RemoveDirectoryW(root);
 }
 

@@ -10,6 +10,7 @@ expectations are documented in `../compatibility.md`.
 
 - [`drgqst`](drgqst.md)
 - [`ban_onep`](ban-onep.md)
+- [`epo_bowl`](epo-bowl.md)
 - [Early XaviX (`epo_hamd` and `tvpc_dor`)](early-xavix.md)
 - [TTV optical sensors](ttv-sensors.md)
 - [XaviX 2](xavix2.md)

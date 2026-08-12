@@ -125,6 +125,15 @@ static const supported_rom SUPPORTED_ROMS[] = {
 		}
 	},
 	{
+		DRGQST_ROM_EPO_BOWL,
+		EPO_BOWL_ROM_SIZE,
+		EPO_BOWL_ROM_CRC32,
+		{
+			0xeb, 0xe3, 0x79, 0x21, 0x72, 0xdc, 0x43, 0x90, 0x4b, 0x92,
+			0x26, 0xbe, 0xb2, 0x7f, 0x1d, 0xa8, 0x9d, 0x23, 0x88, 0xcc
+		}
+	},
+	{
 		DRGQST_ROM_BAN_NARU,
 		BAN_NARU_ROM_SIZE,
 		BAN_NARU_ROM_CRC32,
@@ -193,6 +202,8 @@ const char *drgqst_rom_short_name(enum drgqst_rom_kind kind)
 		return "tom_jump";
 	case DRGQST_ROM_EPO_SDB:
 		return "epo_sdb";
+	case DRGQST_ROM_EPO_BOWL:
+		return "epo_bowl";
 	case DRGQST_ROM_BAN_NARU:
 		return "ban_naru";
 	case DRGQST_ROM_BAN_BLDJ:

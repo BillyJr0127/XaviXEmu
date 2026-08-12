@@ -8,6 +8,7 @@
 
 #define TEST_ROM_SIZE UINT32_C(0x800000)
 #define TEST_OMT_ROM_SIZE UINT32_C(0x400000)
+#define TEST_BOWL_ROM_SIZE UINT32_C(0x200000)
 
 #define CHECK(condition) \
 	do { \
@@ -559,9 +560,13 @@ static int test_early_xavix_profiles(void)
 {
 	uint8_t *rom = (uint8_t *)malloc(TEST_ROM_SIZE);
 	drgqst_core *core = (drgqst_core *)malloc(sizeof(*core));
+	uint8_t *state = (uint8_t *)malloc(drgqst_state_serialized_size());
+	static const uint8_t expected_bowl_sync[4] = { 0x00, 0x02, 0x06, 0x04 };
+	size_t written = 0;
+	unsigned phase;
 	int ok = 0;
 
-	if (!rom || !core)
+	if (!rom || !core || !state)
 		goto done;
 	make_test_rom(rom);
 	if (!drgqst_core_init_profile(core, rom, TEST_ROM_SIZE,
@@ -608,8 +613,50 @@ static int test_early_xavix_profiles(void)
 	if (core->machine.state.peripherals.eeprom.selected ||
 		core->machine.state.peripherals.eeprom.pending_state != XAVIX_I2C_IGNORE)
 		goto done;
+
+	/* Excite Bowling is a 2 MiB image mirrored four times over the 8 MiB
+	 * external bus.  Keep the core whitelist strict while accepting exactly
+	 * that additional board size. */
+	if (!drgqst_core_init_profile(core, rom, TEST_BOWL_ROM_SIZE,
+		DRGQST_CORE_EPO_BOWL_SENSOR_24C04) ||
+		core->machine.rom_size != TEST_BOWL_ROM_SIZE ||
+		xavix_machine_read_external(&core->machine, 0x001234) != rom[0x001234] ||
+		xavix_machine_read_external(&core->machine, 0x201234) != rom[0x001234] ||
+		xavix_machine_read_external(&core->machine, 0x601234) != rom[0x001234])
+		goto done;
+	for (phase = 0; phase < 4; ++phase)
+	{
+		if ((xavix_machine_read_low(&core->machine, 0x7a01) & 0x06) !=
+			expected_bowl_sync[phase])
+			goto done;
+	}
+	core_i2c_send_control(core, 0xa2);
+	if (!core->machine.state.peripherals.eeprom.selected ||
+		core->machine.state.peripherals.eeprom.pending_state !=
+			XAVIX_I2C_RECEIVE_ADDRESS)
+		goto done;
+	core->machine.state.input0 = 0x2f;
+	if (!drgqst_state_save(core, state, drgqst_state_serialized_size(),
+		&written) || written != drgqst_state_serialized_size())
+		goto done;
+	core->machine.state.input0 = 0;
+	core->ban_onep_sync_divider = 1;
+	core->ban_onep_sync_phase = 3;
+	if (!drgqst_state_load(core, state, written) ||
+		core->machine.rom_size != TEST_BOWL_ROM_SIZE ||
+		core->game_profile != DRGQST_CORE_EPO_BOWL_SENSOR_24C04 ||
+		core->machine.state.input0 != 0x2f ||
+		core->ban_onep_sync_divider || core->ban_onep_sync_phase)
+		goto done;
+	if (drgqst_core_init_profile(core, rom, TEST_BOWL_ROM_SIZE,
+		DRGQST_CORE_XAVIX2000_I2C_24C04))
+		goto done;
+	if (drgqst_core_init_profile(core, rom, UINT32_C(0x100000),
+		DRGQST_CORE_EPO_BOWL_SENSOR_24C04))
+		goto done;
 	ok = 1;
 done:
+	free(state);
 	free(core);
 	free(rom);
 	return ok;
