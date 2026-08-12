@@ -968,6 +968,65 @@ static void test_tom_dpgm_persistence(void)
 	RemoveDirectoryW(root);
 }
 
+static void test_epo_mini_persistence(void)
+{
+	static const uint8_t rom_sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+	{
+		0x98, 0x72, 0x18, 0xb6, 0x79, 0x91, 0x95, 0xba, 0x15, 0xad,
+		0xf3, 0x98, 0x85, 0xc1, 0xd1, 0x77, 0xc3, 0x81, 0xec, 0x26
+	};
+	wchar_t root[MAX_PATH];
+	wchar_t eeprom_path[MAX_PATH] = { 0 };
+	wchar_t state_path[MAX_PATH] = { 0 };
+	wchar_t error[512];
+	uint8_t eeprom[DRGQST_PERSISTENCE_EEPROM_SIZE] = { 0 };
+	uint8_t output[DRGQST_PERSISTENCE_EEPROM_SIZE];
+	uint8_t state[4] = { 'M', 'I', 'N', 'I' };
+	size_t output_size = 0;
+
+	if (!create_test_root(root))
+	{
+		CHECK(0 && "create epo_mini persistence root");
+		return;
+	}
+	CHECK(drgqst_persistence_get_path(root,
+		DRGQST_PERSISTENCE_EPO_MINI_EEPROM, eeprom_path, MAX_PATH,
+		error, sizeof(error) / sizeof(error[0])));
+	CHECK(drgqst_persistence_get_path(root,
+		DRGQST_PERSISTENCE_EPO_MINI_RUNTIME_STATE, state_path, MAX_PATH,
+		error, sizeof(error) / sizeof(error[0])));
+	CHECK(wcsstr(eeprom_path, L"\\epo_mini-eeprom.sav") != NULL);
+	CHECK(wcsstr(state_path, L"\\epo_mini-runtime-state.sav") != NULL);
+	CHECK(!drgqst_persistence_save(root,
+		DRGQST_PERSISTENCE_EPO_MINI_EEPROM, rom_sha1, eeprom,
+		sizeof(eeprom) - 1, error, sizeof(error) / sizeof(error[0])));
+	CHECK(drgqst_persistence_save(root,
+		DRGQST_PERSISTENCE_EPO_MINI_EEPROM, rom_sha1, eeprom,
+		sizeof(eeprom), error, sizeof(error) / sizeof(error[0])));
+	CHECK(drgqst_persistence_save(root,
+		DRGQST_PERSISTENCE_EPO_MINI_RUNTIME_STATE, rom_sha1, state,
+		sizeof(state), error, sizeof(error) / sizeof(error[0])));
+	CHECK(drgqst_persistence_load(root,
+		DRGQST_PERSISTENCE_EPO_MINI_EEPROM, rom_sha1, output,
+		sizeof(output), &output_size, error,
+		sizeof(error) / sizeof(error[0])));
+	CHECK(output_size == sizeof(eeprom));
+	CHECK(!memcmp(output, eeprom, sizeof(eeprom)));
+	memset(output, 0, sizeof(output));
+	CHECK(drgqst_persistence_load(root,
+		DRGQST_PERSISTENCE_EPO_MINI_RUNTIME_STATE, rom_sha1, output,
+		sizeof(output), &output_size, error,
+		sizeof(error) / sizeof(error[0])));
+	CHECK(output_size == sizeof(state));
+	CHECK(!memcmp(output, state, sizeof(state)));
+
+	if (*eeprom_path)
+		DeleteFileW(eeprom_path);
+	if (*state_path)
+		DeleteFileW(state_path);
+	RemoveDirectoryW(root);
+}
+
 int main(void)
 {
 	test_default_directory();
@@ -979,6 +1038,7 @@ int main(void)
 	test_epo_hamc_runtime_state_persistence();
 	test_tvpc_pair_persistence();
 	test_tom_dpgm_persistence();
+	test_epo_mini_persistence();
 
 	if (failures)
 	{

@@ -27,6 +27,10 @@ semantic versioning while experimental releases carry a pre-release suffix.
 - Recognize the exact 4 MiB `tom_dpgm` image with a dedicated 24C08 sensor
   profile, independent EEPROM/runtime states, and verified Disney-logo,
   heart/wand tutorial, and PCM milestones.
+- Recognize the exact 4 MiB `epo_mini` image through the 24C08 sensor profile,
+  with independent EEPROM/runtime states and verified safety-warning,
+  animated-title, EEPROM-initialization, and PCM milestones without a timer
+  bypass.
 - Recognize the exact 4 MiB `tvpc_ham` and `tvpc_hk` images through the shared
   TV-PC 24C16 profile, with verified title/main-menu, EEPROM-initialization,
   and PCM milestones.

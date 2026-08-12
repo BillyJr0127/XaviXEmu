@@ -18,6 +18,7 @@ identify exact, user-supplied images.
 | `epo_es2j` | 4,194,304 | `840aecb1` | `ad52449ffc13af5f4c67b2c3cf438e7ecd80b9fb` |
 | `epo_hamc` | 4,194,304 | `b1177813` | `ed01096ebb63b72267ad7e0b2115224bbab64011` |
 | `tom_dpgm` | 4,194,304 | `1dc181b3` | `fa30069d17705f27e4ff45e7f6ccf06986e138f3` |
+| `epo_mini` | 4,194,304 | `2adb01ee` | `987218b6799195ba15adf39885c1d177c381ec26` |
 | `epo_bowl` | 2,097,152 | `d34f8d9e` | `ebe3792172dc43904b9226beb27f1da89d2388cc` |
 | `tak_chq` | 4,194,304 | `ffd2eb95` | `a30884da5554483ebfd0009cf5dd1768be8a99cb` |
 | `epo_hamd` assembled image | 8,388,608 | `427cb00f` | `c61d436d6b803717b8c84d2022499380f71cced8` |

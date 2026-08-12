@@ -50,6 +50,11 @@ int main(void)
 	CHECK(!strcmp(drgqst_rom_short_name(DRGQST_ROM_TOM_DPGM), "tom_dpgm"));
 	CHECK(!drgqst_rom_is_xavix2(DRGQST_ROM_TOM_DPGM));
 	CHECK(!drgqst_rom_is_tvpc(DRGQST_ROM_TOM_DPGM));
+	CHECK(EPO_MINI_ROM_SIZE == 4194304);
+	CHECK(EPO_MINI_ROM_CRC32 == UINT32_C(0x2adb01ee));
+	CHECK(!strcmp(drgqst_rom_short_name(DRGQST_ROM_EPO_MINI), "epo_mini"));
+	CHECK(!drgqst_rom_is_xavix2(DRGQST_ROM_EPO_MINI));
+	CHECK(!drgqst_rom_is_tvpc(DRGQST_ROM_EPO_MINI));
 	puts("rom_loader_metadata_test: all tests passed");
 	return 0;
 }

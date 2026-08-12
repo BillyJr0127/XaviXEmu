@@ -173,6 +173,7 @@ static int tracks_pcm(enum drgqst_rom_kind kind)
 		kind == DRGQST_ROM_EPO_ES2J ||
 		kind == DRGQST_ROM_EPO_HAMC ||
 		kind == DRGQST_ROM_TOM_DPGM ||
+		kind == DRGQST_ROM_EPO_MINI ||
 		drgqst_rom_is_tvpc(kind);
 }
 
@@ -335,6 +336,11 @@ static int persistence_profile(enum drgqst_rom_kind rom_kind,
 		0xfa, 0x30, 0x06, 0x9d, 0x17, 0x70, 0x5f, 0x27, 0xe4, 0xff,
 		0x45, 0xe7, 0xf6, 0xcc, 0xf0, 0x69, 0x86, 0xe1, 0x38, 0xf3
 	};
+	static const uint8_t mini_sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+	{
+		0x98, 0x72, 0x18, 0xb6, 0x79, 0x91, 0x95, 0xba, 0x15, 0xad,
+		0xf3, 0x98, 0x85, 0xc1, 0xd1, 0x77, 0xc3, 0x81, 0xec, 0x26
+	};
 
 	*eeprom_kind = DRGQST_PERSISTENCE_EEPROM;
 	*eeprom_size = DRGQST_PERSISTENCE_EEPROM_SIZE;
@@ -431,6 +437,11 @@ static int persistence_profile(enum drgqst_rom_kind rom_kind,
 		*sha1 = dpgm_sha1;
 		*eeprom_kind = DRGQST_PERSISTENCE_TOM_DPGM_EEPROM;
 		*state_kind = DRGQST_PERSISTENCE_TOM_DPGM_RUNTIME_STATE;
+		return 1;
+	case DRGQST_ROM_EPO_MINI:
+		*sha1 = mini_sha1;
+		*eeprom_kind = DRGQST_PERSISTENCE_EPO_MINI_EEPROM;
+		*state_kind = DRGQST_PERSISTENCE_EPO_MINI_RUNTIME_STATE;
 		return 1;
 	default:
 		return 0;
@@ -533,6 +544,8 @@ int main(int argc, char **argv)
 		image.kind == DRGQST_ROM_EPO_HAMC ?
 			DRGQST_CORE_EPO_HAMC_SENSOR :
 		image.kind == DRGQST_ROM_TOM_DPGM ?
+			DRGQST_CORE_TOM_DPGM_SENSOR_24C08 :
+		image.kind == DRGQST_ROM_EPO_MINI ?
 			DRGQST_CORE_TOM_DPGM_SENSOR_24C08 :
 		image.kind == DRGQST_ROM_EPO_HAMD ? DRGQST_CORE_XAVIX_BASE :
 		drgqst_rom_is_tvpc(image.kind) ? DRGQST_CORE_XAVIX_I2C_24C16 :
@@ -674,7 +687,8 @@ int main(int argc, char **argv)
 	{
 		if (!uses_glove_sensor(image.kind) &&
 			image.kind != DRGQST_ROM_EPO_ES2J &&
-			!drgqst_rom_is_tvpc(image.kind))
+			!drgqst_rom_is_tvpc(image.kind) &&
+			image.kind != DRGQST_ROM_EPO_MINI)
 			apply_calibration_sequence(core, frame - 1);
 		if (image.kind == DRGQST_ROM_TAK_CHQ)
 		{
