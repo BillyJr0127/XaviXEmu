@@ -1190,7 +1190,7 @@ int main(int argc, char **argv)
 	if ((argc < 2 || argc > 4) || !MultiByteToWideChar(CP_ACP, 0,
 		argv[1], -1, path, (int)(sizeof(path) / sizeof(path[0]))))
 	{
-		fprintf(stderr, "usage: xavix2-boot-probe <ban_naru.zip> [byte-cycles] [frame.bmp]\n");
+		fprintf(stderr, "usage: xavix2-boot-probe <xavix2.zip> [byte-cycles] [frame.bmp]\n");
 		return 64;
 	}
 	if (argc >= 3)
@@ -1200,9 +1200,9 @@ int main(int argc, char **argv)
 		fwprintf(stderr, L"%ls\n", error);
 		return 2;
 	}
-	if (image.kind != DRGQST_ROM_BAN_NARU)
+	if (!drgqst_rom_is_xavix2(image.kind))
 	{
-		fprintf(stderr, "the boot probe only accepts ban_naru\n");
+		fprintf(stderr, "the boot probe only accepts a supported XaviX 2 ROM\n");
 		drgqst_rom_release(&image);
 		return 2;
 	}
@@ -1728,8 +1728,9 @@ int main(int argc, char **argv)
 			break;
 	}
 
-	printf("game=ban_naru requested=%" PRIu64 " executed=%" PRIu64
-		" input=%08" PRIX32 "\n", requested, completed, machine->pio_input);
+	printf("game=%s requested=%" PRIu64 " executed=%" PRIu64
+		" input=%08" PRIX32 "\n", drgqst_rom_short_name(image.kind),
+		requested, completed, machine->pio_input);
 	printf("PC=%08" PRIX32 " instructions=%" PRIu64 " byte_cycles=%" PRIu64
 		" waiting=%u flags=%02" PRIX32 " interrupts=%" PRIu64 "\n",
 		machine->cpu.pc, machine->cpu.total_instructions,

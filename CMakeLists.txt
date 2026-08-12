@@ -111,6 +111,19 @@ if(BUILD_TESTING)
 	)
 	add_test(NAME xavix2-cpu-test COMMAND xavix2-cpu-test)
 
+	add_executable(xavix2-machine-test
+		tests/xavix2_machine_test.c
+		src/xavix2/xavix2_cpu.c
+		src/xavix2/xavix2_audio.c
+		src/xavix2/xavix2_machine.c
+		src/core/xavix_peripherals.c
+	)
+	target_include_directories(xavix2-machine-test PRIVATE
+		${CMAKE_CURRENT_SOURCE_DIR}/src/core
+		${CMAKE_CURRENT_SOURCE_DIR}/src/xavix2
+	)
+	add_test(NAME xavix2-machine-test COMMAND xavix2-machine-test)
+
 	add_executable(xavix2-audio-test
 		tests/xavix2_audio_test.c
 		src/xavix2/xavix2_audio.c

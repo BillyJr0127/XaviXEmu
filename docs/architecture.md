@@ -26,8 +26,11 @@ general-purpose MAME framework.
 
 ## XaviX 2 path
 
-The XaviX 2 path uses a separate RISC interpreter and memory map. It currently
-exists to document and test verified behaviour for `ban_naru`; it must not be
+The XaviX 2 path uses a separate RISC interpreter and memory map. Low-address
+instruction fetches and data accesses use distinct 64 KiB images populated by
+DMA; this is required by firmware RAM tests that deliberately overwrite their
+own nominal data addresses while continuing to execute. The path currently
+documents verified boot behaviour for four exact images, but it must not be
 described as a complete XaviX 2 implementation.
 
 ## Front end and persistence

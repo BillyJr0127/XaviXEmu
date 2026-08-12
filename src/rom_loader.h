@@ -12,7 +12,8 @@ enum
 	DRGQST_ROM_SIZE = 0x800000,
 	BAN_OMT_ROM_SIZE = 0x400000,
 	TTV_ROM_SIZE = 0x800000,
-	BAN_NARU_ROM_SIZE = 0x800000,
+	XAVIX2_ROM_SIZE = 0x800000,
+	BAN_NARU_ROM_SIZE = XAVIX2_ROM_SIZE,
 	EPO_HAMD_ROM_SIZE = 0x800000,
 	TVPC_DOR_ROM_SIZE = 0x400000
 };
@@ -24,6 +25,9 @@ enum
 #define TTV_SW_ROM_CRC32 UINT32_C(0x51cae5fd)
 #define TTV_SWJ_ROM_CRC32 UINT32_C(0xa5c22ed0)
 #define BAN_NARU_ROM_CRC32 UINT32_C(0xe3465ad2)
+#define BAN_BLDJ_ROM_CRC32 UINT32_C(0xaa865fe3)
+#define BAN_DB2J_ROM_CRC32 UINT32_C(0x7362ac0d)
+#define BAN_DBZ_ROM_CRC32 UINT32_C(0x7e535ea2)
 #define TVPC_DOR_ROM_CRC32 UINT32_C(0x6f2edbb2)
 
 enum drgqst_rom_kind
@@ -37,6 +41,9 @@ enum drgqst_rom_kind
 	DRGQST_ROM_TTV_SWJ,
 	/* Experimental XaviX 2 support. */
 	DRGQST_ROM_BAN_NARU,
+	DRGQST_ROM_BAN_BLDJ,
+	DRGQST_ROM_BAN_DB2J,
+	DRGQST_ROM_BAN_DBZ,
 	/* Experimental original-generation XaviX support. */
 	DRGQST_ROM_EPO_HAMD,
 	DRGQST_ROM_TVPC_DOR
@@ -51,6 +58,7 @@ typedef struct drgqst_rom_image
 } drgqst_rom_image;
 
 const char *drgqst_rom_short_name(enum drgqst_rom_kind kind);
+int drgqst_rom_is_xavix2(enum drgqst_rom_kind kind);
 
 int drgqst_rom_load_zip(
 	const wchar_t *path,

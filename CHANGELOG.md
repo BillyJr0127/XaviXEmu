@@ -3,6 +3,22 @@
 All notable public changes will be documented in this file. The project uses
 semantic versioning while experimental releases carry a pre-release suffix.
 
+## Unreleased
+
+### Added
+
+- Recognize the exact `ban_bldj`, `ban_db2j`, and `ban_dbz` XaviX 2 images.
+- Add ROM-independent tests for separate instruction fetching and interrupt
+  acknowledgement/delivery.
+
+### Fixed
+
+- Separate the XaviX 2 low-address instruction and data RAM images populated
+  by DMA. This lets the two Dragon Ball images complete their destructive RAM
+  tests and reach their title/menu screens without a game-specific bypass.
+- Keep an accepted interrupt source visible as status while suppressing its
+  immediate redelivery, allowing a newly raised DMA interrupt to wake WAIT.
+
 ## 0.3.0-alpha - 2026-08-11
 
 ### Fixed

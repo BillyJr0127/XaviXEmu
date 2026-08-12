@@ -1590,7 +1590,7 @@ static int load_rom(HWND window, const wchar_t *path, int show_error)
 				MB_OK | MB_ICONERROR);
 		return 0;
 	}
-	if (image.kind == DRGQST_ROM_BAN_NARU)
+	if (drgqst_rom_is_xavix2(image.kind))
 	{
 		int result = activate_xavix2_rom(window, &image, show_error);
 		drgqst_rom_release(&image);

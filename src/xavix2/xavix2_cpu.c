@@ -45,6 +45,11 @@ static uint8_t read8(xavix2_cpu_t *cpu, uint32_t address)
 	return cpu->read8 ? cpu->read8(cpu->opaque, address) : 0;
 }
 
+static uint8_t fetch8(xavix2_cpu_t *cpu, uint32_t address)
+{
+	return cpu->fetch8 ? cpu->fetch8(cpu->opaque, address) : read8(cpu, address);
+}
+
 static uint16_t read16(xavix2_cpu_t *cpu, uint32_t address)
 {
 	return (uint16_t)(read8(cpu, address) | ((uint16_t)read8(cpu, address + 1) << 8));
@@ -192,6 +197,8 @@ static uint32_t check_interrupt(xavix2_cpu_t *cpu, uint32_t current_pc)
 		cpu->if1 = (uint8_t)cpu->hr[4];
 		cpu->hr[4] &= ~F_I;
 		cpu->interrupt_count++;
+		if (cpu->interrupt_ack)
+			cpu->interrupt_ack(cpu->interrupt_ack_opaque);
 		return UINT32_C(0x40000010);
 	}
 	return current_pc;
@@ -210,22 +217,40 @@ void xavix2_cpu_init(xavix2_cpu_t *cpu, xavix2_read8_fn host_read8,
 void xavix2_cpu_reset(xavix2_cpu_t *cpu)
 {
 	xavix2_read8_fn host_read8 = cpu->read8;
+	xavix2_read8_fn host_fetch8 = cpu->fetch8;
 	xavix2_write8_fn host_write8 = cpu->write8;
 	void *opaque = cpu->opaque;
+	xavix2_interrupt_ack_fn interrupt_ack = cpu->interrupt_ack;
+	void *interrupt_ack_opaque = cpu->interrupt_ack_opaque;
 	xavix2_trace_fn trace = cpu->trace;
 	void *trace_opaque = cpu->trace_opaque;
 	memset(cpu, 0, sizeof(*cpu));
 	cpu->read8 = host_read8;
+	cpu->fetch8 = host_fetch8;
 	cpu->write8 = host_write8;
 	cpu->opaque = opaque;
+	cpu->interrupt_ack = interrupt_ack;
+	cpu->interrupt_ack_opaque = interrupt_ack_opaque;
 	cpu->trace = trace;
 	cpu->trace_opaque = trace_opaque;
 	cpu->pc = UINT32_C(0x40000000);
 }
 
+void xavix2_cpu_set_fetch(xavix2_cpu_t *cpu, xavix2_read8_fn host_fetch8)
+{
+	cpu->fetch8 = host_fetch8;
+}
+
 void xavix2_cpu_set_interrupt(xavix2_cpu_t *cpu, int asserted)
 {
 	cpu->interrupt_line = asserted != 0;
+}
+
+void xavix2_cpu_set_interrupt_ack(xavix2_cpu_t *cpu,
+	xavix2_interrupt_ack_fn acknowledge, void *opaque)
+{
+	cpu->interrupt_ack = acknowledge;
+	cpu->interrupt_ack_opaque = opaque;
 }
 
 static void record_unimplemented(xavix2_cpu_t *cpu, uint32_t pc, uint8_t opcode)
@@ -254,7 +279,7 @@ uint32_t xavix2_cpu_execute(xavix2_cpu_t *cpu, uint32_t cycle_budget)
 	while (consumed < cycle_budget && !cpu->waiting)
 	{
 		uint32_t opcode;
-		uint32_t instruction_pc = cpu->pc;
+		uint32_t instruction_pc;
 		uint32_t npc;
 		uint8_t first;
 		uint8_t bytes;
@@ -267,12 +292,13 @@ uint32_t xavix2_cpu_execute(xavix2_cpu_t *cpu, uint32_t cycle_budget)
 				cpu->pc = check_interrupt(cpu, cpu->pc);
 		}
 
-		first = read8(cpu, cpu->pc);
+		instruction_pc = cpu->pc;
+		first = fetch8(cpu, cpu->pc);
 		opcode = (uint32_t)first << 24;
 		bytes = BYTES_PER_OPCODE[first >> 5];
 		npc = cpu->pc + bytes;
 		for (i = 1; i < bytes; ++i)
-			opcode |= (uint32_t)read8(cpu, cpu->pc + i) << (24 - 8 * i);
+			opcode |= (uint32_t)fetch8(cpu, cpu->pc + i) << (24 - 8 * i);
 		consumed += bytes;
 		cpu->total_cycles += bytes;
 		cpu->total_instructions++;

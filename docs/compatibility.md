@@ -32,6 +32,9 @@ rejected rather than assigned a compatibility status.
 | `epo_hamd` | XaviX | Experimental | Verified two-chip ROM assembly, boot, animated title, decoded left/right wireless shake packets, activity-menu entry, and digital menu confirmation | Shake intensity fields and a complete play-through remain unverified |
 | `tvpc_dor` | XaviX | Experimental | Boot, title, main menu, cumulative mouse counters, mouse button, cursor-key matrix, 24C16 EEPROM, F5/F7 states, and the take-copter flight input | Most keyboard keys, later programs, and a complete play-through remain unverified |
 | `ban_naru` | XaviX 2 | Experimental | Boot, title, menu hit testing, character selection, story/tutorial path, native 320x240 crop, provisional signed 8-bit PCM | Unknown opcode behaviour, incomplete gestures/GPU/audio, no EEPROM, no F5/F7 state |
+| `ban_bldj` | XaviX 2 | Experimental | Exact image accepted; Japanese safety warning and title screen rendered through the normal GPU path | Input, gameplay, EEPROM, persistence, and the currently silent audio path are unverified |
+| `ban_db2j` | XaviX 2 | Experimental | Exact image accepted; BANDAI, Japanese safety, and title/menu screens rendered after program/data RAM separation | Input, gameplay, EEPROM, unknown opcodes, persistence, and the currently silent audio path are unverified |
+| `ban_dbz` | XaviX 2 | Experimental | Exact image accepted; BANDAI, Japanese safety, and title/menu screens rendered with non-zero provisional PCM output | Input, gameplay, EEPROM, unknown opcodes, exact audio, and persistence are unverified |
 
 ## Reporting results
 

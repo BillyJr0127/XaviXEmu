@@ -20,6 +20,7 @@ extern "C" {
 enum
 {
 	XAVIX2_LOW_RAM_SIZE = 0x10000,
+	XAVIX2_PROGRAM_RAM_SIZE = 0x10000,
 	XAVIX2_VIDEO_RAM_SIZE = 0x1f800,
 	XAVIX2_MMIO_SIZE = 0x2000,
 	XAVIX2_CPU_CLOCK = 98000000,
@@ -61,6 +62,7 @@ typedef struct xavix2_machine
 	const uint8_t *rom;
 	size_t rom_size;
 	uint8_t low_ram[XAVIX2_LOW_RAM_SIZE];
+	uint8_t program_ram[XAVIX2_PROGRAM_RAM_SIZE];
 	uint8_t video_ram[XAVIX2_VIDEO_RAM_SIZE];
 	uint8_t palette_ram[0x800];
 	uint8_t mmio[XAVIX2_MMIO_SIZE];
@@ -137,8 +139,11 @@ typedef struct xavix2_machine
 	uint32_t diagnostic_ram_trace_count;
 	uint64_t diagnostic_ram_trace_dropped;
 	uint32_t interrupt_active;
+	uint32_t interrupt_pending;
 	uint32_t interrupt_enabled;
 	uint32_t interrupt_nmi;
+	uint8_t interrupt_latched_level;
+	uint8_t interrupt_latched_valid;
 	uint64_t irq_level_read_count;
 	uint64_t irq_clear_write_count;
 	uint32_t last_irq_clear_pc;

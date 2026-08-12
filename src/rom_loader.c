@@ -107,6 +107,33 @@ static const supported_rom SUPPORTED_ROMS[] = {
 		}
 	},
 	{
+		DRGQST_ROM_BAN_BLDJ,
+		XAVIX2_ROM_SIZE,
+		BAN_BLDJ_ROM_CRC32,
+		{
+			0x2f, 0x5f, 0x48, 0x09, 0xa0, 0x7a, 0x2f, 0x56, 0x71, 0xf8,
+			0x1a, 0xa2, 0x2e, 0x37, 0x9c, 0x11, 0xc4, 0x39, 0x43, 0xa0
+		}
+	},
+	{
+		DRGQST_ROM_BAN_DB2J,
+		XAVIX2_ROM_SIZE,
+		BAN_DB2J_ROM_CRC32,
+		{
+			0xf1, 0x88, 0x04, 0x70, 0xf0, 0xdb, 0x56, 0x13, 0x5d, 0x9b,
+			0xc8, 0x8d, 0x71, 0x93, 0xd0, 0x37, 0xac, 0x49, 0xb9, 0x96
+		}
+	},
+	{
+		DRGQST_ROM_BAN_DBZ,
+		XAVIX2_ROM_SIZE,
+		BAN_DBZ_ROM_CRC32,
+		{
+			0x6c, 0x74, 0x6a, 0xf7, 0x63, 0x27, 0x3b, 0xd9, 0xe4, 0x79,
+			0x29, 0xc3, 0xba, 0x85, 0x7c, 0x7a, 0xf5, 0x63, 0xbf, 0x79
+		}
+	},
+	{
 		DRGQST_ROM_TVPC_DOR,
 		TVPC_DOR_ROM_SIZE,
 		TVPC_DOR_ROM_CRC32,
@@ -135,6 +162,12 @@ const char *drgqst_rom_short_name(enum drgqst_rom_kind kind)
 		return "ttv_swj";
 	case DRGQST_ROM_BAN_NARU:
 		return "ban_naru";
+	case DRGQST_ROM_BAN_BLDJ:
+		return "ban_bldj";
+	case DRGQST_ROM_BAN_DB2J:
+		return "ban_db2j";
+	case DRGQST_ROM_BAN_DBZ:
+		return "ban_dbz";
 	case DRGQST_ROM_EPO_HAMD:
 		return "epo_hamd";
 	case DRGQST_ROM_TVPC_DOR:
@@ -143,6 +176,14 @@ const char *drgqst_rom_short_name(enum drgqst_rom_kind kind)
 	default:
 		return "unknown";
 	}
+}
+
+int drgqst_rom_is_xavix2(enum drgqst_rom_kind kind)
+{
+	return kind == DRGQST_ROM_BAN_NARU ||
+		kind == DRGQST_ROM_BAN_BLDJ ||
+		kind == DRGQST_ROM_BAN_DB2J ||
+		kind == DRGQST_ROM_BAN_DBZ;
 }
 
 static void set_error(wchar_t *error, size_t error_length, const wchar_t *format, ...)

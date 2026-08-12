@@ -241,6 +241,51 @@ Opcode `$ff`, gameplay gesture classification, exact audio envelopes and
 filtering, EEPROM persistence, and save states remain later milestones; XaviX 2
 support is therefore experimental rather than claimed complete.
 
+## Four-image boot investigation (2026-08-12)
+
+- Scope: the exact `ban_naru`, `ban_bldj`, `ban_db2j`, and `ban_dbz` images
+  listed in `docs/rom-metadata.md`. ROM ZIPs were opened read-only outside the
+  repository and were never copied into the source tree.
+- Baseline: `ban_naru` and `ban_bldj` rendered their expected early graphics.
+  Both Dragon Ball images remained black in XaviXEmu and in MAME revision
+  `cf2d7a9be259552a3b493156e50e9149b6856448`.
+- First DBZ blocker: timer IRQ 7 entered a low-RAM callback, started DMA, then
+  executed EI/WAIT. Because interrupt status was also used as the CPU delivery
+  line, the still-active IRQ 7 immediately nested and its prologue overwrote
+  the callback. The later `$ff` fetch was corrupted RAM, not an original ROM
+  opcode.
+- Experiment: split interrupt status from pending delivery. Acknowledgement
+  removes only the pending delivery, while firmware-visible status remains
+  set until the documented clear write. A newly raised DMA IRQ remains able to
+  wake WAIT.
+- Result: DBZ completed the DMA sequence without the corrupted `$ff`, but its
+  next RAM test exposed a second hardware property. The downloaded routine
+  intentionally tests data ranges `$00000000-$000003ff`, palette/video ranges,
+  and `$00000400-$0000ffff` while executing at nominal addresses
+  `$00000100-$0000031a`. Unified low RAM therefore cannot represent the
+  observed execution.
+- Correction: DMA populates a distinct 64 KiB low-address instruction image as
+  well as the data image. CPU instruction bytes use the former; normal loads
+  and stores use the latter. This is a machine-level model, not a title check
+  or a skipped self-test.
+- Result: existing `ban_naru` and `ban_bldj` 600-frame image hashes are
+  unchanged. `ban_db2j` and `ban_dbz` now render a BANDAI logo and reach the
+  Japanese safety screen within 1,800 frames. DBZ also produces non-zero PCM.
+  At 3,600 video frames all four exact images reach their own title or
+  title/menu screen through the normal CPU, interrupt, DMA, and GPU paths.
+  A complete 60-second PCM capture contains non-zero samples for `ban_naru`
+  and `ban_dbz`; `ban_bldj` and `ban_db2j` remain entirely silent despite
+  active voice status and need separate audio investigation.
+  The four dynamically generated `$ff` executions in DB2J and twelve in DBZ
+  seen by the 600-frame regression remain recorded as unknown CPU behaviour
+  rather than hidden. Longer title runs encounter additional `$ff` executions
+  in all four images, so its exact semantics remains unresolved.
+- Automated coverage: the ROM-independent CPU test verifies that instruction
+  fetch may differ from data reads. The machine test drives a real low-address
+  DMA transfer, verifies the separate post-DMA views, and confirms that an
+  accepted source is not immediately redelivered while a different pending
+  source is still accepted. All 14 CTest tests pass.
+
 ## Equal-priority GPU layers and PCM loop endpoints
 
 - Observed symptom: after entering Story Battle, the prompt

@@ -19,6 +19,14 @@ enum
 static uint8_t machine_read8(void *opaque, uint32_t address);
 static uint32_t pio_read(const xavix2_machine_t *machine);
 
+static uint8_t machine_fetch8(void *opaque, uint32_t address)
+{
+	xavix2_machine_t *machine = (xavix2_machine_t *)opaque;
+	if (address < XAVIX2_PROGRAM_RAM_SIZE)
+		return machine->program_ram[address];
+	return machine_read8(opaque, address);
+}
+
 static uint16_t load16(const uint8_t *data)
 {
 	return (uint16_t)(data[0] | ((uint16_t)data[1] << 8));
@@ -65,7 +73,39 @@ static uint64_t machine_read64(xavix2_machine_t *machine, uint32_t address)
 
 static void refresh_interrupt_line(xavix2_machine_t *machine)
 {
-	xavix2_cpu_set_interrupt(&machine->cpu, machine->interrupt_active != 0);
+	xavix2_cpu_set_interrupt(&machine->cpu, machine->interrupt_pending != 0);
+}
+
+static unsigned first_interrupt_level(uint32_t lines)
+{
+	unsigned level;
+	for (level = 0; level < 32; ++level)
+		if (lines & (UINT32_C(1) << level))
+			return level;
+	return 32;
+}
+
+static void clear_interrupts(xavix2_machine_t *machine, uint32_t mask)
+{
+	machine->interrupt_active &= ~mask;
+	machine->interrupt_pending &= ~mask;
+	if (machine->interrupt_latched_valid &&
+		(mask & (UINT32_C(1) << machine->interrupt_latched_level)))
+		machine->interrupt_latched_valid = 0;
+	refresh_interrupt_line(machine);
+}
+
+static void acknowledge_interrupt(void *opaque)
+{
+	xavix2_machine_t *machine = (xavix2_machine_t *)opaque;
+	unsigned level = first_interrupt_level(machine->interrupt_pending);
+	if (level < 32)
+	{
+		machine->interrupt_pending &= ~(UINT32_C(1) << level);
+		machine->interrupt_latched_level = (uint8_t)level;
+		machine->interrupt_latched_valid = 1;
+	}
+	refresh_interrupt_line(machine);
 }
 
 static void raise_interrupt(xavix2_machine_t *machine, unsigned level)
@@ -73,6 +113,8 @@ static void raise_interrupt(xavix2_machine_t *machine, unsigned level)
 	uint32_t line = UINT32_C(1) << level;
 	if ((machine->interrupt_enabled | machine->interrupt_nmi) & line)
 	{
+		if (!(machine->interrupt_active & line))
+			machine->interrupt_pending |= line;
 		machine->interrupt_active |= line;
 		refresh_interrupt_line(machine);
 	}
@@ -87,10 +129,7 @@ void xavix2_machine_raise_irq(xavix2_machine_t *machine, unsigned level)
 void xavix2_machine_clear_irq(xavix2_machine_t *machine, unsigned level)
 {
 	if (machine && level < 32)
-	{
-		machine->interrupt_active &= ~(UINT32_C(1) << level);
-		refresh_interrupt_line(machine);
-	}
+		clear_interrupts(machine, UINT32_C(1) << level);
 }
 
 void xavix2_machine_set_capture(xavix2_machine_t *machine,
@@ -468,11 +507,14 @@ static uint8_t machine_read8(void *opaque, uint32_t address)
 				return xavix2_audio_status(&machine->audio, offset - 0xa10);
 			if (offset == 0x1c00)
 			{
-				unsigned level;
 				machine->irq_level_read_count++;
-				for (level = 0; level <= 12; ++level)
-					if (machine->interrupt_active & (UINT32_C(1) << level))
+				if (machine->interrupt_latched_valid)
+					return machine->interrupt_latched_level;
+				{
+					unsigned level = first_interrupt_level(machine->interrupt_pending);
+					if (level < 32)
 						return (uint8_t)level;
+				}
 				return 0xff;
 			}
 			if (offset == 0x1c08 || offset == 0x1c09)
@@ -505,7 +547,10 @@ static void dma_start(xavix2_machine_t *machine, uint8_t control)
 	{
 		uint8_t data = machine_read8(machine, source + index);
 		if (destination + index < XAVIX2_LOW_RAM_SIZE)
+		{
+			machine->program_ram[destination + index] = data;
 			machine->low_ram[destination + index] = data;
+		}
 		else
 			note_unmapped_write(machine, destination + index);
 	}
@@ -709,10 +754,7 @@ static void machine_write8(void *opaque, uint32_t address, uint8_t data)
 			if (offset == 0x00c)
 				dma_start(machine, data);
 			else if (offset == 0x010 && data == 2)
-			{
-				machine->interrupt_active &= ~(UINT32_C(1) << IRQ_DMA);
-				refresh_interrupt_line(machine);
-			}
+				clear_interrupts(machine, UINT32_C(1) << IRQ_DMA);
 			else if ((offset >= 0x200 && offset <= 0x20b))
 				update_pio(machine);
 			else if (offset == 0x238)
@@ -731,8 +773,8 @@ static void machine_write8(void *opaque, uint32_t address, uint8_t data)
 					~(UINT16_C(0xff) << shift)) | ((uint16_t)data << shift));
 				machine->last_irq_clear_pc = machine->cpu.pc;
 				machine->irq_clear_write_count++;
-				machine->interrupt_active &= ~((uint32_t)data << ((offset - 0x1c04) * 8));
-				refresh_interrupt_line(machine);
+				clear_interrupts(machine,
+					(uint32_t)data << ((offset - 0x1c04) * 8));
 			}
 			else if (offset == 0x1c08 || offset == 0x1c09)
 			{
@@ -745,8 +787,8 @@ static void machine_write8(void *opaque, uint32_t address, uint8_t data)
 				unsigned shift = (offset - 0x1c0a) * 8;
 				machine->interrupt_enabled = (machine->interrupt_enabled & ~(UINT32_C(0xff) << shift)) |
 					((uint32_t)data << shift);
-				machine->interrupt_active &= machine->interrupt_enabled | machine->interrupt_nmi;
-				refresh_interrupt_line(machine);
+				clear_interrupts(machine,
+					~(machine->interrupt_enabled | machine->interrupt_nmi));
 			}
 			return;
 		}
@@ -767,6 +809,8 @@ int xavix2_machine_init(xavix2_machine_t *machine, const uint8_t *rom,
 	xavix_eeprom24c08_init(&machine->eeprom, NULL, 0);
 	xavix2_audio_init(&machine->audio, rom, rom_size);
 	xavix2_cpu_init(&machine->cpu, machine_read8, machine_write8, machine);
+	xavix2_cpu_set_fetch(&machine->cpu, machine_fetch8);
+	xavix2_cpu_set_interrupt_ack(&machine->cpu, acknowledge_interrupt, machine);
 	machine->next_vblank_cycle = XAVIX2_CYCLES_PER_FRAME;
 	return 1;
 }
