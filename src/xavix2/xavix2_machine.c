@@ -630,8 +630,13 @@ static void render_gpu(xavix2_machine_t *machine, uint16_t count, uint16_t addre
 		uint32_t y = (uint32_t)((command >> 11) & 0x3ff);
 		uint32_t sx = 1 + (descsize & 0xff);
 		uint32_t sy = 1 + ((descsize >> 8) & 0xff);
-		uint32_t scale_x = (uint32_t)((command >> 40) & 3);
-		uint32_t scale_y = (uint32_t)((command >> 46) & 3);
+		/* The six-bit W/H command fields are unsigned Q2.4 scale factors.
+		 * Taking only their upper two bits, as the preliminary MAME model
+		 * did, leaves one-pixel seams between Blue Dragon's 16-pixel menu
+		 * tiles: those commands use 0x11 (17/16 scale) and place successive
+		 * tiles 17 pixels apart. */
+		uint32_t scale_x = (uint32_t)((command >> 36) & 0x3f);
+		uint32_t scale_y = (uint32_t)((command >> 42) & 0x3f);
 		uint32_t bpp = 1 + ((descsize >> 24) & 7);
 		uint32_t mask = (UINT32_C(1) << bpp) - 1;
 		uint32_t palette_base = ((descsize >> 27) & 0x1f) << bpp;
@@ -650,8 +655,8 @@ static void render_gpu(xavix2_machine_t *machine, uint16_t count, uint16_t addre
 				uint32_t palette_index;
 				uint16_t raw_color;
 				uint32_t color;
-				uint32_t draw_y;
-				uint32_t y_scale;
+				uint32_t draw_y_first;
+				uint32_t draw_y_end;
 				if (available < bpp)
 				{
 					packed = machine_read64(machine, source);
@@ -664,18 +669,24 @@ static void render_gpu(xavix2_machine_t *machine, uint16_t count, uint16_t addre
 				color = raw_color & 0x8000 ? 0 : rgb555(raw_color);
 				if (color)
 				{
-					for (y_scale = 0; y_scale < scale_y; ++y_scale)
+					uint32_t draw_x_first = x +
+						(uint32_t)(((uint64_t)xx * scale_x) >> 4);
+					uint32_t draw_x_end = x +
+						(uint32_t)(((uint64_t)(xx + 1) * scale_x) >> 4);
+					draw_y_first = y +
+						(uint32_t)(((uint64_t)yy * scale_y) >> 4);
+					draw_y_end = y +
+						(uint32_t)(((uint64_t)(yy + 1) * scale_y) >> 4);
+					for (; draw_y_first < draw_y_end; ++draw_y_first)
 					{
-						uint32_t x_scale;
-						draw_y = y + yy * scale_y + y_scale;
-						if (draw_y >= 0x400)
+						uint32_t draw_x;
+						if (draw_y_first >= 0x400)
 							continue;
-						for (x_scale = 0; x_scale < scale_x; ++x_scale)
+						for (draw_x = draw_x_first; draw_x < draw_x_end; ++draw_x)
 						{
-							uint32_t draw_x = x + xx * scale_x + x_scale;
 							if (draw_x < 0x800)
 							{
-								machine->screen_data[draw_y * 0x800 + draw_x] = color;
+								machine->screen_data[draw_y_first * 0x800 + draw_x] = color;
 								machine->gpu_pixel_write_count++;
 							}
 						}
@@ -824,6 +835,7 @@ int xavix2_machine_init(xavix2_machine_t *machine, const uint8_t *rom,
 	memset(machine->eeprom.data, 0xff, sizeof(machine->eeprom.data));
 	xavix_eeprom24c08_init(&machine->eeprom, NULL, 0);
 	xavix2_audio_init(&machine->audio, rom, rom_size);
+	machine->motion_packet_address = XAVIX2_MOTION_PACKET_FIRST;
 	xavix2_cpu_init(&machine->cpu, machine_read8, machine_write8, machine);
 	xavix2_cpu_set_fetch(&machine->cpu, machine_fetch8);
 	xavix2_cpu_set_interrupt_ack(&machine->cpu, acknowledge_interrupt, machine);
@@ -831,17 +843,29 @@ int xavix2_machine_init(xavix2_machine_t *machine, const uint8_t *rom,
 	return 1;
 }
 
+void xavix2_machine_set_motion_packet_address(xavix2_machine_t *machine,
+	uint16_t address)
+{
+	if (!machine || (uint32_t)address + XAVIX2_MOTION_PACKET_SIZE >
+		XAVIX2_LOW_RAM_SIZE)
+		return;
+	machine->motion_packet_address = address;
+}
+
 void xavix2_machine_reset(xavix2_machine_t *machine)
 {
 	const uint8_t *rom;
 	size_t rom_size;
+	uint16_t motion_packet_address;
 	uint8_t eeprom[XAVIX_EEPROM24C08_SIZE];
 	if (!machine)
 		return;
 	rom = machine->rom;
 	rom_size = machine->rom_size;
+	motion_packet_address = machine->motion_packet_address;
 	memcpy(eeprom, machine->eeprom.data, sizeof(eeprom));
 	(void)xavix2_machine_init(machine, rom, rom_size);
+	xavix2_machine_set_motion_packet_address(machine, motion_packet_address);
 	(void)xavix_eeprom24c08_load_image(&machine->eeprom, eeprom, sizeof(eeprom));
 }
 
@@ -947,7 +971,7 @@ uint64_t xavix2_machine_run_video_frame(xavix2_machine_t *machine,
 		return 0;
 	start = machine->cpu.total_cycles;
 	if (motion_packet)
-		memcpy(machine->low_ram + XAVIX2_MOTION_PACKET_FIRST,
+		memcpy(machine->low_ram + machine->motion_packet_address,
 			motion_packet, XAVIX2_MOTION_PACKET_SIZE);
 	machine->pio_input = pio_input;
 	machine->experimental_direct_pio_sample = 1;

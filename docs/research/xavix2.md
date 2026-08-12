@@ -410,3 +410,49 @@ on the user's machine before any clock change is considered.
 - Remaining uncertainty: the exact physical source of the status line has not
   been confirmed from a schematic or PCB trace, so the model deliberately does
   not claim a specific battery-monitor circuit.
+
+## Fractional GPU scaling and Blue Dragon gameplay (2026-08-12)
+
+- Observed symptom: the selected mode portrait in `ban_bldj` was split by
+  one-pixel seams, and its battle scene drew the background and HUD but omitted
+  the enemy character.
+- Command evidence: GPU bits 36-41 and 42-47 form six-bit unsigned Q2.4 X/Y
+  scale factors. The selected menu image uses 16x16 source tiles, field `$11`,
+  and a 17-pixel placement grid. Treating only the upper two bits as an integer
+  draws 16-pixel tiles and necessarily leaves the observed seams.
+- Battle evidence: 27 character commands use field `$0a`; their 32x32 source
+  tiles are placed on a 20-pixel grid, exactly matching `32 * 10 / 16 = 20`.
+  The old integer-only decode reduces `$0a` to zero and drops that complete
+  layer. The corrected path renders it at 0.625x.
+- Cross-title evidence: `ban_dbz` uses `$3f` to make an 82x61 source cover
+  approximately 323x240 pixels. A later 169x35 object steps through `$30`,
+  `$2c`, `$28`, `$24`, `$20`, `$1c`, `$18`, and `$14` while its position moves
+  to keep the object center fixed, directly demonstrating continuous zoom.
+- Controlled comparison: the old and corrected Blue Dragon menu frames differ
+  in 464 pixels, all within the selected tiled image. At the same battle
+  checkpoint, CPU execution, low RAM, and video RAM are identical while the
+  old renderer omits the enemy and the corrected renderer shows it.
+- Code changed: the command renderer now applies the complete Q2.4 fields to
+  pixel boundaries. A ROM-independent GPU test covers `$11` magnification and
+  Blue Dragon's `$0a` reduction. `XAVIX2_GPU_SCALE_TRACE=1` enables a bounded probe-only
+  command/descriptor report for future zoom effects.
+- Remaining uncertainty: output size and placement are firmware-proven, but
+  the exact subpixel sampling phase has not been compared against a hardware
+  pixel capture.
+
+## Per-title motion packet buffers (2026-08-12)
+
+- Observed symptom: the host wrote every IRQ-10 packet to low RAM `$000d`, the
+  address used by Naruto and Blue Dragon, so `ban_db2j` and `ban_dbz` could not
+  receive the same controller data through their own handlers.
+- Firmware evidence: DB2J consumes its producer packet at `$014d-$0153` and
+  copies it to `$0146-$014b` with status at `$0145`; DBZ uses `$0149-$014f`,
+  `$0142-$0147`, and `$0141` respectively.
+- Code changed: board setup selects the producer address explicitly from the
+  verified ROM kind, and reset preserves that selection. The frame API remains
+  format-agnostic and still receives two XYZ samples plus status.
+- Blue Dragon input evidence: two exactly overlapping reflector samples are
+  merged by firmware into one blob. Its central confirm gesture succeeds when
+  the second sample is separated vertically by two sensor units. This offset
+  is limited to `ban_bldj`; Naruto retains coincident samples for its documented
+  joined-hands guard gesture, and DB2J/DBZ gesture meanings remain under study.

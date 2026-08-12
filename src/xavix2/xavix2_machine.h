@@ -67,6 +67,7 @@ typedef struct xavix2_machine
 	uint8_t palette_ram[0x800];
 	uint8_t mmio[XAVIX2_MMIO_SIZE];
 	xavix2_audio audio;
+	uint16_t motion_packet_address;
 	uint64_t mmio_read_counts[XAVIX2_MMIO_SIZE];
 	uint64_t mmio_write_counts[XAVIX2_MMIO_SIZE];
 	uint32_t mmio_last_read_pc[XAVIX2_MMIO_SIZE];
@@ -169,6 +170,8 @@ typedef struct xavix2_machine
 
 int xavix2_machine_init(xavix2_machine_t *machine, const uint8_t *rom,
 	size_t rom_size);
+void xavix2_machine_set_motion_packet_address(xavix2_machine_t *machine,
+	uint16_t address);
 void xavix2_machine_reset(xavix2_machine_t *machine);
 void xavix2_machine_raise_irq(xavix2_machine_t *machine, unsigned level);
 void xavix2_machine_clear_irq(xavix2_machine_t *machine, unsigned level);

@@ -470,6 +470,21 @@ static int rom_has_internal_cursor(enum drgqst_rom_kind kind)
 	return kind == DRGQST_ROM_BAN_OMT || kind == DRGQST_ROM_BAN_NARU;
 }
 
+static uint16_t xavix2_motion_packet_address(enum drgqst_rom_kind kind)
+{
+	switch (kind)
+	{
+	case DRGQST_ROM_BAN_DB2J:
+		return 0x014d;
+	case DRGQST_ROM_BAN_DBZ:
+		return 0x0149;
+	case DRGQST_ROM_BAN_NARU:
+	case DRGQST_ROM_BAN_BLDJ:
+	default:
+		return XAVIX2_MOTION_PACKET_FIRST;
+	}
+}
+
 static enum drgqst_core_profile core_profile_for_rom(
 	enum drgqst_rom_kind kind)
 {
@@ -1531,7 +1546,12 @@ static void run_xavix2_frame(void)
 	if (g_right_button || g_naruto_joined_hands)
 	{
 		packet[3] = sample_x;
-		packet[4] = sample_y;
+		/* Blue Dragon rejects two perfectly overlapping reflectors as one
+		 * blob.  Its confirm gesture needs a small, still-visible separation.
+		 * Naruto deliberately uses coincident hands for its guard gesture. */
+		packet[4] = g_rom.kind == DRGQST_ROM_BAN_BLDJ ?
+			(uint8_t)(sample_y <= 0x35 ? sample_y + 2 : sample_y - 2) :
+			sample_y;
 		packet[5] = 0x20;
 	}
 	(void)xavix2_machine_run_video_frame(g_xavix2, packet, pio_input);
@@ -1807,6 +1827,8 @@ static int activate_xavix2_rom(HWND window, drgqst_rom_image *image,
 				text->rom_open_title, MB_OK | MB_ICONERROR);
 		return 0;
 	}
+	xavix2_machine_set_motion_packet_address(machine,
+		xavix2_motion_packet_address(image->kind));
 
 	stop_frame_clock(window);
 	save_persistent_eeprom(window, 1);

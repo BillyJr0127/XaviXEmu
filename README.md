@@ -48,9 +48,9 @@ holders or MAMEdev. See [the legal notes](docs/legal.md).
 | XaviX | `tvpc_ham` | Experimental | Title/main menu, 24C16 EEPROM initialization, independent persistence, and PCM output |
 | XaviX | `tvpc_hk` | Experimental | Title/main menu, 24C16 EEPROM initialization, independent persistence, and PCM output |
 | XaviX 2 | `ban_naru` | Experimental | Title, menus, character selection, story path, and provisional PCM audio |
-| XaviX 2 | `ban_bldj` | Experimental | Boots through the Japanese safety warning to the title screen |
-| XaviX 2 | `ban_db2j` | Experimental | Boots through the BANDAI and safety screens to the title/menu screen |
-| XaviX 2 | `ban_dbz` | Experimental | Boots through the BANDAI and safety screens to the title/menu screen with provisional PCM |
+| XaviX 2 | `ban_bldj` | Experimental | Title, mode selection, story/battle rendering milestones, two-reflector confirm, and provisional PCM |
+| XaviX 2 | `ban_db2j` | Experimental | Title/menu graphics, corrected motion-packet routing, and provisional PCM |
+| XaviX 2 | `ban_dbz` | Experimental | Title/menu graphics, fractional zoom rendering, corrected motion-packet routing, and provisional PCM |
 
 The status terms and known limitations are defined in
 [docs/compatibility.md](docs/compatibility.md). In particular, reaching a menu

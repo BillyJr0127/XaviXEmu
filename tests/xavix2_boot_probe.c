@@ -35,6 +35,30 @@ typedef struct instruction_trace
 	uint32_t count;
 } instruction_trace;
 
+enum
+{
+	GPU_SCALE_TRACE_PRINT_LIMIT = 256
+};
+
+typedef struct gpu_scale_trace
+{
+	uint64_t scanned_commands;
+	uint64_t nondefault_commands;
+	uint64_t last_trigger_count;
+	unsigned frames_with_nondefault;
+	unsigned printed_commands;
+	unsigned first_frame;
+	unsigned first_index;
+	uint64_t first_command;
+	uint32_t first_descriptor;
+	uint32_t first_source;
+	uint16_t first_width;
+	uint16_t first_height;
+	uint8_t first_w_field;
+	uint8_t first_h_field;
+	int first_valid;
+} gpu_scale_trace;
+
 static void trace_instruction(void *opaque, const xavix2_cpu_t *cpu,
 	uint32_t pc, uint32_t opcode, uint8_t bytes)
 {
@@ -305,6 +329,136 @@ static uint32_t get_le32(const uint8_t *source)
 {
 	return (uint32_t)source[0] | ((uint32_t)source[1] << 8) |
 		((uint32_t)source[2] << 16) | ((uint32_t)source[3] << 24);
+}
+
+static uint16_t motion_packet_address_for_rom(enum drgqst_rom_kind kind)
+{
+	if (kind == DRGQST_ROM_BAN_DB2J)
+		return 0x014d;
+	if (kind == DRGQST_ROM_BAN_DBZ)
+		return 0x0149;
+	return XAVIX2_MOTION_PACKET_FIRST;
+}
+
+static uint16_t get_le16(const uint8_t *source)
+{
+	return (uint16_t)(source[0] | ((uint16_t)source[1] << 8));
+}
+
+static uint64_t get_le64(const uint8_t *source)
+{
+	return (uint64_t)get_le32(source) |
+		((uint64_t)get_le32(source + 4) << 32);
+}
+
+static void trace_gpu_scale_fields(const xavix2_machine_t *machine,
+	unsigned frame, gpu_scale_trace *trace)
+{
+	uint16_t address;
+	uint16_t count;
+	uint16_t descsize_address;
+	uint16_t descdata_address;
+	unsigned frame_nondefault = 0;
+	unsigned index;
+
+	if (machine->gpu_trigger_count == trace->last_trigger_count)
+		return;
+	trace->last_trigger_count = machine->gpu_trigger_count;
+	if ((machine->last_gpu_register & UINT32_C(0xfff)) == 0x408)
+	{
+		address = get_le16(machine->mmio + 0x400);
+		count = get_le16(machine->mmio + 0x404);
+	}
+	else
+	{
+		address = get_le16(machine->mmio + 0x40c);
+		count = get_le16(machine->mmio + 0x410);
+	}
+	descsize_address = get_le16(machine->mmio + 0x608);
+	descdata_address = get_le16(machine->mmio + 0x622);
+	for (index = 0; index < count; ++index)
+	{
+		uint32_t command_address = (uint32_t)address + 8 * index;
+		uint64_t command;
+		uint32_t descriptor_index;
+		uint32_t data_index;
+		uint32_t descriptor_address;
+		uint32_t data_address;
+		uint32_t descriptor;
+		uint16_t descdata;
+		uint32_t source;
+		uint16_t width;
+		uint16_t height;
+		uint8_t w_field;
+		uint8_t h_field;
+
+		if (command_address + 8 > XAVIX2_LOW_RAM_SIZE)
+			break;
+		command = get_le64(machine->low_ram + command_address);
+		descriptor_index = (uint32_t)((command >> 30) & 0x3f);
+		data_index = (uint32_t)((command >> 58) & 0x3f);
+		descriptor_address = (uint32_t)descsize_address +
+			4 * descriptor_index;
+		data_address = (uint32_t)descdata_address + 2 * data_index;
+		if (descriptor_address + 4 > XAVIX2_LOW_RAM_SIZE ||
+			data_address + 2 > XAVIX2_LOW_RAM_SIZE)
+			continue;
+		descriptor = get_le32(machine->low_ram + descriptor_address);
+		descdata = get_le16(machine->low_ram + data_address);
+		source = ((uint32_t)descdata << 14) +
+			(uint32_t)((command >> 43) & 0x7fe0);
+		width = (uint16_t)(1 + (descriptor & 0xff));
+		height = (uint16_t)(1 + ((descriptor >> 8) & 0xff));
+		w_field = (uint8_t)((command >> 36) & 0x3f);
+		h_field = (uint8_t)((command >> 42) & 0x3f);
+		trace->scanned_commands++;
+		if (w_field == 0x10 && h_field == 0x10)
+			continue;
+		trace->nondefault_commands++;
+		frame_nondefault++;
+		if (!trace->first_valid)
+		{
+			trace->first_valid = 1;
+			trace->first_frame = frame;
+			trace->first_index = index;
+			trace->first_command = command;
+			trace->first_descriptor = descriptor;
+			trace->first_source = source;
+			trace->first_width = width;
+			trace->first_height = height;
+			trace->first_w_field = w_field;
+			trace->first_h_field = h_field;
+		}
+		if (trace->printed_commands < GPU_SCALE_TRACE_PRINT_LIMIT)
+		{
+			printf("gpu_scale frame=%u index=%u command=%016" PRIX64
+				" descriptor=%08" PRIX32 " desc_index=%" PRIu32
+				" data_index=%" PRIu32 " source=%08" PRIX32
+				" source_size=%ux%u w_field=%02X h_field=%02X\n",
+				frame, index, command, descriptor, descriptor_index,
+				data_index, source, width, height, w_field, h_field);
+			trace->printed_commands++;
+		}
+	}
+	if (frame_nondefault)
+		trace->frames_with_nondefault++;
+}
+
+static void print_gpu_scale_trace_summary(const gpu_scale_trace *trace)
+{
+	printf("gpu_scale_summary scanned=%" PRIu64 " nondefault=%" PRIu64
+		" frames=%u printed=%u suppressed=%" PRIu64 "\n",
+		trace->scanned_commands, trace->nondefault_commands,
+		trace->frames_with_nondefault, trace->printed_commands,
+		trace->nondefault_commands - trace->printed_commands);
+	if (trace->first_valid)
+		printf("gpu_scale_first frame=%u index=%u command=%016" PRIX64
+			" descriptor=%08" PRIX32 " source=%08" PRIX32
+			" source_size=%ux%u w_field=%02X h_field=%02X\n",
+			trace->first_frame, trace->first_index, trace->first_command,
+			trace->first_descriptor, trace->first_source,
+			trace->first_width, trace->first_height,
+			trace->first_w_field, trace->first_h_field);
 }
 
 static void print_hex_bytes(const char *label, uint32_t address,
@@ -1189,7 +1343,9 @@ int main(int argc, char **argv)
 	int action_state_trace_verbose = 0;
 	int diagnostic_ram_trace_verbose = 0;
 	int instruction_trace_enabled = 0;
+	int gpu_scale_trace_enabled = 0;
 	instruction_trace instruction_log = { 0, 0, UINT32_MAX, 256, 0 };
+	gpu_scale_trace scale_trace = { 0 };
 
 	if ((argc < 2 || argc > 4) || !MultiByteToWideChar(CP_ACP, 0,
 		argv[1], -1, path, (int)(sizeof(path) / sizeof(path[0]))))
@@ -1218,6 +1374,8 @@ int main(int argc, char **argv)
 		drgqst_rom_release(&image);
 		return 2;
 	}
+	xavix2_machine_set_motion_packet_address(machine,
+		motion_packet_address_for_rom(image.kind));
 	{
 		const char *input = getenv("XAVIX2_INPUT");
 		const char *at = getenv("XAVIX2_INPUT_AT");
@@ -1301,6 +1459,7 @@ int main(int argc, char **argv)
 		const char *video_trace_at_text = getenv("XAVIX2_VIDEO_TRACE_AT");
 		const char *video_trace_period_text =
 			getenv("XAVIX2_VIDEO_TRACE_PERIOD");
+		const char *gpu_scale_trace_text = getenv("XAVIX2_GPU_SCALE_TRACE");
 		audio_wav_path = getenv("XAVIX2_AUDIO_WAV");
 		if (input) pending_input = (uint32_t)strtoul(input, NULL, 0);
 		if (at) input_at = _strtoui64(at, NULL, 0);
@@ -1494,6 +1653,8 @@ int main(int argc, char **argv)
 			if (!video_trace_period)
 				video_trace_period = 1;
 		}
+		if (gpu_scale_trace_text)
+			gpu_scale_trace_enabled = atoi(gpu_scale_trace_text) != 0;
 		if (sensor_packet_text)
 		{
 			if (!parse_sensor_packet(sensor_packet_text, sensor_packet))
@@ -1604,6 +1765,8 @@ int main(int argc, char **argv)
 				pending_input : 0;
 			(void)xavix2_machine_run_video_frame(machine,
 				frame_packet, frame_input);
+			if (gpu_scale_trace_enabled)
+				trace_gpu_scale_fields(machine, frame + 1, &scale_trace);
 			if (audio_wav_samples)
 				memcpy(audio_wav_samples + (size_t)frame *
 					XAVIX2_AUDIO_FRAMES_PER_VIDEO_FRAME *
@@ -1631,6 +1794,8 @@ int main(int argc, char **argv)
 				putchar('\n');
 			}
 		}
+		if (gpu_scale_trace_enabled)
+			print_gpu_scale_trace_summary(&scale_trace);
 		if (audio_wav_samples)
 			printf("audio_wav=%s %s frames=%zu\n", audio_wav_path,
 				save_wav(audio_wav_path, audio_wav_samples,
@@ -1671,14 +1836,14 @@ int main(int argc, char **argv)
 		}
 		if (motion_packet_pending && completed >= motion_packet_at)
 		{
-			memcpy(machine->low_ram + XAVIX2_MOTION_PACKET_FIRST,
+			memcpy(machine->low_ram + machine->motion_packet_address,
 				motion_packet, sizeof(motion_packet));
 			motion_packet_pending = 0;
 		}
 		if (motion_sequence_index < motion_sequence_count &&
 			completed >= motion_sequence_at)
 		{
-			memcpy(machine->low_ram + XAVIX2_MOTION_PACKET_FIRST,
+			memcpy(machine->low_ram + machine->motion_packet_address,
 				motion_sequence[motion_sequence_index], XAVIX2_MOTION_PACKET_SIZE);
 			motion_sequence_index++;
 			motion_sequence_at += motion_sequence_period;

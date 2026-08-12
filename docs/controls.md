@@ -82,12 +82,22 @@ Bits `$04` and `$08` are intentionally unbound. The game draws its own menu
 selection graphics, so XaviXEmu does not overlay the blue target. Gameplay and
 control feel remain experimental.
 
-## `ban_naru` (experimental)
+## XaviX 2 wrist-reflector games (experimental)
 
-- Mouse movement: first wrist reflector and game-owned cursor.
-- Left mouse: Execute/confirm.
-- Hold right mouse or Space while moving: add a second reflector at the same
-  location for the paired-hand gesture currently understood by the emulator.
+- Mouse movement sends the first synthetic reflector sample.
+- Hold right mouse or Space while moving to send a second sample.
+
+Naruto (`ban_naru`) places both samples at the same location for its documented
+joined-hands guard gesture; left mouse is its verified Execute/confirm input.
+Blue Dragon (`ban_bldj`) separates the second sample vertically by two sensor
+units because its firmware merges perfectly overlapping blobs. Holding right
+mouse or Space therefore operates its on-screen `決定` gesture without a
+separate left-click input.
+
+DB2J and DBZ now receive packets at their verified firmware buffers and show
+their game-owned detection marker, but coordinate calibration, gestures, and
+host button mappings remain unverified. In particular, left mouse must not be
+treated as a confirmed Execute input for those two titles.
 
 Independent two-hand positions and later gameplay gestures are not yet
 implemented.

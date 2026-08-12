@@ -7,6 +7,15 @@ semantic versioning while experimental releases carry a pre-release suffix.
 
 ### Added
 
+- Decode the full XaviX 2 six-bit Q2.4 GPU scale fields. This removes Blue
+  Dragon's tiled-menu seams, restores its downscaled battle characters, and
+  preserves Dragon Ball Z's continuous zoom effects.
+- Route IRQ-10 motion packets to the verified per-title low-RAM producer
+  buffers for DB2J and DBZ instead of always using Naruto's address.
+- Keep Blue Dragon's two synthetic reflector samples distinguishable for its
+  firmware-driven confirm gesture without changing Naruto's joined-hands
+  behavior.
+
 - Recognize the exact `ban_bldj`, `ban_db2j`, and `ban_dbz` XaviX 2 images.
 - Recognize the exact `ttv_mx`, `tom_jump`, and `epo_sdb` XaviX 2000
   images, including their verified controller and persistent-storage paths.
