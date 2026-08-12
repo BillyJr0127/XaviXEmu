@@ -968,7 +968,8 @@ uint64_t xavix2_machine_run_video_frame(xavix2_machine_t *machine,
 	if (machine->cpu.total_cycles < target)
 		(void)xavix2_machine_execute(machine,
 			target - machine->cpu.total_cycles);
-	xavix2_audio_render(&machine->audio, load32(machine->low_ram + 0x150));
+	xavix2_audio_render(&machine->audio,
+		xavix2_audio_engine_rate(machine->mmio[0xa00], machine->mmio[0xa05]));
 	return machine->cpu.total_cycles - start;
 }
 

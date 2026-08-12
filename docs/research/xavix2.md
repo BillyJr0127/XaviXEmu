@@ -197,8 +197,9 @@ so the GUI crops that area before applying its optional 4:3 presentation.
   `$c0|channel` (update), or `$240|channel` (looping start) through `$ea0a`.
   `$ea10-$ea17` are read as the 64 active-channel bits.  The pointed ROM data
   is signed 8-bit PCM with `$80` used as the end marker.  The firmware computes
-  the channel pitch as `source_rate * 65536 / engine_rate` and stores the
-  engine rate at low RAM `$0150`.
+  the channel pitch as `source_rate * 65536 / engine_rate`. `ban_naru`
+  stores its derived rate at low RAM `$0150`; this address is firmware-private
+  and is not shared by the other titles.
 - Experiment: implement only those evidenced commands, active bits, PCM
   termination/looping, pitch conversion, stereo levels, linear interpolation,
   and 48 kHz output.  Do not guess the still-unknown envelope table semantics.
@@ -355,3 +356,36 @@ bit before saturation.  This changes neither source pitch nor firmware event
 timing.  F10 exposes live FPS, guest byte-cycles, dropped frames, and WinMM
 drop/underrun counters so host scheduling can be separated from guest timing
 on the user's machine before any clock change is considered.
+
+## Cross-title audio engine-rate correction (2026-08-12)
+
+- Observed symptom: the three newly recognized images appeared silent in the
+  Windows front end. `ban_bldj` and `ban_db2j` reported active voices but
+  generated zero PCM, while `ban_dbz` generated nominally non-zero PCM that
+  was effectively inaudible.
+- Fault isolated: the audio renderer read its engine rate from low RAM `$0150`
+  on every frame. That address came from the `ban_naru` firmware trace; it is
+  title-private RAM rather than a sound-hardware register. At 1,200 frames,
+  `$0150` held 213,068 in `ban_naru`, zero in `ban_bldj` and `ban_db2j`, and
+  257 in `ban_dbz`. `ban_bldj` stored the same derived 213,068 value at
+  `$0158`, directly demonstrating the layout difference.
+- Hardware evidence: 30-frame MMIO traces show `ban_naru` and `ban_bldj`
+  program `$ea00=$20`, `$ea05=$0d`, while `ban_db2j` and `ban_dbz` program
+  `$ea00=$20`, `$ea05=$0f`. The traced firmware formula divides the 98,437,488
+  Hz source clock by `(EA00 + 1) * (EA05 + 1)`, producing 213,068 Hz for the
+  first pair and 186,434 Hz for the second. Existing pitch traces use the
+  resulting engine rate to convert channel Q16 pitch to source-sample cadence.
+- Correction: the provisional XaviX 2 audio model now derives its rate from
+  those sound MMIO divider registers. It no longer interprets any title's low
+  RAM as an audio register. This is shared hardware behavior, not a ROM-name
+  check or a per-game playback multiplier.
+- Regression: ROM-independent audio tests verify both observed divider pairs.
+  The machine test uses the two MMIO configurations while placing zero and
+  257 at private low RAM `$0150`, then verifies the exact source position and
+  generated PCM after a normal video frame.
+- Long-run validation: all four exact images naturally issue the already
+  modelled one-shot, looping, update, and stop commands. `ban_bldj` starts its
+  later multichannel title audio around 20.6 seconds; `ban_db2j` reaches it
+  around 47.7 seconds and `ban_dbz` around 46.1 seconds. At 60 seconds all
+  four images report active voices and non-zero PCM. No additional audio IRQ,
+  title delay bypass, or ROM-specific start command was introduced.

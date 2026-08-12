@@ -30,6 +30,13 @@ static int16_t clamp16(int64_t sample)
 	return (int16_t)sample;
 }
 
+uint32_t xavix2_audio_engine_rate(uint8_t divider_a, uint8_t divider_b)
+{
+	const uint32_t divisor = ((uint32_t)divider_a + 1U) *
+		((uint32_t)divider_b + 1U);
+	return XAVIX2_AUDIO_MASTER_CLOCK / divisor;
+}
+
 static void stop_voice(xavix2_audio_voice *voice)
 {
 	voice->position = 0;

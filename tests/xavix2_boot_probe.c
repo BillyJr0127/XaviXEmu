@@ -1006,10 +1006,14 @@ static void print_audio_summary(const xavix2_machine_t *machine)
 static void print_audio_voices(const xavix2_machine_t *machine)
 {
 	const uint8_t *descriptors = machine->video_ram + 0xf800;
-	uint32_t engine_rate = get_le32(machine->low_ram + 0x150);
+	uint32_t engine_rate = xavix2_audio_engine_rate(machine->mmio[0xa00],
+		machine->mmio[0xa05]);
 	unsigned channel;
 
-	printf("audio_voices engine_rate=%" PRIu32 "\n", engine_rate);
+	printf("audio_voices engine_rate=%" PRIu32
+		" divider=%u,%u firmware_ram_0150=%" PRIu32 "\n", engine_rate,
+		(unsigned)machine->mmio[0xa00], (unsigned)machine->mmio[0xa05],
+		get_le32(machine->low_ram + 0x150));
 	for (channel = 0; channel < XAVIX2_AUDIO_VOICES; ++channel)
 	{
 		const xavix2_audio_voice *voice = &machine->audio.voice[channel];

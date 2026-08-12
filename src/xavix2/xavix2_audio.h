@@ -17,6 +17,8 @@ extern "C" {
 enum
 {
 	XAVIX2_AUDIO_VOICES = 64,
+	/* Firmware traces identify this provisional sound-engine source clock. */
+	XAVIX2_AUDIO_MASTER_CLOCK = 98437488,
 	XAVIX2_AUDIO_OUTPUT_RATE = 48000,
 	XAVIX2_AUDIO_OUTPUT_CHANNELS = 2,
 	XAVIX2_AUDIO_FRAMES_PER_VIDEO_FRAME =
@@ -52,6 +54,7 @@ void xavix2_audio_init(xavix2_audio *audio, const uint8_t *rom,
 void xavix2_audio_command(xavix2_audio *audio, uint16_t command,
 	const uint8_t descriptors[XAVIX2_AUDIO_DESCRIPTOR_BYTES],
 	uint16_t control_pitch, uint8_t control_left, uint8_t control_right);
+uint32_t xavix2_audio_engine_rate(uint8_t divider_a, uint8_t divider_b);
 void xavix2_audio_render(xavix2_audio *audio, uint32_t engine_rate);
 uint8_t xavix2_audio_status(const xavix2_audio *audio, unsigned byte_index);
 const int16_t *xavix2_audio_frame(const xavix2_audio *audio);

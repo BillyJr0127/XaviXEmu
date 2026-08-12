@@ -36,6 +36,9 @@ int main(void)
 	xavix2_audio audio;
 	const int16_t *frame;
 
+	CHECK(xavix2_audio_engine_rate(0x20, 0x0d) == 213068);
+	CHECK(xavix2_audio_engine_rate(0x20, 0x0f) == 186434);
+
 	rom[0x10] = 0;
 	rom[0x11] = 64;
 	rom[0x12] = 127;

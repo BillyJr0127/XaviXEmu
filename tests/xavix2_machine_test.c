@@ -21,10 +21,28 @@
 		} \
 	} while (0)
 
+static void store16(uint8_t *destination, uint16_t value)
+{
+	destination[0] = (uint8_t)value;
+	destination[1] = (uint8_t)(value >> 8);
+}
+
+static void store_address(uint8_t *descriptor, unsigned high_offset,
+	unsigned low_offset, uint32_t address)
+{
+	store16(descriptor + high_offset, (uint16_t)(address >> 16));
+	store16(descriptor + low_offset, (uint16_t)address);
+}
+
 int main(void)
 {
 	uint8_t *rom = (uint8_t *)calloc(1, UINT32_C(0x10000));
 	xavix2_machine_t *machine = (xavix2_machine_t *)calloc(1, sizeof(*machine));
+	uint8_t descriptors[XAVIX2_AUDIO_DESCRIPTOR_BYTES] = { 0 };
+	const int16_t *audio_frame;
+	const uint32_t private_ram_rates[] = { 0, 257 };
+	const uint8_t engine_divider_b[] = { 0x0d, 0x0f };
+	unsigned rate_index;
 	CHECK(rom && machine);
 	CHECK(xavix2_machine_init(machine, rom, UINT32_C(0x10000)));
 
@@ -97,6 +115,45 @@ int main(void)
 	CHECK(machine->interrupt_active == 0);
 	CHECK(machine->interrupt_pending == 0);
 	CHECK(!machine->interrupt_latched_valid);
+
+	/* Audio engine timing belongs to the SoC model, not a title's private
+	 * low-RAM layout.  Some firmware stores its derived rate at 0x0158 while
+	 * other titles leave 0x0150 zero or use it for unrelated state. */
+	memset(rom + 0x8000, 64, 0x1000);
+	rom[0x9000] = 0x80;
+	store_address(descriptors, 0x02, 0x06, 0x8000);
+	store16(descriptors + 0x16, 0x1000);
+	descriptors[0x32] = 0x40;
+	descriptors[0x33] = 0x40;
+	machine->interrupt_enabled = 0;
+	machine->interrupt_nmi = 0;
+	for (rate_index = 0; rate_index < 2; ++rate_index)
+	{
+		const uint32_t private_rate = private_ram_rates[rate_index];
+		const uint32_t engine_rate = xavix2_audio_engine_rate(0x20,
+			engine_divider_b[rate_index]);
+		const uint64_t step =
+			((UINT64_C(0x1000) * engine_rate) << 16) /
+			XAVIX2_AUDIO_OUTPUT_RATE;
+		const uint64_t expected_position = (UINT64_C(0x8000) << 32) +
+			step * XAVIX2_AUDIO_FRAMES_PER_VIDEO_FRAME;
+		xavix2_audio_init(&machine->audio, rom, UINT32_C(0x10000));
+		machine->low_ram[0x150] = (uint8_t)private_rate;
+		machine->low_ram[0x151] = (uint8_t)(private_rate >> 8);
+		machine->low_ram[0x152] = (uint8_t)(private_rate >> 16);
+		machine->low_ram[0x153] = (uint8_t)(private_rate >> 24);
+		machine->mmio[0xa00] = 0x20;
+		machine->mmio[0xa05] = engine_divider_b[rate_index];
+		machine->cpu.waiting = 1;
+		machine->cpu.interrupt_line = 0;
+		xavix2_audio_command(&machine->audio, 0x40, descriptors, 0, 0, 0);
+		CHECK(xavix2_machine_run_video_frame(machine, NULL, 0) != 0);
+		audio_frame = xavix2_machine_frame_audio(machine);
+		CHECK(audio_frame != NULL);
+		CHECK(audio_frame[0] == 64 * 64 / 2);
+		CHECK(audio_frame[1] == 64 * 64 / 2);
+		CHECK(machine->audio.voice[0].position == expected_position);
+	}
 
 	free(machine);
 	free(rom);
