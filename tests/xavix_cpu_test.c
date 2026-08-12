@@ -38,6 +38,14 @@ typedef struct fixture
 		} \
 	} while (0)
 
+#define RUN_TEST(test) \
+	do { \
+		if (!(test)) { \
+			fprintf(stderr, "%s:%d: test failed: %s\n", __FILE__, __LINE__, #test); \
+			return EXIT_FAILURE; \
+		} \
+	} while (0)
+
 static uint8_t fixture_read(void *opaque, xavix_cpu_bus_t bus, uint32_t address)
 {
 	fixture_t *const fixture = (fixture_t *)opaque;
@@ -476,13 +484,13 @@ int main(int argc, char **argv)
 	(void)argc;
 	(void)argv;
 #endif
-	CHECK(test_reset_and_boot_prefix());
-	CHECK(test_far_call());
-	CHECK(test_data_bank_and_zero_page());
-	CHECK(test_pointer_register());
-	CHECK(test_nmi_and_rti());
-	CHECK(test_decimal_adc());
-	CHECK(test_all_opcodes_dispatch());
+	RUN_TEST(test_reset_and_boot_prefix());
+	RUN_TEST(test_far_call());
+	RUN_TEST(test_data_bank_and_zero_page());
+	RUN_TEST(test_pointer_register());
+	RUN_TEST(test_nmi_and_rti());
+	RUN_TEST(test_decimal_adc());
+	RUN_TEST(test_all_opcodes_dispatch());
 	puts("xavix_cpu_test: all tests passed");
 	return 0;
 }

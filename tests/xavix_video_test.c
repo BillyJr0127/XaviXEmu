@@ -3,9 +3,17 @@
 
 #include "xavix_video.h"
 
-#include <assert.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+
+#define CHECK(condition) \
+	do { \
+		if (!(condition)) { \
+			fprintf(stderr, "%s:%d: check failed: %s\n", __FILE__, __LINE__, #condition); \
+			exit(EXIT_FAILURE); \
+		} \
+	} while (0)
 
 typedef struct test_rom
 {
@@ -50,12 +58,12 @@ static void test_fragment_write_alias(void)
 	uint8_t fragment[XAVIX_VIDEO_FRAGMENT_BYTES] = { 0 };
 
 	xavix_video_fragment_write(fragment, 0x300, 0x80);
-	assert(fragment[0x300] == 0x80);
-	assert(fragment[0x400] == 1);
-	assert((fragment[0x000] & 1U) == 1U);
+	CHECK(fragment[0x300] == 0x80);
+	CHECK(fragment[0x400] == 1);
+	CHECK((fragment[0x000] & 1U) == 1U);
 	xavix_video_fragment_write(fragment, 0x400, 0x00);
-	assert(fragment[0x400] == 0);
-	assert((fragment[0x000] & 1U) == 0U);
+	CHECK(fragment[0x400] == 0);
+	CHECK((fragment[0x000] & 1U) == 0U);
 }
 
 static void test_tile_priority_and_clip(void)
@@ -111,22 +119,22 @@ static void test_tile_priority_and_clip(void)
 	input.read_program_opaque = &rom;
 
 	xavix_video_render(&video, &input);
-	assert(video.framebuffer[0] == first_color);
+	CHECK(video.framebuffer[0] == first_color);
 	memcpy(first_frame, video.framebuffer, sizeof(first_frame));
 	xavix_video_render(&video, &input);
-	assert(memcmp(first_frame, video.framebuffer, sizeof(first_frame)) == 0);
+	CHECK(memcmp(first_frame, video.framebuffer, sizeof(first_frame)) == 0);
 	tile1[6] = 0x12; /* equal priority: later tilemap wins */
 	xavix_video_render(&video, &input);
-	assert(video.framebuffer[0] == second_color);
+	CHECK(video.framebuffer[0] == second_color);
 
 	input.arena_control = 1;
 	input.arena_start = 100;
 	input.arena_end = 10;
 	xavix_video_render(&video, &input);
-	assert(video.report.hardware_clip.valid);
-	assert(video.report.hardware_clip.min_x == 8);
-	assert(video.report.hardware_clip.max_x == 97);
-	assert(video.framebuffer[0] == UINT32_C(0xff000000));
+	CHECK(video.report.hardware_clip.valid);
+	CHECK(video.report.hardware_clip.min_x == 8);
+	CHECK(video.report.hardware_clip.max_x == 97);
+	CHECK(video.framebuffer[0] == UINT32_C(0xff000000));
 }
 
 static void test_feather_visible_pixel_bounds(void)
@@ -163,11 +171,11 @@ static void test_feather_visible_pixel_bounds(void)
 	input.read_program_opaque = &rom;
 	xavix_video_render(&video, &input);
 
-	assert(xavix_video_feather_visible(&video));
-	assert(xavix_video_feather_bounds(&video, &bounds));
-	assert(bounds.min_x == 10 && bounds.max_x == 17);
-	assert(bounds.min_y == 20 && bounds.max_y == 27);
-	assert(video.report.watched_sprite_pixels == 64);
+	CHECK(xavix_video_feather_visible(&video));
+	CHECK(xavix_video_feather_bounds(&video, &bounds));
+	CHECK(bounds.min_x == 10 && bounds.max_x == 17);
+	CHECK(bounds.min_y == 20 && bounds.max_y == 27);
+	CHECK(video.report.watched_sprite_pixels == 64);
 
 	/* Lower-numbered slots draw later.  An opaque equal-priority sprite must
 	 * remove covered pixels from the final visible-feather report. */
@@ -182,8 +190,8 @@ static void test_feather_visible_pixel_bounds(void)
 		20 + XAVIX_VIDEO_VISIBLE_Y_START, 8, 8);
 	memset(rom.bytes + 0x40, 0xff, 8);
 	xavix_video_render(&video, &input);
-	assert(!xavix_video_feather_visible(&video));
-	assert(video.report.watched_sprite_pixels == 0);
+	CHECK(!xavix_video_feather_visible(&video));
+	CHECK(video.report.watched_sprite_pixels == 0);
 
 	/* Star Wars US and Japan use separate cursor graphics ranges.  Confirm
 	 * that a match in the optional second range is reported independently. */
@@ -199,8 +207,8 @@ static void test_feather_visible_pixel_bounds(void)
 		xavix_video_set_sprite_watch(&video, &watch);
 		fragment[0x100] = 0;
 		xavix_video_render(&video, &input);
-		assert(xavix_video_feather_visible(&video));
-		assert(video.report.watched_sprite_pixels == 64);
+		CHECK(xavix_video_feather_visible(&video));
+		CHECK(video.report.watched_sprite_pixels == 64);
 	}
 }
 
@@ -218,7 +226,7 @@ static void test_colmix_layer_enables(void)
 	input.flags = XAVIX_VIDEO_INPUT_COLMIX_ENABLES_VALID;
 	input.colmix_control = 0;
 	xavix_video_render(&video, &input);
-	assert(video.report.opaque_pixels_drawn == 0);
+	CHECK(video.report.opaque_pixels_drawn == 0);
 }
 
 int main(void)

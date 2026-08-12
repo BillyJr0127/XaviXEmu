@@ -716,6 +716,45 @@ static void test_epo_ebox_parallel_nvram_persistence(void)
 	RemoveDirectoryW(root);
 }
 
+static void test_epo_es2j_runtime_state_persistence(void)
+{
+	wchar_t root[MAX_PATH];
+	wchar_t state_path[MAX_PATH] = { 0 };
+	wchar_t error[512];
+	uint8_t rom_sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] = { 0 };
+	uint8_t state[5] = { 0x45, 0x53, 0x32, 0x4a, 0x01 };
+	uint8_t output[sizeof(state)] = { 0 };
+	size_t output_size = 0;
+
+	if (!create_test_root(root))
+	{
+		CHECK(0 && "create epo_es2j persistence root");
+		return;
+	}
+	rom_sha1[0] = 0xad;
+	rom_sha1[1] = 0x52;
+	CHECK(drgqst_persistence_get_path(root,
+		DRGQST_PERSISTENCE_EPO_ES2J_RUNTIME_STATE, state_path, MAX_PATH,
+		error, sizeof(error) / sizeof(error[0])));
+	CHECK(wcsstr(state_path, L"\\epo_es2j-runtime-state.sav") != NULL);
+	CHECK(!drgqst_persistence_save(root,
+		DRGQST_PERSISTENCE_EPO_ES2J_RUNTIME_STATE, rom_sha1, state, 0,
+		error, sizeof(error) / sizeof(error[0])));
+	CHECK(drgqst_persistence_save(root,
+		DRGQST_PERSISTENCE_EPO_ES2J_RUNTIME_STATE, rom_sha1, state,
+		sizeof(state), error, sizeof(error) / sizeof(error[0])));
+	CHECK(drgqst_persistence_load(root,
+		DRGQST_PERSISTENCE_EPO_ES2J_RUNTIME_STATE, rom_sha1, output,
+		sizeof(output), &output_size, error,
+		sizeof(error) / sizeof(error[0])));
+	CHECK(output_size == sizeof(state));
+	CHECK(!memcmp(output, state, sizeof(state)));
+
+	if (*state_path)
+		DeleteFileW(state_path);
+	RemoveDirectoryW(root);
+}
+
 int main(void)
 {
 	test_default_directory();
@@ -723,6 +762,7 @@ int main(void)
 	test_xavix2000_24c04_persistence_kinds();
 	test_epo_sdb_parallel_nvram_persistence();
 	test_epo_ebox_parallel_nvram_persistence();
+	test_epo_es2j_runtime_state_persistence();
 
 	if (failures)
 	{

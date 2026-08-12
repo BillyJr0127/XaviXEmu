@@ -15,6 +15,7 @@ identify exact, user-supplied images.
 | `tom_jump` | 8,388,608 | `20bf5c17` | `bca7535baa6a54ad3ee0929bd3b74a22cb5139da` |
 | `epo_sdb` | 4,194,304 | `a004a764` | `47a96822d4d7d6a0f6be5cd729c3747dbab65979` |
 | `epo_ebox` | 4,194,304 | `e25ae4f5` | `7f7b613f0ab8f43f5cad0d13de538921e77cae9c` |
+| `epo_es2j` | 4,194,304 | `840aecb1` | `ad52449ffc13af5f4c67b2c3cf438e7ecd80b9fb` |
 | `epo_bowl` | 2,097,152 | `d34f8d9e` | `ebe3792172dc43904b9226beb27f1da89d2388cc` |
 | `tak_chq` | 4,194,304 | `ffd2eb95` | `a30884da5554483ebfd0009cf5dd1768be8a99cb` |
 | `epo_hamd` assembled image | 8,388,608 | `427cb00f` | `c61d436d6b803717b8c84d2022499380f71cced8` |

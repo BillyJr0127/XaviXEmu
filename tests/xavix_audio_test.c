@@ -3,9 +3,17 @@
 
 #include "xavix_audio.h"
 
-#include <assert.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+
+#define CHECK(condition) \
+	do { \
+		if (!(condition)) { \
+			fprintf(stderr, "%s:%d: check failed: %s\n", __FILE__, __LINE__, #condition); \
+			exit(EXIT_FAILURE); \
+		} \
+	} while (0)
 
 typedef struct test_bus_context
 {
@@ -106,7 +114,7 @@ static void configure_pcm_and_noise(xavix_audio *audio,
 	xavix_audio_write(audio, bus, XAVIX_AUDIO_MASTER_VOLUME, 0xd0);
 	xavix_audio_write(audio, bus, XAVIX_AUDIO_MIXER, 0x02);
 	xavix_audio_write(audio, bus, XAVIX_AUDIO_VOICE_START_LO, 0x03);
-	assert((xavix_audio_read(audio, bus, XAVIX_AUDIO_VOICE_STATUS_LO) & 3U) == 3U);
+	CHECK((xavix_audio_read(audio, bus, XAVIX_AUDIO_VOICE_STATUS_LO) & 3U) == 3U);
 }
 
 static void test_deterministic_pcm_and_restore(void)
@@ -132,22 +140,22 @@ static void test_deterministic_pcm_and_restore(void)
 	bus = make_bus(&context);
 	xavix_audio_init(&audio, XAVIX_AUDIO_DEFAULT_MASTER_CLOCK,
 		XAVIX_AUDIO_DEFAULT_HOST_RATE, 0x80);
-	assert(xavix_audio_native_rate(&audio) == 167791U);
+	CHECK(xavix_audio_native_rate(&audio) == 167791U);
 	configure_pcm_and_noise(&audio, &context, &bus);
-	assert(xavix_audio_generate(&audio, &bus, first, FRAME_COUNT) == FRAME_COUNT);
+	CHECK(xavix_audio_generate(&audio, &bus, first, FRAME_COUNT) == FRAME_COUNT);
 	hash = pcm_hash(first, FRAME_COUNT);
 	fprintf(stderr, "pcm hash: %016llx\n", (unsigned long long)hash);
-	assert(hash == UINT64_C(0xca262e242151b570));
+	CHECK(hash == UINT64_C(0xca262e242151b570));
 
 	checkpoint = audio;
 	restored_context = context;
 	restored_context.rom = rom;
 	restored_bus = make_bus(&restored_context);
-	assert(xavix_audio_generate(&audio, &bus, continuation, 2048) == 2048);
+	CHECK(xavix_audio_generate(&audio, &bus, continuation, 2048) == 2048);
 	restored_audio = checkpoint;
-	assert(xavix_audio_generate(&restored_audio, &restored_bus, restored, 2048) == 2048);
-	assert(memcmp(continuation, restored, sizeof(continuation)) == 0);
-	assert(memcmp(&audio, &restored_audio, sizeof(audio)) == 0);
+	CHECK(xavix_audio_generate(&restored_audio, &restored_bus, restored, 2048) == 2048);
+	CHECK(memcmp(continuation, restored, sizeof(continuation)) == 0);
+	CHECK(memcmp(&audio, &restored_audio, sizeof(audio)) == 0);
 }
 
 static void test_fractional_resampler_starts_without_silence(void)
@@ -169,16 +177,16 @@ static void test_fractional_resampler_starts_without_silence(void)
 	configure_voice(context.ram + 0x0200, 0, 1, 2, 0, 1,
 		15, 0xff, 0xff);
 	xavix_audio_write(&audio, &bus, XAVIX_AUDIO_VOICE_START_LO, 1);
-	assert(xavix_audio_generate(&audio, &bus, output, 49) == 49);
+	CHECK(xavix_audio_generate(&audio, &bus, output, 49) == 49);
 	for (frame = 0; frame < 49; ++frame)
 	{
-		assert(output[frame * 2U] > 0);
-		assert(output[frame * 2U] == output[frame * 2U + 1U]);
+		CHECK(output[frame * 2U] > 0);
+		CHECK(output[frame * 2U] == output[frame * 2U + 1U]);
 	}
 	/* The first native DAC value is available at time zero and is held for
 	 * exactly 48 host frames; the 49th frame begins the second native tick. */
-	assert(audio.native_ticks_generated == 2);
-	assert(audio.resample_phase == 47000U);
+	CHECK(audio.native_ticks_generated == 2);
+	CHECK(audio.resample_phase == 47000U);
 }
 
 static void test_one_shot_and_irq(void)
@@ -198,7 +206,7 @@ static void test_one_shot_and_irq(void)
 		15, 0xff, 0xff);
 	xavix_audio_write(&audio, &bus, XAVIX_AUDIO_VOICE_START_LO, 1);
 	xavix_audio_generate(&audio, &bus, NULL, 64);
-	assert((xavix_audio_active_voices(&audio) & 1U) == 0);
+	CHECK((xavix_audio_active_voices(&audio) & 1U) == 0);
 
 	/* At this test clock, native_rate=1000.  Tempo 0xff and cycle rate zero
 	 * produce a four-tick IRQ period. */
@@ -206,10 +214,10 @@ static void test_one_shot_and_irq(void)
 	xavix_audio_write(&audio, &bus, XAVIX_AUDIO_TEMPO_0, 0xff);
 	xavix_audio_write(&audio, &bus, XAVIX_AUDIO_IRQ_STATUS, 0x01);
 	xavix_audio_generate(&audio, &bus, NULL, 240);
-	assert(xavix_audio_irq_pending(&audio));
-	assert(xavix_audio_read(&audio, &bus, XAVIX_AUDIO_IRQ_STATUS) & 0x10U);
+	CHECK(xavix_audio_irq_pending(&audio));
+	CHECK(xavix_audio_read(&audio, &bus, XAVIX_AUDIO_IRQ_STATUS) & 0x10U);
 	xavix_audio_write(&audio, &bus, XAVIX_AUDIO_IRQ_STATUS, 0x11);
-	assert(!xavix_audio_irq_pending(&audio));
+	CHECK(!xavix_audio_irq_pending(&audio));
 }
 
 static void test_register_page_and_decay_envelope(void)
@@ -234,14 +242,14 @@ static void test_register_page_and_decay_envelope(void)
 	xavix_audio_write(&audio, &bus, XAVIX_AUDIO_CYCLE_RATE, 0);
 	xavix_audio_write(&audio, &bus, XAVIX_AUDIO_TEMPO_0, 0xff);
 	xavix_audio_write(&audio, &bus, XAVIX_AUDIO_VOICE_START_LO, 1);
-	assert(audio.voice[0].noise_state == 0x2345U);
-	assert(audio.voice[0].env_volume_left == 0x20U);
-	assert(audio.voice[0].env_volume_right == 0x10U);
+	CHECK(audio.voice[0].noise_state == 0x2345U);
+	CHECK(audio.voice[0].env_volume_left == 0x20U);
+	CHECK(audio.voice[0].env_volume_right == 0x10U);
 	xavix_audio_generate(&audio, &bus, NULL, 65);
-	assert(audio.voice[0].env_volume_left == 0x1eU);
-	assert(audio.voice[0].env_volume_right == 0x0fU);
-	assert(xavix_audio_read(&audio, &bus, XAVIX_AUDIO_REGISTER_PAGE) == 3U);
-	assert(xavix_audio_read(&audio, &bus, XAVIX_AUDIO_TEMPO_0) == 0xffU);
+	CHECK(audio.voice[0].env_volume_left == 0x1eU);
+	CHECK(audio.voice[0].env_volume_right == 0x0fU);
+	CHECK(xavix_audio_read(&audio, &bus, XAVIX_AUDIO_REGISTER_PAGE) == 3U);
+	CHECK(xavix_audio_read(&audio, &bus, XAVIX_AUDIO_TEMPO_0) == 0xffU);
 }
 
 int main(void)

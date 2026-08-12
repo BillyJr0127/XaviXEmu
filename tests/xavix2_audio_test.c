@@ -3,10 +3,17 @@
 
 #include "xavix2_audio.h"
 
-#include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+
+#define CHECK(condition) \
+	do { \
+		if (!(condition)) { \
+			fprintf(stderr, "%s:%d: check failed: %s\n", __FILE__, __LINE__, #condition); \
+			return 1; \
+		} \
+	} while (0)
 
 static void store16(uint8_t *destination, uint16_t value)
 {
@@ -40,14 +47,14 @@ int main(void)
 
 	xavix2_audio_init(&audio, rom, sizeof(rom));
 	xavix2_audio_command(&audio, 0x40, descriptors, 0, 0, 0);
-	assert(xavix2_audio_status(&audio, 0) == 1);
+	CHECK(xavix2_audio_status(&audio, 0) == 1);
 	xavix2_audio_render(&audio, 96000);
 	frame = xavix2_audio_frame(&audio);
-	assert(frame[0] == 0 && frame[1] == 0);
-	assert(frame[2] == 64 * 255 / 2 && frame[3] == 64 * 128 / 2);
-	assert(frame[4] == 127 * 255 / 2 && frame[5] == 127 * 128 / 2);
-	assert(frame[6] == 0 && frame[7] == 0);
-	assert(xavix2_audio_status(&audio, 0) == 0);
+	CHECK(frame[0] == 0 && frame[1] == 0);
+	CHECK(frame[2] == 64 * 255 / 2 && frame[3] == 64 * 128 / 2);
+	CHECK(frame[4] == 127 * 255 / 2 && frame[5] == 127 * 128 / 2);
+	CHECK(frame[6] == 0 && frame[7] == 0);
+	CHECK(xavix2_audio_status(&audio, 0) == 0);
 
 	rom[0x20] = 10;
 	rom[0x21] = 20;
@@ -58,26 +65,26 @@ int main(void)
 	 * terminator) here; playback loops to the primary start address. */
 	store_address(voice0, 0x0e, 0x12, 0x23);
 	xavix2_audio_command(&audio, 0x240, descriptors, 0, 0, 0);
-	assert(audio.voice[0].start_address == 0x20);
-	assert(audio.voice[0].end_address == 0x23);
+	CHECK(audio.voice[0].start_address == 0x20);
+	CHECK(audio.voice[0].end_address == 0x23);
 	xavix2_audio_render(&audio, 96000);
 	frame = xavix2_audio_frame(&audio);
-	assert(frame[0] == 10 * 255 / 2);
-	assert(frame[2] == 20 * 255 / 2);
-	assert(frame[4] == 10 * 255 / 2);
-	assert(xavix2_audio_status(&audio, 0) == 1);
+	CHECK(frame[0] == 10 * 255 / 2);
+	CHECK(frame[2] == 20 * 255 / 2);
+	CHECK(frame[4] == 10 * 255 / 2);
+	CHECK(xavix2_audio_status(&audio, 0) == 1);
 
 	xavix2_audio_command(&audio, 0xc0, descriptors, 0x4000, 7, 9);
-	assert(xavix2_audio_status(&audio, 0) == 1);
-	assert(audio.voice[0].pitch == 0x4000);
-	assert(audio.voice[0].volume_left == 7);
-	assert(audio.voice[0].volume_right == 9);
+	CHECK(xavix2_audio_status(&audio, 0) == 1);
+	CHECK(audio.voice[0].pitch == 0x4000);
+	CHECK(audio.voice[0].volume_left == 7);
+	CHECK(audio.voice[0].volume_right == 9);
 	xavix2_audio_render(&audio, 96000);
 	frame = xavix2_audio_frame(&audio);
-	assert(frame[0] == 10 * 7 / 2 && frame[1] == 10 * 9 / 2);
-	assert(frame[2] == 15 * 7 / 2 && frame[3] == 15 * 9 / 2);
+	CHECK(frame[0] == 10 * 7 / 2 && frame[1] == 10 * 9 / 2);
+	CHECK(frame[2] == 15 * 7 / 2 && frame[3] == 15 * 9 / 2);
 	xavix2_audio_command(&audio, 0x80, descriptors, 0, 0, 0);
-	assert(xavix2_audio_status(&audio, 0) == 0);
+	CHECK(xavix2_audio_status(&audio, 0) == 0);
 
 	rom[0x30] = 10;
 	rom[0x31] = 0x80;
@@ -87,14 +94,14 @@ int main(void)
 	xavix2_audio_command(&audio, 0x40, descriptors, 0, 0, 0);
 	xavix2_audio_render(&audio, 192000);
 	frame = xavix2_audio_frame(&audio);
-	assert(frame[0] == 10 * 255 / 2);
-	assert(frame[2] == 0);
-	assert(xavix2_audio_status(&audio, 0) == 0);
+	CHECK(frame[0] == 10 * 255 / 2);
+	CHECK(frame[2] == 0);
+	CHECK(xavix2_audio_status(&audio, 0) == 0);
 
 	store_address(voice0, 0x02, 0x06, sizeof(rom));
 	xavix2_audio_command(&audio, 0x40, descriptors, 0, 0, 0);
-	assert(xavix2_audio_status(&audio, 0) == 0);
-	assert(xavix2_audio_status(&audio, 8) == 0);
+	CHECK(xavix2_audio_status(&audio, 0) == 0);
+	CHECK(xavix2_audio_status(&audio, 8) == 0);
 
 	puts("xavix2 audio tests passed");
 	return 0;

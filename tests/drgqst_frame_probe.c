@@ -290,6 +290,11 @@ static int persistence_profile(enum drgqst_rom_kind rom_kind,
 		0x7f, 0x7b, 0x61, 0x3f, 0x0a, 0xb8, 0xf4, 0x3f, 0x5c, 0xad,
 		0x0d, 0x13, 0xde, 0x53, 0x89, 0x21, 0xe7, 0x7c, 0xae, 0x9c
 	};
+	static const uint8_t es2j_sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+	{
+		0xad, 0x52, 0x44, 0x9f, 0xfc, 0x13, 0xaf, 0x5f, 0x4c, 0x67,
+		0xb2, 0xc3, 0xcf, 0x43, 0x8e, 0x7e, 0xcd, 0x80, 0xb9, 0xfb
+	};
 	static const uint8_t hamd_sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
 	{
 		0xc6, 0x1d, 0x43, 0x6d, 0x6b, 0x80, 0x37, 0x17, 0xb8, 0xc8,
@@ -301,6 +306,7 @@ static int persistence_profile(enum drgqst_rom_kind rom_kind,
 		0x85, 0xff, 0x0b, 0xc9, 0x30, 0xcb, 0x5c, 0xa8, 0x83, 0x62
 	};
 
+	*eeprom_kind = DRGQST_PERSISTENCE_EEPROM;
 	*eeprom_size = DRGQST_PERSISTENCE_EEPROM_SIZE;
 
 	switch (rom_kind)
@@ -356,6 +362,11 @@ static int persistence_profile(enum drgqst_rom_kind rom_kind,
 		*eeprom_kind = DRGQST_PERSISTENCE_EPO_EBOX_NVRAM;
 		*state_kind = DRGQST_PERSISTENCE_EPO_EBOX_RUNTIME_STATE;
 		*eeprom_size = DRGQST_PERSISTENCE_PARALLEL_NVRAM_SIZE;
+		return 1;
+	case DRGQST_ROM_EPO_ES2J:
+		*sha1 = es2j_sha1;
+		*state_kind = DRGQST_PERSISTENCE_EPO_ES2J_RUNTIME_STATE;
+		*eeprom_size = 0;
 		return 1;
 	case DRGQST_ROM_EPO_HAMD:
 		*sha1 = hamd_sha1;
@@ -465,6 +476,8 @@ int main(int argc, char **argv)
 			DRGQST_CORE_XAVIX2000_PARALLEL_NVRAM_SDB :
 		image.kind == DRGQST_ROM_EPO_EBOX ?
 			DRGQST_CORE_XAVIX2000_PARALLEL_NVRAM :
+		image.kind == DRGQST_ROM_EPO_ES2J ?
+			DRGQST_CORE_XAVIX2000_PLAIN :
 		image.kind == DRGQST_ROM_EPO_HAMD ? DRGQST_CORE_XAVIX_BASE :
 		image.kind == DRGQST_ROM_TVPC_DOR ? DRGQST_CORE_XAVIX_I2C_24C16 :
 		DRGQST_CORE_DRAGON_QUEST))
@@ -473,7 +486,8 @@ int main(int argc, char **argv)
 		drgqst_rom_release(&image);
 		return 2;
 	}
-	eeprom_size = image.kind == DRGQST_ROM_EPO_HAMD ? 0 :
+	eeprom_size = (image.kind == DRGQST_ROM_EPO_HAMD ||
+		image.kind == DRGQST_ROM_EPO_ES2J) ? 0 :
 		uses_parallel_nvram(image.kind) ?
 		DRGQST_PERSISTENCE_PARALLEL_NVRAM_SIZE :
 		image.kind == DRGQST_ROM_TVPC_DOR ?
@@ -600,7 +614,8 @@ int main(int argc, char **argv)
 			initial_eeprom, eeprom_size);
 	for (frame = 1; frame <= frames && !core->cpu.stopped; ++frame)
 	{
-		if (!uses_glove_sensor(image.kind))
+		if (!uses_glove_sensor(image.kind) &&
+			image.kind != DRGQST_ROM_EPO_ES2J)
 			apply_calibration_sequence(core, frame - 1);
 		if (image.kind == DRGQST_ROM_TAK_CHQ)
 		{
@@ -973,7 +988,8 @@ int main(int argc, char **argv)
 		}
 		pixels = drgqst_core_run_frame(core);
 		if (image.kind == DRGQST_ROM_TAK_CHQ ||
-			image.kind == DRGQST_ROM_EPO_EBOX)
+			image.kind == DRGQST_ROM_EPO_EBOX ||
+			image.kind == DRGQST_ROM_EPO_ES2J)
 		{
 			const int16_t *audio = drgqst_core_frame_audio(core);
 			unsigned sample;
@@ -1086,7 +1102,8 @@ int main(int argc, char **argv)
 		(unsigned)core->machine.state.peripherals.eeprom.dirty,
 		(unsigned long)core->machine.state.peripherals.eeprom.write_generation);
 	if (image.kind == DRGQST_ROM_TAK_CHQ ||
-		image.kind == DRGQST_ROM_EPO_EBOX)
+		image.kind == DRGQST_ROM_EPO_EBOX ||
+		image.kind == DRGQST_ROM_EPO_ES2J)
 	{
 		printf("pcm-samples=%llu nonzero=%llu peak=%u\n",
 			(unsigned long long)pcm_samples,

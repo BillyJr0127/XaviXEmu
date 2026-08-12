@@ -18,6 +18,9 @@ semantic versioning while experimental releases carry a pre-release suffix.
 - Recognize the exact 4 MiB `epo_ebox` image with digital controls, isolated
   ANPORT/ADC inputs, independent 4 KiB parallel NVRAM/runtime-state files, and
   verified title, character, level-selection, and PCM milestones.
+- Recognize the exact 4 MiB `epo_es2j` image through a plain XaviX 2000
+  profile with isolated P1/ANPORT/ADC behavior, independent runtime states,
+  and verified title, game-select, attract-mode football, and PCM milestones.
 - Add ROM-independent tests for separate instruction fetching and interrupt
   acknowledgement/delivery.
 

@@ -3,8 +3,15 @@
 
 #include "win_audio.h"
 
-#include <assert.h>
 #include <stdio.h>
+
+#define CHECK(condition) \
+	do { \
+		if (!(condition)) { \
+			fprintf(stderr, "%s:%d: check failed: %s\n", __FILE__, __LINE__, #condition); \
+			return 1; \
+		} \
+	} while (0)
 
 static void fill_pcm(int16_t *pcm, size_t frames)
 {
@@ -28,19 +35,19 @@ int main(void)
 
 	win_audio_init(&audio);
 	fill_pcm(pcm, frames);
-	assert(!win_audio_is_active(&audio));
-	assert(win_audio_submit(&audio, pcm, 32) == 32);
+	CHECK(!win_audio_is_active(&audio));
+	CHECK(win_audio_submit(&audio, pcm, 32) == 32);
 	win_audio_get_stats(&audio, &stats);
-	assert(stats.received_frames == 32);
-	assert(stats.dropped_frames == 32);
+	CHECK(stats.received_frames == 32);
+	CHECK(stats.dropped_frames == 32);
 
 	opened = win_audio_open(&audio);
 	if (opened)
 	{
 		unsigned wait_count;
 
-		assert(win_audio_is_active(&audio));
-		assert(win_audio_submit(&audio, pcm, frames) == frames);
+		CHECK(win_audio_is_active(&audio));
+		CHECK(win_audio_submit(&audio, pcm, frames) == frames);
 		for (wait_count = 0; wait_count < 100U; ++wait_count)
 		{
 			win_audio_get_stats(&audio, &stats);
@@ -49,25 +56,25 @@ int main(void)
 			Sleep(1);
 		}
 		win_audio_get_stats(&audio, &stats);
-		assert(stats.received_frames == frames);
+		CHECK(stats.received_frames == frames);
 		/* submit is non-blocking and the software ring has finite capacity. */
-		assert(stats.dropped_frames >= 2048U);
-		assert(stats.started && !stats.failed);
+		CHECK(stats.dropped_frames >= 2048U);
+		CHECK(stats.started && !stats.failed);
 		puts("win_audio_test: waveOut opened");
 	}
 	else
 	{
-		assert(!win_audio_is_active(&audio));
-		assert(win_audio_submit(&audio, pcm, frames) == frames);
+		CHECK(!win_audio_is_active(&audio));
+		CHECK(win_audio_submit(&audio, pcm, frames) == frames);
 		win_audio_get_stats(&audio, &stats);
-		assert(stats.dropped_frames == frames);
+		CHECK(stats.dropped_frames == frames);
 		puts("win_audio_test: no waveOut device (graceful fallback passed)");
 	}
 
 	win_audio_shutdown(&audio);
 	win_audio_shutdown(&audio);
-	assert(!win_audio_is_active(&audio));
-	assert(win_audio_submit(&audio, pcm, 1) == 1);
+	CHECK(!win_audio_is_active(&audio));
+	CHECK(win_audio_submit(&audio, pcm, 1) == 1);
 	puts("win_audio_test: ok");
 	return 0;
 }

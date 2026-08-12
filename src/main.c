@@ -330,6 +330,11 @@ static const uint8_t EPO_EBOX_ROM_SHA1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
 	0x7f, 0x7b, 0x61, 0x3f, 0x0a, 0xb8, 0xf4, 0x3f, 0x5c, 0xad,
 	0x0d, 0x13, 0xde, 0x53, 0x89, 0x21, 0xe7, 0x7c, 0xae, 0x9c
 };
+static const uint8_t EPO_ES2J_ROM_SHA1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+{
+	0xad, 0x52, 0x44, 0x9f, 0xfc, 0x13, 0xaf, 0x5f, 0x4c, 0x67,
+	0xb2, 0xc3, 0xcf, 0x43, 0x8e, 0x7e, 0xcd, 0x80, 0xb9, 0xfb
+};
 static const uint8_t EPO_HAMD_ROM_SHA1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
 {
 	0xc6, 0x1d, 0x43, 0x6d, 0x6b, 0x80, 0x37, 0x17, 0xb8, 0xc8,
@@ -465,6 +470,8 @@ static enum drgqst_core_profile core_profile_for_rom(
 		return DRGQST_CORE_XAVIX2000_PARALLEL_NVRAM_SDB;
 	case DRGQST_ROM_EPO_EBOX:
 		return DRGQST_CORE_XAVIX2000_PARALLEL_NVRAM;
+	case DRGQST_ROM_EPO_ES2J:
+		return DRGQST_CORE_XAVIX2000_PLAIN;
 	case DRGQST_ROM_EPO_HAMD:
 		return DRGQST_CORE_XAVIX_BASE;
 	case DRGQST_ROM_TVPC_DOR:
@@ -502,6 +509,8 @@ static const uint8_t *rom_sha1_for_kind(enum drgqst_rom_kind kind)
 		return TAK_CHQ_ROM_SHA1;
 	case DRGQST_ROM_EPO_EBOX:
 		return EPO_EBOX_ROM_SHA1;
+	case DRGQST_ROM_EPO_ES2J:
+		return EPO_ES2J_ROM_SHA1;
 	case DRGQST_ROM_EPO_HAMD:
 		return EPO_HAMD_ROM_SHA1;
 	case DRGQST_ROM_TVPC_DOR:
@@ -554,6 +563,9 @@ static enum drgqst_persistence_kind persistence_kind_for_rom(
 		return kind == DRGQST_PERSISTENCE_RUNTIME_STATE ?
 			DRGQST_PERSISTENCE_EPO_EBOX_RUNTIME_STATE :
 			DRGQST_PERSISTENCE_EPO_EBOX_NVRAM;
+	case DRGQST_ROM_EPO_ES2J:
+		return kind == DRGQST_PERSISTENCE_RUNTIME_STATE ?
+			DRGQST_PERSISTENCE_EPO_ES2J_RUNTIME_STATE : kind;
 	case DRGQST_ROM_EPO_BOWL:
 		return kind == DRGQST_PERSISTENCE_EEPROM ?
 			DRGQST_PERSISTENCE_EPO_BOWL_EEPROM :
@@ -578,7 +590,8 @@ static enum drgqst_persistence_kind persistence_kind_for_rom(
 
 static size_t eeprom_size_for_rom(enum drgqst_rom_kind kind)
 {
-	if (kind == DRGQST_ROM_EPO_HAMD || rom_uses_parallel_nvram(kind) ||
+	if (kind == DRGQST_ROM_EPO_HAMD || kind == DRGQST_ROM_EPO_ES2J ||
+		rom_uses_parallel_nvram(kind) ||
 		kind == DRGQST_ROM_BAN_NARU)
 		return 0;
 	if (kind == DRGQST_ROM_TVPC_DOR)
@@ -947,6 +960,8 @@ static void update_core_mouse(void)
 		return;
 	}
 	if (rom_uses_digital_direction_input(g_rom.kind))
+		return;
+	if (g_rom.kind == DRGQST_ROM_EPO_ES2J)
 		return;
 	drgqst_core_set_mouse(g_core, g_mouse_x, g_mouse_y,
 		g_left_button || (g_rom.kind == DRGQST_ROM_BAN_OMT &&
@@ -1910,6 +1925,7 @@ static void draw_mouse_target(HDC device, const display_viewport *viewport)
 		g_rom.kind == DRGQST_ROM_EPO_HAMD ||
 		g_rom.kind == DRGQST_ROM_TVPC_DOR ||
 		g_rom.kind == DRGQST_ROM_TAK_CHQ ||
+		g_rom.kind == DRGQST_ROM_EPO_ES2J ||
 		rom_uses_digital_direction_input(g_rom.kind) ||
 		(!rom_uses_camera(g_rom.kind) &&
 		drgqst_core_feather_visible(g_core)))

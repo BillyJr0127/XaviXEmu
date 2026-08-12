@@ -363,6 +363,7 @@ static void configure_internal_cursor_watch(drgqst_core *core)
 	case DRGQST_CORE_XAVIX2000_PARALLEL_NVRAM_SDB:
 	case DRGQST_CORE_EPO_BOWL_SENSOR_24C04:
 	case DRGQST_CORE_XAVIX2000_PARALLEL_NVRAM:
+	case DRGQST_CORE_XAVIX2000_PLAIN:
 	default:
 		watch.enabled = 0;
 		break;
@@ -424,6 +425,16 @@ int drgqst_core_init_profile(drgqst_core *core, const uint8_t *rom,
 		 * internal RAM.  Its unconnected ANPORT callbacks read high, while its
 		 * unused ADC input ports read low.  Neither may inherit the synthetic
 		 * optical sensor installed by the Dragon Quest profile. */
+		hooks.read_io1 = xavix_base_io1_read;
+		hooks.write_io1 = xavix_base_io1_write;
+		hooks.read_anport = open_anport_read;
+		hooks.read_adc = unused_adc_read;
+	}
+	else if (profile == DRGQST_CORE_XAVIX2000_PLAIN)
+	{
+		/* Plain XaviX 2000 boards expose digital P0/P1 input with no serial
+		 * EEPROM or optical device.  Their unconnected ANPORT callbacks read
+		 * high, while the unused ADC channels read low. */
 		hooks.read_io1 = xavix_base_io1_read;
 		hooks.write_io1 = xavix_base_io1_write;
 		hooks.read_anport = open_anport_read;
@@ -728,7 +739,8 @@ void drgqst_core_set_mouse(drgqst_core *core, uint8_t x, uint8_t y,
 	enum xavix_sensor_mode mode = XAVIX_SENSOR_NARROW;
 	if (!core)
 		return;
-	if (core->game_profile == DRGQST_CORE_XAVIX2000_PARALLEL_NVRAM)
+	if (core->game_profile == DRGQST_CORE_XAVIX2000_PARALLEL_NVRAM ||
+		core->game_profile == DRGQST_CORE_XAVIX2000_PLAIN)
 		return;
 	if (core->game_profile == DRGQST_CORE_BAN_ONEP)
 	{

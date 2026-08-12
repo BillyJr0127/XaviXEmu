@@ -201,11 +201,17 @@ void xavix_machine_reset(xavix_machine *machine)
 	size_t rom_size = machine->rom_size;
 	xavix_machine_hooks hooks = machine->hooks;
 	xavix_eeprom24c08 eeprom = machine->state.peripherals.eeprom;
+	const uint8_t sensor_host_x = machine->state.peripherals.sensor.host_x;
+	const uint8_t sensor_host_y = machine->state.peripherals.sensor.host_y;
+	const uint8_t sensor_host_mode = machine->state.peripherals.sensor.host_mode;
 	memset(&machine->state, 0, sizeof(machine->state));
 	memset(machine->state.main_ram, 0xff, sizeof(machine->state.main_ram));
 	machine->state.adc_latch = 0xff;
 	machine->state.sound_regbase = 2;
 	machine->state.peripherals.eeprom = eeprom;
+	machine->state.peripherals.sensor.host_x = sensor_host_x;
+	machine->state.peripherals.sensor.host_y = sensor_host_y;
+	machine->state.peripherals.sensor.host_mode = sensor_host_mode;
 	machine->state.peripherals.timer.master_clock_hz = XAVIX_CLOCK_HZ;
 	xavix_peripherals_reset(&machine->state.peripherals);
 	machine->rom = rom;
