@@ -456,3 +456,97 @@ on the user's machine before any clock change is considered.
   the second sample is separated vertically by two sensor units. This offset
   is limited to `ban_bldj`; Naruto retains coincident samples for its documented
   joined-hands guard gesture, and DB2J/DBZ gesture meanings remain under study.
+
+## GPU0 perspective ground path (2026-08-12)
+
+- Observed symptom: Blue Dragon's battle characters appeared after fractional
+  sprite scaling was fixed, but the lower 99 screen rows remained black.
+- Submission evidence: firmware tests bits 8 and 9 of `$ffffe60a` separately.
+  Bit 8 submits `$e600/$e602` through the GPU0 trigger at `$e408`; bit 9 submits
+  the ordinary sprite list through GPU1 at `$e414`. The preliminary `$0240`
+  status advertised only GPU1, so the first channel was never submitted.
+- Record evidence: GPU0 uses 16-byte triangle records, not the GPU1 eight-byte
+  object format. Its 96-record Blue Dragon list contains the missing terrain
+  mesh and texture state. Treating it as 96 eight-byte objects stops exactly
+  before the first useful terrain record.
+- Projection evidence: command 2 at `$e858` consumes signed Q16.16
+  depth/vertical/horizontal triples and writes doubled projected Y/X values.
+  Blue Dragon uses focal length `$0080`; the firmware halves the results and
+  adds screen center. With this unit absent, 80 terrain triangles collapse to
+  `(1024,512)` before reaching GPU0.
+- Texture evidence: the record fields and addressing match SSD's polygon and
+  divided-texture layout in patent families CN101116112A and US20090278845.
+  The implementation uses the documented Bw/Cw perspective weights,
+  Tsegment table, descriptor geometry, 4x4 Map-1 blocks, and palette lookup.
+  This restores the perspective ground instead of stretching a sprite band or
+  inserting a title-specific background.
+- Validation: the same 11,000-frame battle replay now retains the existing
+  character/HUD layers and fills the formerly black lower half with the ROM's
+  green/stone terrain and projected shadow. ROM-independent tests cover the
+  channel-ready bits and a traced projector fixture. Texture filtering remains
+  nearest-neighbour; the observed ground requests filtering, so bilinear
+  sampling and the other polygon modes remain follow-up accuracy work.
+
+## Dragon Ball cursor and receiver path (2026-08-12)
+
+- DB2J and DBZ place their IRQ-10 producer packets at `$014d` and `$0149`
+  respectively. Each packet is two X/Y/reflector-area triples plus status;
+  the third byte is area, not depth.
+- Both titles exposed a CPU decode error in opcode `$06/$07`. The load-
+  immediate form has a signed 19-bit value: `$0647ee80` is `-$1180` and
+  `$0647f380` is `-$0c80`. Treating it as signed 22-bit pinned both optical
+  cursors outside their menu bounds even though packet delivery and gesture
+  classification were active.
+- With the corrected decode, DB2J's title PIO bits 16/19 select its red and
+  blue routes, and its later menus use live optical coordinates plus an
+  approximately 56-frame dwell. A horizontal pair at X `$23/$27`, Y `$18`
+  selects the central Dragon Mission option and reaches the Shenron story.
+  Story arrows require a genuine leave/re-enter collision edge rather than a
+  digital button. Repeating that edge advances through Kame House, then a dwell
+  on the mission screen's right-side `決定` reaches the first battle without a
+  PC or state bypass.
+- DBZ samples PIO bit 23 as a receiver-present input during boot; neighbouring
+  bits are firmware outputs, so the level is configured only for DBZ rather
+  than injected as a generic button. A stable pair `$20,$19,$28` and
+  `$24,$1d,$28` completes calibration, highlights `決定`, and reaches the real
+  battle state without a PC, RAM, or ROM bypass.
+- In that battle state, keeping the first reflector visible, hiding the second
+  for eight frames, then restoring it sets the firmware's `$155c` event and
+  reaches the attack/projectile-spawn consumer at `$400264bc/$400265ea`.
+  Hiding both reflectors reaches the two-hand consumer, while a four-frame
+  horizontal sweep reaches the deflect path. The GUI maps these independently
+  to left mouse, right mouse, and Space.
+- DBZ battle setup changes the visible origin from `$0360,$0188` to
+  `$0310,$0188`; the front end now follows the guest-programmed crop. The
+  observed battle list contains a first-person canyon mesh rather than a
+  player-character model, so the absent on-screen Goku body is not by itself
+  evidence of a missing layer. Enemy and later-effect states remain to be
+  exercised.
+
+## Dragon Ball geometry command chain (2026-08-12)
+
+- An exact frame-2351 battle trace establishes the full `$e858` chain as
+  repeated command `$10` matrix compositions followed by `$0c`, `$0f`, `$0b`,
+  `$0e`, and `$4d`. The first mesh uses `$9440->$a440` for `$0c`,
+  `$9440->$b540` for `$0f`, `$b540` plus polygon destination `$55f0` for `$0b`,
+  `$9664/$b540->$5df0` for `$0e`, and `$a440/$b540->$55f0` for `$4d`.
+- Command `$10` composes the traced mixed fixed-point 3x4 matrix state.
+  Command `$0c` expands packed signed XYZ10 vertices through the retained
+  32-bit coefficient registers and Q16.16 translations. These stages now
+  produce a non-empty projected list, but are not claimed cycle-exact.
+- Command `$4d` now projects conventional Q16.16 XYZ vertices, removes the
+  traced back-face winding, compacts the 16-byte records in place, and reports
+  the active count through `$e85c`. At the DBZ battle checkpoint this produces
+  non-empty GPU0 records; the DB2J first battle likewise submits a polygon
+  scene instead of a zero-count list. Material output is not yet correct.
+- The two GPU channels need a depth-aware merge rather than submission-order
+  overwrite. The observed DBZ scene divides GPU1 into depth-`$ff` sky, then
+  GPU0 terrain, then depth-`$00-$fe` HUD/foreground sprites. The compatibility
+  renderer follows that evidenced split while retaining sprite-only title
+  behavior; a complete scanline/depth merger remains future work.
+- Command `$0f` now expands the traced packed normal data. Commands `$0b` and
+  `$0e` remain unimplemented; firmware routes polygon lighting/material state
+  through them before `$4d`. Without a hardware output fixture, their exact
+  fixed-point normalization and light calculations are not guessed. Current
+  geometry is therefore a rendering milestone, not a claim of correct battle
+  terrain, model lighting, or complete later effects.

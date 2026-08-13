@@ -45,13 +45,13 @@ def disassemble(data: bytes, offset: int, base: int) -> tuple[int, str, str]:
     text = f"?{op:02x}"
 
     if op <= 0x01:
-        text = f"{r1} = {r2} + {signed(opcode & 0x3fffff, 22):x}"
+        text = f"{r1} = {r2} + {signed(opcode & 0x7ffff, 19):x}"
     elif op <= 0x03:
         text = f"{r1} = {(opcode << 10) & 0xffffffff:08x}"
     elif op <= 0x05:
-        text = f"{r1} = {r2} - {signed(opcode & 0x3fffff, 22):x}"
+        text = f"{r1} = {r2} - {signed(opcode & 0x7ffff, 19):x}"
     elif op <= 0x07:
-        text = f"{r1} = {signed(opcode & 0x3fffff, 22):x}"
+        text = f"{r1} = {signed(opcode & 0x7ffff, 19):x}"
     elif op == 0x08:
         text = f"jmp {base + (opcode & 0xffffff):08x}"
     elif op == 0x09:

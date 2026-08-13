@@ -340,6 +340,11 @@ static uint16_t motion_packet_address_for_rom(enum drgqst_rom_kind kind)
 	return XAVIX2_MOTION_PACKET_FIRST;
 }
 
+static uint32_t fixed_pio_input_for_rom(enum drgqst_rom_kind kind)
+{
+	return kind == DRGQST_ROM_BAN_DBZ ? UINT32_C(1) << 23 : 0;
+}
+
 static uint16_t get_le16(const uint8_t *source)
 {
 	return (uint16_t)(source[0] | ((uint16_t)source[1] << 8));
@@ -1376,6 +1381,8 @@ int main(int argc, char **argv)
 	}
 	xavix2_machine_set_motion_packet_address(machine,
 		motion_packet_address_for_rom(image.kind));
+	xavix2_machine_set_fixed_pio_input(machine,
+		fixed_pio_input_for_rom(image.kind));
 	{
 		const char *input = getenv("XAVIX2_INPUT");
 		const char *at = getenv("XAVIX2_INPUT_AT");

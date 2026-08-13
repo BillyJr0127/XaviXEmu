@@ -14,6 +14,18 @@ enum
 	IRQ_MOTION = 10,
 	IRQ_DMA = 12,
 	AUDIO_DESCRIPTOR_RAM_OFFSET = 0xf800,
+	GPU_STATUS_REGISTER = 0x60a,
+	GPU_STATUS_VIDEO_MODE = 0x0040,
+	GPU_STATUS_TRIANGLE_READY = 0x0100,
+	GPU_STATUS_SPRITE_READY = 0x0200,
+	PROJECTOR_COMMAND_REGISTER = 0x858,
+	PROJECTOR_FOCAL_REGISTER = 0x840,
+	PROJECTOR_NEAR_REGISTER = 0x846,
+	PROJECTOR_COUNT_REGISTER = 0x85a,
+	PROJECTOR_OUTPUT_COUNT_REGISTER = 0x85c,
+	PROJECTOR_SOURCE_REGISTER = 0x860,
+	PROJECTOR_DESTINATION_REGISTER = 0x862,
+	PROJECTOR_POLYGON_REGISTER = 0x864,
 	CONTROLLER_POWER_STATUS_REGISTER = 0xc48,
 	CONTROLLER_POWER_STATUS_COUNTER_MASK = 0x03,
 	CONTROLLER_POWER_STATUS_GOOD = 0x04
@@ -47,6 +59,337 @@ static void store32(uint8_t *data, uint32_t value)
 	data[1] = (uint8_t)(value >> 8);
 	data[2] = (uint8_t)(value >> 16);
 	data[3] = (uint8_t)(value >> 24);
+}
+
+static void store16(uint8_t *data, uint16_t value)
+{
+	data[0] = (uint8_t)value;
+	data[1] = (uint8_t)(value >> 8);
+}
+
+static int32_t geometry_matrix_product(int32_t left, int32_t right)
+{
+	return (int32_t)(((int64_t)left * right) >> 24);
+}
+
+static void geometry_matrix_multiply(xavix2_machine_t *machine,
+	uint16_t source, uint16_t destination)
+{
+	int32_t left[12];
+	int32_t right[12];
+	int32_t result[12];
+	unsigned row;
+	unsigned column;
+	unsigned inner;
+
+	if ((uint32_t)source + sizeof(right) > XAVIX2_LOW_RAM_SIZE ||
+		(uint32_t)destination + sizeof(result) > XAVIX2_LOW_RAM_SIZE)
+		return;
+	for (row = 0; row < 12; ++row)
+	{
+		left[row] = (int32_t)load32(machine->mmio + 0x800 + row * 4);
+		right[row] = (int32_t)load32(machine->low_ram + source + row * 4);
+	}
+	for (row = 0; row < 3; ++row)
+	{
+		for (column = 0; column < 4; ++column)
+		{
+			int64_t sum = column == 3 ? left[row * 4 + 3] : 0;
+			for (inner = 0; inner < 3; ++inner)
+				sum += geometry_matrix_product(left[row * 4 + inner],
+					right[inner * 4 + column]);
+			result[row * 4 + column] = (int32_t)sum;
+		}
+	}
+	for (row = 0; row < 12; ++row)
+		store32(machine->low_ram + destination + row * 4,
+			(uint32_t)result[row]);
+}
+
+static int32_t geometry_signed10(uint32_t value)
+{
+	return (int32_t)(value << 22) >> 22;
+}
+
+static void geometry_transform_normals(xavix2_machine_t *machine,
+	uint16_t source, uint16_t destination, uint32_t count)
+{
+	int32_t rotation[9];
+	uint32_t index;
+	unsigned row;
+	unsigned column;
+
+	if ((uint32_t)source + count * 4 > XAVIX2_LOW_RAM_SIZE ||
+		(uint32_t)destination + count * 12 > XAVIX2_LOW_RAM_SIZE)
+		return;
+	/* Command 0F transforms packed signed XYZ10 surface normals without the
+	 * affine translation used by command 0C.  Its firmware wrapper copies the
+	 * 3x3 rotation terms from a Q16.16 3x4 matrix, arithmetic-shifts every
+	 * coefficient right by eight, and writes the resulting signed Q8.8 matrix
+	 * contiguously at E800..E820.  The command expands each result to three
+	 * signed 32-bit components for the following 0B/0E lighting stages. */
+	for (row = 0; row < 3; ++row)
+		for (column = 0; column < 3; ++column)
+			rotation[row * 3 + column] = (int32_t)load32(
+				machine->mmio + 0x800 + (row * 3 + column) * 4);
+	for (index = 0; index < count; ++index)
+	{
+		uint32_t packed = load32(machine->low_ram + source + index * 4);
+		int32_t coordinate[3];
+		coordinate[0] = geometry_signed10(packed);
+		coordinate[1] = geometry_signed10(packed >> 10);
+		coordinate[2] = geometry_signed10(packed >> 20);
+		for (row = 0; row < 3; ++row)
+		{
+			int64_t result = 0;
+			for (column = 0; column < 3; ++column)
+				result += (int64_t)rotation[row * 3 + column] *
+					coordinate[column];
+			store32(machine->low_ram + destination + index * 12 + row * 4,
+				(uint32_t)(int32_t)(result >> 8));
+		}
+	}
+}
+
+static void geometry_transform_vertices(xavix2_machine_t *machine,
+	uint16_t source, uint16_t destination, uint32_t count)
+{
+	int32_t rotation[9];
+	int32_t translation[3];
+	uint32_t index;
+	unsigned row;
+	unsigned column;
+
+	if ((uint32_t)source + count * 4 > XAVIX2_LOW_RAM_SIZE ||
+		(uint32_t)destination + count * 12 > XAVIX2_LOW_RAM_SIZE)
+		return;
+	/* Command 0C consumes nine signed 32-bit coefficient registers at E800,
+	 * E804, E808, ... and translations at E80C/E81C/E82C.  Its wrapper updates
+	 * only each coefficient's low word after command 10 has populated the full
+	 * register, intentionally preserving the sign/upper half. */
+	for (row = 0; row < 3; ++row)
+	{
+		for (column = 0; column < 3; ++column)
+			rotation[row * 3 + column] = (int32_t)load32(
+				machine->mmio + 0x800 + row * 0x10 + column * 4);
+		translation[row] = (int32_t)load32(
+			machine->mmio + 0x80c + row * 0x10);
+	}
+	for (index = 0; index < count; ++index)
+	{
+		uint32_t packed = load32(machine->low_ram + source + index * 4);
+		int32_t coordinate[3];
+		coordinate[0] = geometry_signed10(packed);
+		coordinate[1] = geometry_signed10(packed >> 10);
+		coordinate[2] = geometry_signed10(packed >> 20);
+		for (row = 0; row < 3; ++row)
+		{
+			int64_t result = translation[row];
+			for (column = 0; column < 3; ++column)
+				result += (int64_t)rotation[row * 3 + column] *
+					coordinate[column];
+			store32(machine->low_ram + destination + index * 12 + row * 4,
+				(uint32_t)result);
+		}
+	}
+}
+
+static void geometry_project_triangles(xavix2_machine_t *machine,
+	uint16_t source, uint16_t polygon_address, uint32_t count)
+{
+	int32_t focal = (int16_t)load16(machine->mmio + PROJECTOR_FOCAL_REGISTER);
+	int32_t near_depth = (int32_t)(int16_t)load16(machine->mmio +
+		PROJECTOR_NEAR_REGISTER) * INT32_C(65536);
+	int32_t center_x = (int32_t)load16(machine->mmio + 0x848) / 2;
+	int32_t center_y = (int32_t)load16(machine->mmio + 0x84a) / 2;
+	uint32_t input_index;
+	uint32_t output_count = 0;
+
+	store16(machine->mmio + PROJECTOR_OUTPUT_COUNT_REGISTER, 0);
+	if ((uint32_t)polygon_address + count * 16 > XAVIX2_LOW_RAM_SIZE)
+		return;
+	for (input_index = 0; input_index < count; ++input_index)
+	{
+		uint8_t *input = machine->low_ram + polygon_address + input_index * 16;
+		uint32_t d0 = load32(input);
+		uint32_t d1 = load32(input + 4);
+		uint32_t d2 = load32(input + 8);
+		uint32_t d3 = load32(input + 12);
+		uint32_t vertex_index[3] = {
+			d0 >> 16,
+			d1 & 0xffff,
+			d1 >> 16
+		};
+		int32_t projected_x[3];
+		int32_t projected_y[3];
+		unsigned vertex;
+		int valid = 1;
+		int64_t area;
+
+		for (vertex = 0; vertex < 3; ++vertex)
+		{
+			uint32_t vertex_address = (uint32_t)source + vertex_index[vertex] * 12;
+			int32_t x;
+			int32_t y;
+			int32_t z;
+			int64_t screen_x;
+			int64_t screen_y;
+			if (vertex_address + 12 > XAVIX2_LOW_RAM_SIZE)
+			{
+				valid = 0;
+				break;
+			}
+			x = (int32_t)load32(machine->low_ram + vertex_address);
+			y = (int32_t)load32(machine->low_ram + vertex_address + 4);
+			z = (int32_t)load32(machine->low_ram + vertex_address + 8);
+			/* E846 is the guest-selected near plane in integer world units.
+			 * DB2J/DBZ feed command 4D Q16.16 vertices; accepting a triangle
+			 * which crosses this plane turns it into a screen-sized slab.  Cull
+			 * that primitive until the hardware's exact clipped-edge output is
+			 * characterized. */
+			if (z <= 0 || z < near_depth)
+			{
+				valid = 0;
+				break;
+			}
+			screen_x = center_x + (int64_t)x * focal / z;
+			screen_y = center_y + (int64_t)y * focal / z;
+			/* Values this far outside the 11x10-bit render target cannot cross
+			 * its viewport and would make a host-side area product needlessly
+			 * large.  Normal guest geometry is well inside this guard. */
+			if (screen_x < -65536 || screen_x > 65535 ||
+				screen_y < -65536 || screen_y > 65535)
+			{
+				valid = 0;
+				break;
+			}
+			projected_x[vertex] = (int32_t)screen_x;
+			projected_y[vertex] = (int32_t)screen_y;
+		}
+		if (!valid)
+			continue;
+		area = (int64_t)(projected_x[1] - projected_x[0]) *
+			(projected_y[2] - projected_y[0]) -
+			(int64_t)(projected_y[1] - projected_y[0]) *
+			(projected_x[2] - projected_x[0]);
+		/* Screen Y grows downward, so positive screen-space winding is the
+		 * mathematical front face used by the firmware's indexed records. */
+		if (area <= 0)
+			continue;
+		{
+			int32_t packed_x[3] = {
+				projected_x[0] & 0x7ff,
+				projected_x[1] & 0x7ff,
+				projected_x[2] & 0x7ff
+			};
+			int32_t packed_y[3] = {
+				projected_y[0] & 0x3ff,
+				projected_y[1] & 0x3ff,
+				projected_y[2] & 0x3ff
+			};
+			int64_t packed_area =
+				(int64_t)(packed_x[1] - packed_x[0]) *
+					(packed_y[2] - packed_y[0]) -
+				(int64_t)(packed_y[1] - packed_y[0]) *
+					(packed_x[2] - packed_x[0]);
+			uint8_t *output = machine->low_ram + polygon_address + output_count * 16;
+
+			/* Full hardware clips the primitive to its selected viewport before
+			 * packing 11x10-bit screen coordinates.  Until that edge generator is
+			 * modeled, reject a triangle whose wrapped coordinates reverse its
+			 * front-face winding.  Keeping it produces a screen-sized polygon (the
+			 * DBZ battle's black slab) rather than a clipped edge. */
+			if (packed_area <= 0)
+				continue;
+			uint32_t packed0 = (d0 & 1) |
+				((uint32_t)packed_y[0] << 1) |
+				((uint32_t)packed_x[0] << 11) |
+				((uint32_t)packed_y[1] << 22);
+			uint32_t packed1 = (uint32_t)packed_x[1] |
+				((uint32_t)packed_y[2] << 11) |
+				((uint32_t)packed_x[2] << 21);
+			store32(output, packed0);
+			store32(output + 4, packed1);
+			store32(output + 8, d2);
+			store32(output + 12, d3);
+			output_count++;
+		}
+	}
+	store16(machine->mmio + PROJECTOR_OUTPUT_COUNT_REGISTER,
+		(uint16_t)output_count);
+}
+
+static void projector_start(xavix2_machine_t *machine, uint8_t command)
+{
+	uint32_t source;
+	uint32_t destination;
+	uint32_t count;
+	int32_t focal;
+	uint32_t index;
+
+	/* Command 2 projects signed Q16.16 depth/vertical/horizontal triples.
+	 * Firmware applies the final /2 and screen-center translation itself.
+	 * The unit is synchronous from the CPU's point of view, so E859's busy
+	 * bit can remain clear after this routine returns. */
+	if (command == 0x10)
+	{
+		geometry_matrix_multiply(machine,
+			load16(machine->mmio + PROJECTOR_SOURCE_REGISTER),
+			load16(machine->mmio + PROJECTOR_DESTINATION_REGISTER));
+		return;
+	}
+	if (command == 0x0c)
+	{
+		geometry_transform_vertices(machine,
+			load16(machine->mmio + PROJECTOR_SOURCE_REGISTER),
+			load16(machine->mmio + PROJECTOR_DESTINATION_REGISTER),
+			(uint32_t)load16(machine->mmio + PROJECTOR_COUNT_REGISTER) + 1);
+		return;
+	}
+	if (command == 0x0f)
+	{
+		geometry_transform_normals(machine,
+			load16(machine->mmio + PROJECTOR_SOURCE_REGISTER),
+			load16(machine->mmio + PROJECTOR_DESTINATION_REGISTER),
+			(uint32_t)load16(machine->mmio + PROJECTOR_COUNT_REGISTER) + 1);
+		return;
+	}
+	if (command == 0x4d)
+	{
+		geometry_project_triangles(machine,
+			load16(machine->mmio + PROJECTOR_SOURCE_REGISTER),
+			load16(machine->mmio + PROJECTOR_POLYGON_REGISTER),
+			(uint32_t)load16(machine->mmio + PROJECTOR_COUNT_REGISTER) + 1);
+		return;
+	}
+	if (command != 2)
+		return;
+	source = load16(machine->mmio + PROJECTOR_SOURCE_REGISTER);
+	destination = load16(machine->mmio + PROJECTOR_DESTINATION_REGISTER);
+	count = (uint32_t)load16(machine->mmio + PROJECTOR_COUNT_REGISTER) + 1;
+	focal = (int16_t)load16(machine->mmio + PROJECTOR_FOCAL_REGISTER);
+	if (source + count * 12 > XAVIX2_LOW_RAM_SIZE ||
+		destination + count * 8 > XAVIX2_LOW_RAM_SIZE)
+		return;
+
+	for (index = 0; index < count; ++index)
+	{
+		const uint8_t *input = machine->low_ram + source + index * 12;
+		uint8_t *output = machine->low_ram + destination + index * 8;
+		int32_t depth = (int32_t)load32(input);
+		int32_t vertical = (int32_t)load32(input + 4);
+		int32_t horizontal = (int32_t)load32(input + 8);
+		int64_t projected_vertical = 0;
+		int64_t projected_horizontal = 0;
+
+		if (depth > 0)
+		{
+			projected_vertical = ((int64_t)vertical * focal * 2) / depth;
+			projected_horizontal = ((int64_t)horizontal * focal * 2) / depth;
+		}
+		store16(output + 4, (uint16_t)projected_vertical);
+		store16(output + 6, (uint16_t)projected_horizontal);
+	}
 }
 
 static int sample_experimental_pio(xavix2_machine_t *machine)
@@ -502,8 +845,15 @@ static uint8_t machine_read8(void *opaque, uint32_t address)
 				return 0;
 			if (offset == 0x239)
 				return 2;
-			if (offset == 0x60a) return 0x40;
-			if (offset == 0x60b) return 0x02;
+			if (offset == GPU_STATUS_REGISTER ||
+				offset == GPU_STATUS_REGISTER + 1)
+			{
+				uint16_t status = GPU_STATUS_VIDEO_MODE |
+					GPU_STATUS_TRIANGLE_READY |
+					GPU_STATUS_SPRITE_READY;
+				return (uint8_t)(status >>
+					((offset - GPU_STATUS_REGISTER) * 8));
+			}
 			if (offset == 0x630 || offset == 0x632) return 0x10;
 			if (offset == 0x631 || offset == 0x633) return 0x02;
 			/*
@@ -594,12 +944,268 @@ static int compare_gpu_order(const void *left, const void *right)
 		(a & UINT32_C(0xffff)) > (b & UINT32_C(0xffff)) ? 1 : 0;
 }
 
-static void render_gpu(xavix2_machine_t *machine, uint16_t count, uint16_t address)
+static int64_t triangle_edge(int32_t ax, int32_t ay, int32_t bx, int32_t by,
+	int32_t px, int32_t py)
+{
+	return (int64_t)(px - ax) * (by - ay) -
+		(int64_t)(py - ay) * (bx - ax);
+}
+
+static int triangle_texture_color(xavix2_machine_t *machine,
+	uint16_t segment_table, uint32_t descriptor, uint32_t d2,
+	uint32_t d3, uint32_t u, uint32_t v, uint32_t *color)
+{
+	static const uint8_t block_width[8] = { 8, 8, 7, 4, 4, 5, 3, 4 };
+	static const uint8_t block_height[8] = { 8, 4, 3, 4, 3, 2, 3, 2 };
+	uint16_t texture_segment = (uint16_t)(d2 >> 16);
+	uint32_t segment_index = texture_segment >> 10;
+	uint32_t segment_offset = (texture_segment & 0x3ff) << 5;
+	uint32_t segment_address = (uint32_t)segment_table + segment_index * 2;
+	uint16_t segment;
+	uint32_t source;
+	uint32_t width = descriptor & 0xff;
+	uint32_t height = (descriptor >> 8) & 0xff;
+	uint32_t bit_code = (descriptor >> 24) & 7;
+	uint32_t bpp = bit_code + 1;
+	uint32_t s = u;
+	uint32_t t = v;
+	uint32_t bit_address;
+	uint64_t packed;
+	uint32_t palette_index;
+	uint16_t raw_color;
+	uint32_t mask_u_bits = (descriptor >> 16) & 0x0f;
+	uint32_t mask_v_bits = (descriptor >> 20) & 0x0f;
+	uint32_t map = (d3 >> 6) & 1;
+
+	if (!color || segment_address + 2 > XAVIX2_LOW_RAM_SIZE)
+		return 0;
+	segment = load16(machine->low_ram + segment_address);
+	source = ((uint32_t)segment << 14) + segment_offset;
+
+	/* SSD's block-address equations (US20090278845) apply to both map
+	 * layouts.  Divided storage is selected only for an unmasked texture
+	 * taller than one hardware block; Map 0 and Map 1 fold the lower half
+	 * differently.  BAD deliberately keeps the original V row.  The observed
+	 * ground requests filtering; nearest-neighbour is the current baseline. */
+	{
+		uint32_t bw = block_width[bit_code];
+		uint32_t bh = block_height[bit_code];
+		uint32_t blocks_per_row = width / bw + 1;
+		uint32_t word_address;
+		if (!mask_u_bits && !mask_v_bits && height > bh &&
+			v / bh > height / (2 * bh))
+		{
+			s = blocks_per_row * bw - u - 1;
+			t = map ? (height / bh + 1) * bh - v - 1 : height - v;
+		}
+		word_address = blocks_per_row * (t / bh) + s / bw;
+		bit_address = ((v % bh) * bw + s % bw) * bpp;
+		packed = machine_read64(machine, source + word_address * 8);
+	}
+	palette_index = (((descriptor >> 27) & 0x1f) << bpp) |
+		((uint32_t)(packed >> bit_address) &
+		((UINT32_C(1) << bpp) - 1));
+	raw_color = palette_index < 0x200 ?
+		load16(machine->palette_ram + palette_index * 4) : UINT16_C(0x8000);
+	if (raw_color & 0x8000)
+		return 0;
+	*color = rgb555(raw_color);
+	return 1;
+}
+
+static uint32_t blend_triangle_gouraud(uint32_t d2, uint32_t d3,
+	int64_t w0, int64_t w1, int64_t w2, int64_t area,
+	uint32_t destination)
+{
+	uint16_t vertex[3] = {
+		(uint16_t)(d2 & 0x7fff),
+		(uint16_t)((d2 >> 16) & 0x7fff),
+		(uint16_t)(d3 & 0x7fff)
+	};
+	uint32_t source_component[3];
+	uint32_t destination_component[3];
+	uint32_t output_component[3];
+	uint32_t inverse_alpha = (d3 >> 29) & 7;
+	unsigned component;
+
+	for (component = 0; component < 3; ++component)
+	{
+		unsigned shift = component * 5;
+		int64_t interpolated = w0 * ((vertex[0] >> shift) & 31) +
+			w1 * ((vertex[1] >> shift) & 31) +
+			w2 * ((vertex[2] >> shift) & 31);
+		int32_t five_bit = (int32_t)(interpolated / area);
+		if (five_bit < 0) five_bit = 0;
+		if (five_bit > 31) five_bit = 31;
+		source_component[component] =
+			((uint32_t)five_bit << 3) | ((uint32_t)five_bit >> 2);
+	}
+	destination_component[0] = (destination >> 16) & 0xff;
+	destination_component[1] = (destination >> 8) & 0xff;
+	destination_component[2] = destination & 0xff;
+	/* Nalpha stores 1-alpha: zero is opaque and seven retains 7/8 of the
+	 * destination.  Components above are ordered R,G,B in RGB555. */
+	for (component = 0; component < 3; ++component)
+		output_component[component] =
+			(source_component[component] * (8 - inverse_alpha) +
+			destination_component[component] * inverse_alpha) >> 3;
+	return UINT32_C(0xff000000) | (output_component[0] << 16) |
+		(output_component[1] << 8) | output_component[2];
+}
+
+static void render_triangle_gpu(xavix2_machine_t *machine, uint16_t count,
+	uint16_t address)
+{
+	uint16_t descsize_address = load16(machine->mmio + 0x608);
+	uint16_t descdata_address = load16(machine->mmio + 0x622);
+	uint32_t record_index;
+
+	for (record_index = 0; record_index < count; ++record_index)
+	{
+		uint32_t record = (uint32_t)address + record_index * 16;
+		uint32_t d0;
+		uint32_t d1;
+		uint32_t d2;
+		uint32_t d3;
+		uint32_t descriptor_index;
+		uint32_t descsize;
+		uint32_t width;
+		uint32_t height;
+		uint32_t weight_b;
+		uint32_t weight_c;
+		int32_t x[3];
+		int32_t y[3];
+		int32_t min_x;
+		int32_t max_x;
+		int32_t min_y;
+		int32_t max_y;
+		int64_t area;
+		int32_t py;
+
+		if (record + 16 > XAVIX2_LOW_RAM_SIZE)
+			break;
+		d0 = load32(machine->low_ram + record);
+		d1 = load32(machine->low_ram + record + 4);
+		d2 = load32(machine->low_ram + record + 8);
+		d3 = load32(machine->low_ram + record + 12);
+		x[0] = (int32_t)((d0 >> 11) & 0x7ff);
+		y[0] = (int32_t)((d0 >> 1) & 0x3ff);
+		x[1] = (int32_t)(d1 & 0x7ff);
+		y[1] = (int32_t)((d0 >> 22) & 0x3ff);
+		x[2] = (int32_t)((d1 >> 21) & 0x7ff);
+		y[2] = (int32_t)((d1 >> 11) & 0x3ff);
+		/* triangle_edge receives doubled pixel centers below; double the
+		 * vertices here as well so its arithmetic stays integral. */
+		area = triangle_edge(x[0] * 2, y[0] * 2, x[1] * 2, y[1] * 2,
+			x[2] * 2, y[2] * 2);
+		if (!area)
+			continue;
+
+		if (!(d0 & 1))
+		{
+			descriptor_index = d3 & 0x3f;
+			if ((uint32_t)descsize_address + descriptor_index * 4 + 4 >
+				XAVIX2_LOW_RAM_SIZE)
+				continue;
+			descsize = load32(machine->low_ram + descsize_address +
+				descriptor_index * 4);
+			width = descsize & 0xff;
+			height = (descsize >> 8) & 0xff;
+			/* Polygon record layout and perspective weights match
+			 * CN101116112A, Fig. 13: A=(0,0,64), B=(W,0,Bw),
+			 * C=(0,H,Cw). */
+			weight_b = d2 & 0xff;
+			weight_c = (d3 >> 7) & 0xff;
+		}
+		else
+		{
+			descsize = width = height = 0;
+			weight_b = weight_c = 0;
+		}
+
+		min_x = x[0] < x[1] ? x[0] : x[1];
+		if (x[2] < min_x) min_x = x[2];
+		max_x = x[0] > x[1] ? x[0] : x[1];
+		if (x[2] > max_x) max_x = x[2];
+		min_y = y[0] < y[1] ? y[0] : y[1];
+		if (y[2] < min_y) min_y = y[2];
+		max_y = y[0] > y[1] ? y[0] : y[1];
+		if (y[2] > max_y) max_y = y[2];
+		if (min_x < 0) min_x = 0;
+		if (min_y < 0) min_y = 0;
+		if (max_x >= 0x800) max_x = 0x7ff;
+		if (max_y >= 0x400) max_y = 0x3ff;
+
+		for (py = min_y; py <= max_y; ++py)
+		{
+			int32_t px;
+			for (px = min_x; px <= max_x; ++px)
+			{
+				int32_t sample_x = px * 2 + 1;
+				int32_t sample_y = py * 2 + 1;
+				int64_t w0 = triangle_edge(x[1] * 2, y[1] * 2,
+					x[2] * 2, y[2] * 2, sample_x, sample_y);
+				int64_t w1 = triangle_edge(x[2] * 2, y[2] * 2,
+					x[0] * 2, y[0] * 2, sample_x, sample_y);
+				int64_t w2 = triangle_edge(x[0] * 2, y[0] * 2,
+					x[1] * 2, y[1] * 2, sample_x, sample_y);
+				uint32_t u = 0;
+				uint32_t v = 0;
+				uint32_t color;
+				int64_t denominator;
+				int64_t numerator_u;
+				int64_t numerator_v;
+				if ((area > 0 && (w0 < 0 || w1 < 0 || w2 < 0)) ||
+					(area < 0 && (w0 > 0 || w1 > 0 || w2 > 0)))
+					continue;
+				if (d0 & 1)
+				{
+					color = blend_triangle_gouraud(d2, d3, w0, w1, w2,
+						area, machine->screen_data[py * 0x800 + px]);
+					machine->screen_data[py * 0x800 + px] = color;
+					machine->gpu_pixel_write_count++;
+					continue;
+				}
+				denominator = w0 * 64 + w1 * weight_b + w2 * weight_c;
+				if (!denominator)
+					continue;
+				numerator_u = w1 * (int64_t)width * weight_b;
+				numerator_v = w2 * (int64_t)height * weight_c;
+				u = (uint32_t)(numerator_u / denominator);
+				v = (uint32_t)(numerator_v / denominator);
+				{
+					uint32_t mask_u_bits = (descsize >> 16) & 0x0f;
+					uint32_t mask_v_bits = (descsize >> 20) & 0x0f;
+					if (mask_u_bits >= 8)
+						u = 0;
+					else if (mask_u_bits)
+						u &= (UINT32_C(1) << (8 - mask_u_bits)) - 1;
+					if (mask_v_bits >= 8)
+						v = 0;
+					else if (mask_v_bits)
+						v &= (UINT32_C(1) << (8 - mask_v_bits)) - 1;
+				}
+				if (u > width) u = width;
+				if (v > height) v = height;
+				if (triangle_texture_color(machine, descdata_address,
+					descsize, d2, d3, u, v, &color))
+				{
+					machine->screen_data[py * 0x800 + px] = color;
+					machine->gpu_pixel_write_count++;
+				}
+			}
+		}
+	}
+}
+
+static void render_gpu_depth_range(xavix2_machine_t *machine, uint16_t count,
+	uint16_t address, uint8_t minimum_depth, uint8_t maximum_depth)
 {
 	uint32_t *order;
 	uint16_t descsize_address = load16(machine->mmio + 0x608);
 	uint16_t descdata_address = load16(machine->mmio + 0x622);
 	uint32_t list_index;
+	uint32_t selected_count = 0;
 
 	if (!count)
 		return;
@@ -609,14 +1215,21 @@ static void render_gpu(xavix2_machine_t *machine, uint16_t count, uint16_t addre
 	for (list_index = 0; list_index < count; ++list_index)
 	{
 		uint64_t command = machine_read64(machine, (uint32_t)address + 8 * list_index);
-		order[list_index] = (uint32_t)(command & UINT64_C(0x1fe00000)) | list_index;
+		uint32_t depth = (uint32_t)((command >> 21) & 0xff);
+		if (depth < minimum_depth || depth > maximum_depth)
+			continue;
+		order[selected_count++] =
+			(uint32_t)(command & UINT64_C(0x1fe00000)) | list_index;
 	}
-	qsort(order, count, sizeof(*order), compare_gpu_order);
+	qsort(order, selected_count, sizeof(*order), compare_gpu_order);
 
-	for (list_index = 0; list_index < count; ++list_index)
+	for (list_index = 0; list_index < selected_count; ++list_index)
 	{
 		uint32_t command_index = order[list_index] & UINT32_C(0xffff);
 		uint64_t command = machine_read64(machine, (uint32_t)address + 8 * command_index);
+		uint32_t depth = (uint32_t)((command >> 21) & 0xff);
+		if (depth < minimum_depth || depth > maximum_depth)
+			continue;
 		uint32_t descriptor_index = (uint32_t)((command >> 30) & 0x3f);
 		uint32_t data_index = (uint32_t)((command >> 58) & 0x3f);
 		uint32_t descsize = (uint32_t)machine_read8(machine, descsize_address + 4 * descriptor_index) |
@@ -666,8 +1279,8 @@ static void render_gpu(xavix2_machine_t *machine, uint16_t count, uint16_t addre
 				palette_index = palette_base | ((uint32_t)packed & mask);
 				raw_color = palette_index < 0x200 ?
 					load16(machine->palette_ram + palette_index * 4) : UINT16_C(0x8000);
-				color = raw_color & 0x8000 ? 0 : rgb555(raw_color);
-				if (color)
+				color = rgb555(raw_color);
+				if (!(raw_color & 0x8000))
 				{
 					uint32_t draw_x_first = x +
 						(uint32_t)(((uint64_t)xx * scale_x) >> 4);
@@ -714,7 +1327,31 @@ static void gpu_trigger(xavix2_machine_t *machine, uint32_t offset)
 	machine->last_gpu_count = count;
 	if (count > machine->maximum_gpu_count)
 		machine->maximum_gpu_count = count;
-	render_gpu(machine, count, address);
+	if (offset == 0x408)
+	{
+		uint16_t sprite_address = load16(machine->mmio + 0x40c);
+		uint16_t sprite_count = load16(machine->mmio + 0x410);
+		/* RPU's merger sorter combines polygon and sprite streams by depth.
+		 * The Dragon Ball battle fixtures use depth FF for the distant sky,
+		 * polygon depth zero, and depths 00..0A for their foreground/HUD.
+		 * Reproduce that observed split while the general per-scanline merger
+		 * remains future work.  The later E414 trigger draws the foreground. */
+		if (!machine->gpu_sprite_background_prepared)
+			render_gpu_depth_range(machine, sprite_count, sprite_address,
+				0xff, 0xff);
+		machine->gpu_sprite_background_prepared = 1;
+		render_triangle_gpu(machine, count, address);
+	}
+	else
+	{
+		/* Some frames submit only the sprite stream.  Do not discard their
+		 * depth-FF objects merely because GPU0 did not provide a point at which
+		 * to prepaint the distant band. */
+		if (!machine->gpu_sprite_background_prepared)
+			render_gpu_depth_range(machine, count, address, 0xff, 0xff);
+		render_gpu_depth_range(machine, count, address, 0, 0xfe);
+		machine->gpu_sprite_background_prepared = 1;
+	}
 }
 
 static void machine_write8(void *opaque, uint32_t address, uint8_t data)
@@ -775,6 +1412,8 @@ static void machine_write8(void *opaque, uint32_t address, uint8_t data)
 					machine->video_ram + AUDIO_DESCRIPTOR_RAM_OFFSET,
 					load16(machine->mmio + 0xa18), machine->mmio[0xa1c],
 					machine->mmio[0xa1d]);
+			if (offset == PROJECTOR_COMMAND_REGISTER)
+				projector_start(machine, data);
 			if (offset >= XAVIX2_CAPTURE_REGISTER_FIRST &&
 				offset < XAVIX2_CAPTURE_REGISTER_FIRST + XAVIX2_CAPTURE_REGISTER_COUNT)
 				note_capture_access(machine, offset, data, 1);
@@ -852,20 +1491,33 @@ void xavix2_machine_set_motion_packet_address(xavix2_machine_t *machine,
 	machine->motion_packet_address = address;
 }
 
+void xavix2_machine_set_fixed_pio_input(xavix2_machine_t *machine,
+	uint32_t input)
+{
+	if (!machine)
+		return;
+	machine->pio_input = (machine->pio_input & ~machine->pio_fixed_input) |
+		input;
+	machine->pio_fixed_input = input;
+}
+
 void xavix2_machine_reset(xavix2_machine_t *machine)
 {
 	const uint8_t *rom;
 	size_t rom_size;
 	uint16_t motion_packet_address;
+	uint32_t pio_fixed_input;
 	uint8_t eeprom[XAVIX_EEPROM24C08_SIZE];
 	if (!machine)
 		return;
 	rom = machine->rom;
 	rom_size = machine->rom_size;
 	motion_packet_address = machine->motion_packet_address;
+	pio_fixed_input = machine->pio_fixed_input;
 	memcpy(eeprom, machine->eeprom.data, sizeof(eeprom));
 	(void)xavix2_machine_init(machine, rom, rom_size);
 	xavix2_machine_set_motion_packet_address(machine, motion_packet_address);
+	xavix2_machine_set_fixed_pio_input(machine, pio_fixed_input);
 	(void)xavix_eeprom24c08_load_image(&machine->eeprom, eeprom, sizeof(eeprom));
 }
 
@@ -886,6 +1538,7 @@ static void process_events(xavix2_machine_t *machine)
 		uint32_t pixel;
 		for (pixel = 0; pixel < 0x400 * 0x800; ++pixel)
 			machine->screen_data[pixel] = color;
+		machine->gpu_sprite_background_prepared = 0;
 		machine->frame_count++;
 		if (machine->experimental_direct_pio_sample)
 		{
@@ -973,7 +1626,7 @@ uint64_t xavix2_machine_run_video_frame(xavix2_machine_t *machine,
 	if (motion_packet)
 		memcpy(machine->low_ram + machine->motion_packet_address,
 			motion_packet, XAVIX2_MOTION_PACKET_SIZE);
-	machine->pio_input = pio_input;
+	machine->pio_input = machine->pio_fixed_input | pio_input;
 	machine->experimental_direct_pio_sample = 1;
 
 	/* The two wrist reflectors are latched by the level-10 handler.  Pulse the
@@ -1016,12 +1669,27 @@ uint64_t xavix2_machine_run_video_frame(xavix2_machine_t *machine,
 const uint32_t *xavix2_machine_visible_frame(const xavix2_machine_t *machine,
 	unsigned *width, unsigned *height, unsigned *stride)
 {
+	uint32_t origin_x;
+	uint32_t origin_y;
+
 	if (!machine)
 		return NULL;
 	if (width) *width = 320;
 	if (height) *height = 240;
 	if (stride) *stride = 0x800;
-	return machine->screen_data + (0x200 - 120) * 0x800 + (0x400 - 160);
+	/* E656/E658 are the guest-selected visible origin.  Title firmware uses
+	 * 0x360/0x188, while the Dragon Ball gameplay setup deliberately shifts
+	 * X left to 0x310.  Retain the observed title origin until the guest has
+	 * programmed a complete, in-range pair. */
+	origin_x = load16(machine->mmio + 0x656);
+	origin_y = load16(machine->mmio + 0x658);
+	if ((!origin_x && !origin_y) || origin_x + 320 > 0x800 ||
+		origin_y + 240 > 0x400)
+	{
+		origin_x = 0x400 - 160;
+		origin_y = 0x200 - 120;
+	}
+	return machine->screen_data + origin_y * 0x800 + origin_x;
 }
 
 const int16_t *xavix2_machine_frame_audio(const xavix2_machine_t *machine)

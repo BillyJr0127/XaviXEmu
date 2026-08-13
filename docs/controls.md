@@ -84,8 +84,7 @@ control feel remain experimental.
 
 ## XaviX 2 wrist-reflector games (experimental)
 
-- Mouse movement sends the first synthetic reflector sample.
-- Hold right mouse or Space while moving to send a second sample.
+- Mouse movement sends synthetic wrist-reflector positions.
 
 Naruto (`ban_naru`) places both samples at the same location for its documented
 joined-hands guard gesture; left mouse is its verified Execute/confirm input.
@@ -94,13 +93,31 @@ units because its firmware merges perfectly overlapping blobs. Holding right
 mouse or Space therefore operates its on-screen `決定` gesture without a
 separate left-click input.
 
-DB2J and DBZ now receive packets at their verified firmware buffers and show
-their game-owned detection marker, but coordinate calibration, gestures, and
-host button mappings remain unverified. In particular, left mouse must not be
-treated as a confirmed Execute input for those two titles.
+DB2J and DBZ receive packets at their verified firmware buffers and now use
+their game-owned optical cursors after the signed cursor-bound CPU instruction
+was identified. Move the mouse and leave the two markers over an on-screen
+target briefly; these menus confirm by dwell rather than by a click.
 
-Independent two-hand positions and later gameplay gestures are not yet
-implemented.
+For DB2J, left mouse selects the red motion-game route at the title and right
+mouse selects the blue card route. Left/right mouse or Space also synthesizes
+the observed open/closed reflector-area transition for later gesture screens.
+When the markers are over a story arrow, the same button pulse briefly moves
+them out and back in to generate the edge used to turn verified Shenron and
+Kame House pages. Later scenes are still being mapped.
+
+DBZ has no verified PIO button; its receiver-present line and optical dwell
+selection are modeled separately. Its battle mappings are:
+
+- Left mouse: close and reopen one hand for a basic attack.
+- Right mouse: close and reopen both hands for the two-hand technique input.
+- Space: synthesize a rapid horizontal sweep used to deflect an incoming shot.
+
+The game firmware consumes all three actions. Enemy encounters and the full
+visible result of each action have not yet been exercised through a complete
+play-through, so these mappings remain experimental.
+
+Independent two-hand positions and the complete later gameplay gesture
+vocabulary are not yet implemented.
 
 ## `epo_hamd` (experimental)
 

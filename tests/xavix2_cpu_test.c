@@ -93,6 +93,24 @@ int main(void)
 	CHECK(cpu.first_unimplemented_opcode == 0xff);
 	CHECK(cpu.unimplemented_count == 1);
 
+	/* The 0x06/0x07 load-immediate form has a signed 19-bit operand.  These
+	 * are the real Dragon Ball cursor-clamp constants; decoding them as a
+	 * signed 22-bit value pins the tracked cursor outside every menu target. */
+	memset(&bus, 0, sizeof(bus));
+	bus.rom[0] = 0x06;
+	bus.rom[1] = 0x47;
+	bus.rom[2] = 0xee;
+	bus.rom[3] = 0x80;
+	bus.rom[4] = 0x06;
+	bus.rom[5] = 0x47;
+	bus.rom[6] = 0xf3;
+	bus.rom[7] = 0x80;
+	xavix2_cpu_init(&cpu, test_read, test_write, &bus);
+	CHECK(xavix2_cpu_execute(&cpu, 4) == 4);
+	CHECK(cpu.r[1] == UINT32_C(0xffffee80));
+	CHECK(xavix2_cpu_execute(&cpu, 4) == 4);
+	CHECK(cpu.r[1] == UINT32_C(0xfffff380));
+
 	/* Instruction fetch can observe program memory independently of data reads. */
 	memset(&bus, 0, sizeof(bus));
 	bus.rom[0] = 0xff;

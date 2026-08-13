@@ -7,6 +7,17 @@ semantic versioning while experimental releases carry a pre-release suffix.
 
 ### Added
 
+- Restore DB2J/DBZ optical cursors and per-title calibration, allowing the
+  motion-game route to traverse Shenron/Kame House pages, mission selection,
+  and its first battle, while DBZ enters a real battle without a firmware
+  bypass. Add separate DBZ host actions for basic attack, the two-hand input,
+  and the horizontal deflect sweep.
+- Render XaviX 2 Type-1 Gouraud polygons and preserve opaque black texels
+  separately from transparent palette entries.
+- Model the traced XaviX 2 matrix, packed-vertex, projection/culling, and
+  dual-GPU submission paths. This makes the Dragon Ball battle polygon lists
+  non-empty and establishes the observed sky/polygon/HUD ordering without a
+  title- or frame-specific graphics patch; material/light stages remain open.
 - Decode the full XaviX 2 six-bit Q2.4 GPU scale fields. This removes Blue
   Dragon's tiled-menu seams, restores its downscaled battle characters, and
   preserves Dragon Ball Z's continuous zoom effects.
@@ -51,6 +62,10 @@ semantic versioning while experimental releases carry a pre-release suffix.
 
 ### Fixed
 
+- Decode XaviX 2 opcodes `$06/$07` with their signed 19-bit immediate. The old
+  wider sign field pinned both Dragon Ball optical cursors outside menu bounds.
+- Follow the guest-selected XaviX 2 visible origin, including the Dragon Ball
+  gameplay crop, and distinguish Map-0/Map-1 polygon texture folding.
 - Separate the XaviX 2 low-address instruction and data RAM images populated
   by DMA. This lets the two Dragon Ball images complete their destructive RAM
   tests and reach their title/menu screens without a game-specific bypass.

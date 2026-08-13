@@ -26,7 +26,6 @@ static unsigned r2(uint32_t opcode) { return (opcode >> 19) & 7; }
 static unsigned r3(uint32_t opcode) { return (opcode >> 16) & 7; }
 static uint32_t val24u(uint32_t opcode) { return opcode & UINT32_C(0x00ffffff); }
 static uint32_t val22h(uint32_t opcode) { return opcode << 10; }
-static uint32_t val22s(uint32_t opcode) { return opcode & UINT32_C(0x200000) ? opcode | UINT32_C(0xffc00000) : opcode & UINT32_C(0x3fffff); }
 static uint32_t val19s(uint32_t opcode) { return opcode & UINT32_C(0x40000) ? opcode | UINT32_C(0xfff80000) : opcode & UINT32_C(0x7ffff); }
 static uint32_t val19u(uint32_t opcode) { return opcode & UINT32_C(0x0007ffff); }
 static uint32_t val16s(uint32_t opcode) { return (uint32_t)(int32_t)(int16_t)(opcode >> 8); }
@@ -310,7 +309,11 @@ uint32_t xavix2_cpu_execute(xavix2_cpu_t *cpu, uint32_t cycle_budget)
 		case 0x00: case 0x01: cpu->r[r1(opcode)] = do_add(cpu, cpu->r[r2(opcode)], val19s(opcode)); break;
 		case 0x02: case 0x03: cpu->r[r1(opcode)] = val22h(opcode); break;
 		case 0x04: case 0x05: cpu->r[r1(opcode)] = do_sub(cpu, cpu->r[r2(opcode)], val19s(opcode)); break;
-		case 0x06: case 0x07: cpu->r[r1(opcode)] = val22s(opcode); break;
+		/* Unlike the add/subtract forms, load-immediate leaves the r2 field
+		 * outside the value.  Dragon Ball uses 06 47 EE 80 and 06 47 F3 80
+		 * for -0x1180 and -0x0c80 cursor bounds; treating all 22 low bits as
+		 * the immediate turns both into large positive values. */
+		case 0x06: case 0x07: cpu->r[r1(opcode)] = val19s(opcode); break;
 		case 0x08: npc = val24u(opcode) | (cpu->pc & UINT32_C(0xff000000)); break;
 		case 0x09: cpu->r[7] = npc; npc = val24u(opcode) | (cpu->pc & UINT32_C(0xff000000)); break;
 		case 0x0a: case 0x0b: cpu->r[r1(opcode)] = snz(cpu, cpu->r[r2(opcode)] & val19u(opcode)); break;

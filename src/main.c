@@ -414,6 +414,9 @@ static int g_right_button;
 static int g_naruto_joined_hands;
 static unsigned g_naruto_execute_delay;
 static unsigned g_naruto_execute_frames;
+static unsigned g_xavix2_area_gesture_frame;
+static unsigned g_xavix2_area_gesture_frames;
+static unsigned g_xavix2_gesture_kind;
 static int g_omt_backside;
 static int g_ttv_spin_held;
 static unsigned g_ttv_spin_phase;
@@ -483,6 +486,13 @@ static uint16_t xavix2_motion_packet_address(enum drgqst_rom_kind kind)
 	default:
 		return XAVIX2_MOTION_PACKET_FIRST;
 	}
+}
+
+static uint32_t xavix2_fixed_pio_input(enum drgqst_rom_kind kind)
+{
+	/* Dragon Ball Z samples this receiver-present input once during boot.
+	 * Keep it separate from the neighbouring firmware-controlled outputs. */
+	return kind == DRGQST_ROM_BAN_DBZ ? UINT32_C(1) << 23 : 0;
 }
 
 static enum drgqst_core_profile core_profile_for_rom(
@@ -1225,6 +1235,9 @@ static void release_held_host_inputs(HWND window)
 	g_naruto_joined_hands = 0;
 	g_naruto_execute_delay = 0;
 	g_naruto_execute_frames = 0;
+	g_xavix2_area_gesture_frame = 0;
+	g_xavix2_area_gesture_frames = 0;
+	g_xavix2_gesture_kind = 0;
 	if (GetCapture() == window)
 		ReleaseCapture();
 	update_core_mouse();
@@ -1523,6 +1536,8 @@ static void run_xavix2_frame(void)
 {
 	uint8_t packet[XAVIX2_MOTION_PACKET_SIZE] = { 0 };
 	uint32_t pio_input = 0;
+	int dragon_ball_motion = g_rom.kind == DRGQST_ROM_BAN_DB2J ||
+		g_rom.kind == DRGQST_ROM_BAN_DBZ;
 	unsigned width;
 	unsigned height;
 	unsigned stride;
@@ -1530,10 +1545,20 @@ static void run_xavix2_frame(void)
 		((unsigned)g_mouse_x * 54 + 127) / 255);
 	uint8_t sample_y = (uint8_t)(55 -
 		((unsigned)g_mouse_y * 54 + 127) / 255);
+	if (g_rom.kind == DRGQST_ROM_BAN_DBZ)
+	{
+		/* Its tracker accepts only the calibrated camera rectangle.  Leave four
+		 * raw units for the second blob so neither marker disappears at an edge. */
+		if (sample_x < 0x0c) sample_x = 0x0c;
+		if (sample_x > 0x30) sample_x = 0x30;
+		if (sample_y < 0x12) sample_y = 0x12;
+		if (sample_y > 0x2a) sample_y = 0x2a;
+	}
 
-	if (g_naruto_execute_delay)
+	if (g_naruto_execute_delay && !dragon_ball_motion)
 		--g_naruto_execute_delay;
-	else if (g_left_button || g_naruto_execute_frames)
+	else if (!dragon_ball_motion &&
+		(g_left_button || g_naruto_execute_frames))
 	{
 		pio_input = UINT32_C(1) << 16;
 		if (g_naruto_execute_frames)
@@ -1542,18 +1567,67 @@ static void run_xavix2_frame(void)
 
 	packet[0] = sample_x;
 	packet[1] = sample_y;
-	packet[2] = 0x20;
-	if (g_right_button || g_naruto_joined_hands)
+	packet[2] = dragon_ball_motion ? 0x28 : 0x20;
+	if (g_right_button || g_naruto_joined_hands || dragon_ball_motion)
 	{
-		packet[3] = sample_x;
+		packet[3] = dragon_ball_motion ?
+			(uint8_t)(sample_x <= 0x33 ? sample_x + 4 : sample_x - 4) :
+			sample_x;
 		/* Blue Dragon rejects two perfectly overlapping reflectors as one
 		 * blob.  Its confirm gesture needs a small, still-visible separation.
 		 * Naruto deliberately uses coincident hands for its guard gesture. */
 		packet[4] = g_rom.kind == DRGQST_ROM_BAN_BLDJ ?
 			(uint8_t)(sample_y <= 0x35 ? sample_y + 2 : sample_y - 2) :
+			g_rom.kind == DRGQST_ROM_BAN_DBZ ?
+			(uint8_t)(sample_y <= 0x33 ? sample_y + 4 : sample_y - 4) :
 			sample_y;
-		packet[5] = 0x20;
+		packet[5] = dragon_ball_motion ? 0x28 : 0x20;
 	}
+	if (dragon_ball_motion && g_xavix2_area_gesture_frame <
+		g_xavix2_area_gesture_frames)
+	{
+		unsigned phase = g_xavix2_area_gesture_frame++;
+		/* The Dragon Bands report two reflector positions and areas.  Keep
+		 * distinct gestures instead of collapsing every host button into the
+		 * same packet: basic attack hides one hand, the two-hand primitive hides
+		 * both, and the keyboard sweep advances both blobs eight raw units on
+		 * each 30 Hz classifier update. */
+		if (g_xavix2_gesture_kind == 2)
+		{
+			packet[3] = packet[4] = packet[5] = 0;
+		}
+		else if (g_xavix2_gesture_kind == 3)
+			memset(packet, 0, 6);
+		else if (g_xavix2_gesture_kind == 4)
+		{
+			int delta = (int)(phase + 1) * 4;
+			if (sample_x > 0x20)
+				delta = -delta;
+			packet[0] = (uint8_t)((int)packet[0] + delta);
+			packet[3] = (uint8_t)((int)packet[3] + delta);
+		}
+		else
+		{
+			/* DB2J story arrows trigger on a reflector leaving and re-entering
+			 * their hit box.  Move the pair aside for half the pulse, then let the
+			 * user's target position return; retain the area transition needed by
+			 * later gesture classifiers. */
+			if (phase < 4)
+			{
+				int delta = sample_x <= 0x1b ? 12 : -12;
+				packet[0] = (uint8_t)((int)packet[0] + delta);
+				packet[3] = (uint8_t)((int)packet[3] + delta);
+			}
+			if (phase >= 2 && phase < 6)
+				packet[2] = packet[5] = 0x08;
+		}
+		if (g_xavix2_area_gesture_frame == g_xavix2_area_gesture_frames)
+			g_xavix2_gesture_kind = 0;
+	}
+	if (g_rom.kind == DRGQST_ROM_BAN_DB2J && g_left_button)
+		pio_input |= UINT32_C(1) << 16;
+	if (g_rom.kind == DRGQST_ROM_BAN_DB2J && g_right_button)
+		pio_input |= UINT32_C(1) << 19;
 	(void)xavix2_machine_run_video_frame(g_xavix2, packet, pio_input);
 	win_audio_submit(&g_audio_output,
 		xavix2_machine_frame_audio(g_xavix2),
@@ -1787,6 +1861,9 @@ static int load_runtime_state(HWND window)
 	g_naruto_joined_hands = 0;
 	g_naruto_execute_delay = 0;
 	g_naruto_execute_frames = 0;
+	g_xavix2_area_gesture_frame = 0;
+	g_xavix2_area_gesture_frames = 0;
+	g_xavix2_gesture_kind = 0;
 	if (g_rom.kind == DRGQST_ROM_TVPC_DOR)
 	{
 		g_tvpc_mouse_counter_x = g_core->machine.state.anport_regs[2];
@@ -1829,6 +1906,8 @@ static int activate_xavix2_rom(HWND window, drgqst_rom_image *image,
 	}
 	xavix2_machine_set_motion_packet_address(machine,
 		xavix2_motion_packet_address(image->kind));
+	xavix2_machine_set_fixed_pio_input(machine,
+		xavix2_fixed_pio_input(image->kind));
 
 	stop_frame_clock(window);
 	save_persistent_eeprom(window, 1);
@@ -1854,6 +1933,9 @@ static int activate_xavix2_rom(HWND window, drgqst_rom_image *image,
 	g_naruto_joined_hands = 0;
 	g_naruto_execute_delay = 0;
 	g_naruto_execute_frames = 0;
+	g_xavix2_area_gesture_frame = 0;
+	g_xavix2_area_gesture_frames = 0;
+	g_xavix2_gesture_kind = 0;
 	g_tvpc_mouse_counter_x = 0;
 	g_tvpc_mouse_counter_y = 0;
 	g_tvpc_mouse_position_valid = 0;
@@ -1934,6 +2016,9 @@ static int load_rom(HWND window, const wchar_t *path, int show_error)
 	g_naruto_joined_hands = 0;
 	g_naruto_execute_delay = 0;
 	g_naruto_execute_frames = 0;
+	g_xavix2_area_gesture_frame = 0;
+	g_xavix2_area_gesture_frames = 0;
+	g_xavix2_gesture_kind = 0;
 	g_tvpc_mouse_counter_x = 0;
 	g_tvpc_mouse_counter_y = 0;
 	g_tvpc_mouse_position_valid = 0;
@@ -2308,8 +2393,19 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT message,
 			g_hamd_left_pulse_frames = 4;
 		if (g_xavix2)
 		{
-			g_naruto_execute_delay = 2;
-			g_naruto_execute_frames = 4;
+			if (g_rom.kind == DRGQST_ROM_BAN_DB2J ||
+				g_rom.kind == DRGQST_ROM_BAN_DBZ)
+			{
+				g_xavix2_area_gesture_frame = 0;
+				g_xavix2_area_gesture_frames = 8;
+				g_xavix2_gesture_kind =
+					g_rom.kind == DRGQST_ROM_BAN_DBZ ? 2 : 1;
+			}
+			else
+			{
+				g_naruto_execute_delay = 2;
+				g_naruto_execute_frames = 4;
+			}
 		}
 		set_mouse_position(window, GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam));
 		return 0;
@@ -2325,6 +2421,14 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT message,
 		SetFocus(window);
 		SetCapture(window);
 		g_right_button = 1;
+		if (g_xavix2 && (g_rom.kind == DRGQST_ROM_BAN_DB2J ||
+			g_rom.kind == DRGQST_ROM_BAN_DBZ))
+		{
+			g_xavix2_area_gesture_frame = 0;
+			g_xavix2_area_gesture_frames = 8;
+			g_xavix2_gesture_kind =
+				g_rom.kind == DRGQST_ROM_BAN_DBZ ? 3 : 1;
+		}
 		if (g_core && g_rom.kind == DRGQST_ROM_EPO_HAMD)
 			g_hamd_right_pulse_frames = 4;
 		set_mouse_position(window, GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam));
@@ -2389,7 +2493,20 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT message,
 		}
 		if (wparam == VK_SPACE && g_xavix2)
 		{
-			g_naruto_joined_hands = 1;
+			if (g_rom.kind == DRGQST_ROM_BAN_DB2J ||
+				g_rom.kind == DRGQST_ROM_BAN_DBZ)
+			{
+				if (!(lparam & ((LPARAM)1 << 30)))
+				{
+					g_xavix2_area_gesture_frame = 0;
+					g_xavix2_area_gesture_frames =
+						g_rom.kind == DRGQST_ROM_BAN_DBZ ? 4 : 8;
+					g_xavix2_gesture_kind =
+						g_rom.kind == DRGQST_ROM_BAN_DBZ ? 4 : 1;
+				}
+			}
+			else
+				g_naruto_joined_hands = 1;
 			return 0;
 		}
 		if (wparam == VK_SPACE && g_core &&
@@ -2483,7 +2600,9 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT message,
 	case WM_KEYUP:
 		if (wparam == VK_SPACE && g_xavix2)
 		{
-			g_naruto_joined_hands = 0;
+			if (g_rom.kind != DRGQST_ROM_BAN_DB2J &&
+				g_rom.kind != DRGQST_ROM_BAN_DBZ)
+				g_naruto_joined_hands = 0;
 			return 0;
 		}
 		if (g_rom.kind == DRGQST_ROM_TVPC_DOR &&

@@ -77,6 +77,7 @@ typedef struct xavix2_machine
 	uint32_t audio_mmio_trace_next;
 	uint32_t screen_data[0x400 * 0x800];
 	xavix_eeprom24c08 eeprom;
+	uint32_t pio_fixed_input;
 	uint32_t pio_input;
 	int experimental_direct_pio_sample;
 	int experimental_dispatch_input;
@@ -153,6 +154,7 @@ typedef struct xavix2_machine
 	uint64_t dma_completion_cycle;
 	uint64_t gpu_trigger_count;
 	uint64_t gpu_pixel_write_count;
+	uint8_t gpu_sprite_background_prepared;
 	uint64_t dma_transfer_count;
 	uint64_t frame_count;
 	uint64_t unmapped_read_count;
@@ -172,6 +174,8 @@ int xavix2_machine_init(xavix2_machine_t *machine, const uint8_t *rom,
 	size_t rom_size);
 void xavix2_machine_set_motion_packet_address(xavix2_machine_t *machine,
 	uint16_t address);
+void xavix2_machine_set_fixed_pio_input(xavix2_machine_t *machine,
+	uint32_t input);
 void xavix2_machine_reset(xavix2_machine_t *machine);
 void xavix2_machine_raise_irq(xavix2_machine_t *machine, unsigned level);
 void xavix2_machine_clear_irq(xavix2_machine_t *machine, unsigned level);

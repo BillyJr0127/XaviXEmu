@@ -49,8 +49,8 @@ holders or MAMEdev. See [the legal notes](docs/legal.md).
 | XaviX | `tvpc_hk` | Experimental | Title/main menu, 24C16 EEPROM initialization, independent persistence, and PCM output |
 | XaviX 2 | `ban_naru` | Experimental | Title, menus, character selection, story path, and provisional PCM audio |
 | XaviX 2 | `ban_bldj` | Experimental | Title, mode selection, story/battle rendering milestones, two-reflector confirm, and provisional PCM |
-| XaviX 2 | `ban_db2j` | Experimental | Title/menu graphics, corrected motion-packet routing, and provisional PCM |
-| XaviX 2 | `ban_dbz` | Experimental | Title/menu graphics, fractional zoom rendering, corrected motion-packet routing, and provisional PCM |
+| XaviX 2 | `ban_db2j` | Experimental | Optical route/dwell menus, Shenron/Kame House story, first-battle entry, corrected motion input, and provisional PCM; polygon materials remain incomplete |
+| XaviX 2 | `ban_dbz` | Experimental | Receiver/optical selection, real first-person battle entry, basic/two-hand/deflect inputs, fractional zoom, and provisional PCM; polygon materials remain incomplete |
 
 The status terms and known limitations are defined in
 [docs/compatibility.md](docs/compatibility.md). In particular, reaching a menu
