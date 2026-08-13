@@ -504,8 +504,11 @@ uint32_t xavix2_cpu_execute(xavix2_cpu_t *cpu, uint32_t cycle_budget)
 		case 0xf3: cpu->hr[4] |= F_Z; break;
 		case 0xf4: cpu->hr[4] &= ~F_N; break;
 		case 0xf5: cpu->hr[4] |= F_N; break;
-		case 0xf6: cpu->hr[4] &= ~F_V; break;
-		case 0xf7: cpu->hr[4] |= F_V; break;
+		/* Hit-test helpers return false/true with F6/F7 and their callers
+		 * immediately branch on equality.  Naruto's title cursor cannot
+		 * activate any target when these encodings alter V instead of Z. */
+		case 0xf6: cpu->hr[4] &= ~F_Z; break;
+		case 0xf7: cpu->hr[4] |= F_Z; break;
 		case 0xf8: cpu->hr[4] &= ~F_I; break;
 		case 0xf9: cpu->hr[4] |= F_I; cpu->enable_interrupt_delay = 2; break;
 		case 0xfa: case 0xfb: record_unimplemented(cpu, instruction_pc, first); break;

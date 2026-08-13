@@ -65,7 +65,7 @@ int main(void)
 	bus.rom[1] = 0x00;
 	bus.rom[2] = 0x00;
 	bus.rom[3] = 0x20;
-	/* Carry clear/set, overflow clear/set, then unimplemented 0xff. */
+	/* Carry clear/set, zero clear/set, then unimplemented 0xff. */
 	bus.rom[0x20] = 0xf0;
 	bus.rom[0x21] = 0xf1;
 	bus.rom[0x22] = 0xf6;
@@ -82,11 +82,11 @@ int main(void)
 	CHECK(cpu.pc == UINT32_C(0x40000022));
 	CHECK((cpu.hr[4] & 4) != 0);
 
-	cpu.hr[4] |= 8;
+	cpu.hr[4] |= 1;
 	CHECK(xavix2_cpu_execute(&cpu, 1) == 1);
-	CHECK((cpu.hr[4] & 8) == 0);
+	CHECK((cpu.hr[4] & 1) == 0);
 	CHECK(xavix2_cpu_execute(&cpu, 1) == 1);
-	CHECK((cpu.hr[4] & 8) != 0);
+	CHECK((cpu.hr[4] & 1) != 0);
 
 	CHECK(xavix2_cpu_execute(&cpu, 1) == 1);
 	CHECK(cpu.first_unimplemented_pc == UINT32_C(0x40000024));

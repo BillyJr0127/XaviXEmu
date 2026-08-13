@@ -619,6 +619,21 @@ on the user's machine before any clock change is considered.
 
 ## Naruto second-stage distance unit (2026-08-13)
 
+### Title hit-test regression
+
+- A fresh boot could display and move the host cursor over the title's central
+  sensor target, yet a verified centered packet plus the Execute pulse no
+  longer advanced to `メニューの巻`.
+- The regression was isolated from motion routing, the 120 Hz game timer,
+  geometry command `$11`, signed immediate decoding, and the later-stage
+  multiply correction. The same input sequence advanced as soon as `$f6/$f7`
+  again cleared/set Z as required by hit-test helpers `$4244d/$4248b` and their
+  immediate `$da` branches.
+- The fixed 1,800-frame replay reaches `メニューの巻` with frame hash
+  `F2C8540EDE87A19B`. Replaying the user's second-stage F7 checkpoint still
+  shows the enemy in distinct near, far, running, and attack poses, so the
+  menu repair does not revert the later trajectory fixes.
+
 - An F7 checkpoint at hardware frame 13,584 resumes the forest battle with the
   terrain, HUD, enemy sprite, and rotating projectile supplied by independent
   GPU lists.  The enemy is a 78x102 source sprite using the normal six-bit

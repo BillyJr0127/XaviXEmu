@@ -5,6 +5,10 @@ semantic versioning while experimental releases carry a pre-release suffix.
 
 ## Unreleased
 
+- Restore Naruto's title and menu hit testing by keeping XaviX 2 opcodes
+  `$f6/$f7` on the zero flag used by the firmware's immediate equality
+  branches. The host cursor and click signal were still moving, but the
+  regressed flag mapping made every on-screen target report a miss.
 - Correct XaviX2 game and music-event timing from half speed to full speed by
   separating the 120 Hz timer interrupt from 60 Hz vblank.  The CPU and PCM
   clocks remain unchanged, preserving sample pitch; version-1 F5 states migrate
