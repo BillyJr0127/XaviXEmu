@@ -11,6 +11,10 @@ semantic versioning while experimental releases carry a pre-release suffix.
   their timer phase when loaded.
 - Keep a host target visible for Naruto when its pre-battle game-owned cursor
   layer disappears while optical hit testing remains active.
+- Decode the XaviX 2 note-release form of the live voice command. Released
+  voices now decay cleanly before their active bit clears instead of retaining
+  a sustain loop until channel reuse; the channel menu identifies voices in
+  this transitional state.
 
 ### Added
 
@@ -78,13 +82,22 @@ semantic versioning while experimental releases carry a pre-release suffix.
 
 ### Fixed
 
+- Update XaviX 2 negative/zero flags when firmware moves a multiply/divide
+  result back to a general register.  Naruto's second-stage angle normalizer
+  no longer inherits an older comparison flag and adds a false half-turn, so
+  the enemy follows a continuous on-screen approach instead of briefly
+  flashing at incorrect off-screen positions.
+- Decode the XaviX 2 B4/B5 64-bit multiply as signed.  Naruto feeds this form
+  negative sine-table values; preserving their sign lets second-stage enemies
+  finish each trajectory and naturally advance through changing actions,
+  distances, attacks, and replacement objects instead of freezing on one pass.
 - Implement the XaviX 2 geometry unit's unsigned square-root command used by
   Naruto for cursor/target distance checks.  A resumed second-stage checkpoint
   now renders its submitted enemy and rotating projectile sprites while attack
   hit testing receives the real distance instead of a stale register value.
-- Treat the second XaviX 2 waveform address as the sustain-loop target selected
-  by a `$80` terminator. The earlier end-address interpretation repeatedly
-  replayed instrument attacks and produced overlapping, never-settling music.
+- Restart XaviX 2 looping notes at their primary waveform address. Treating the
+  secondary descriptor boundary as a sustain target selected a tiny adjacent
+  fragment and produced a timbre absent from the isolated hardware reference.
 - Pace the XaviX 2 CPU from the firmware-observed 98,437,488 Hz system source
   instead of the early rounded 98 MHz estimate, keeping event timing aligned
   with the already verified sound-divider clock.

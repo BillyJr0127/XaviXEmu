@@ -41,7 +41,9 @@ typedef struct xavix2_audio_voice
 	/* Host-only diagnostic flags occupy the structure's former padding so
 	 * version-1 runtime-state size and all guest fields remain compatible. */
 	uint8_t host_muted;
-	uint8_t reserved;
+	/* Zero is full level.  Values 1..16 track the provisional hardware-like
+	 * note-release envelope without changing the saved-state structure size. */
+	uint8_t release_phase;
 } xavix2_audio_voice;
 
 typedef struct xavix2_audio
@@ -57,7 +59,8 @@ void xavix2_audio_init(xavix2_audio *audio, const uint8_t *rom,
 	size_t rom_size);
 void xavix2_audio_command(xavix2_audio *audio, uint16_t command,
 	const uint8_t descriptors[XAVIX2_AUDIO_DESCRIPTOR_BYTES],
-	uint16_t control_pitch, uint8_t control_left, uint8_t control_right);
+	uint16_t control_pitch, uint16_t control_flags,
+	uint8_t control_left, uint8_t control_right);
 uint32_t xavix2_audio_engine_rate(uint8_t divider_a, uint8_t divider_b);
 void xavix2_audio_render(xavix2_audio *audio, uint32_t engine_rate);
 void xavix2_audio_set_mute_mask(xavix2_audio *audio, uint64_t mute_mask);

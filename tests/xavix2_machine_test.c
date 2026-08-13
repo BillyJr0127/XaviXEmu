@@ -679,6 +679,23 @@ int main(void)
 	descriptors[0x33] = 0x40;
 	machine->interrupt_enabled = 0;
 	machine->interrupt_nmi = 0;
+	/* The MMIO command bridge must preserve EA1B's key-off flag rather than
+	 * treating every live update as a pitch slide. */
+	memcpy(machine->video_ram + 0xf800, descriptors, sizeof(descriptors));
+	xavix2_audio_init(&machine->audio, rom, UINT32_C(0x10000));
+	machine->cpu.write8(machine->cpu.opaque, UINT32_C(0xffffea0a), 0x40);
+	machine->cpu.write8(machine->cpu.opaque, UINT32_C(0xffffea0b), 0x00);
+	CHECK(machine->audio.voice[0].active);
+	machine->cpu.write8(machine->cpu.opaque, UINT32_C(0xffffea18), 0x00);
+	machine->cpu.write8(machine->cpu.opaque, UINT32_C(0xffffea19), 0x10);
+	machine->cpu.write8(machine->cpu.opaque, UINT32_C(0xffffea1a), 0x00);
+	machine->cpu.write8(machine->cpu.opaque, UINT32_C(0xffffea1b), 0x01);
+	machine->cpu.write8(machine->cpu.opaque, UINT32_C(0xffffea1c), 0x40);
+	machine->cpu.write8(machine->cpu.opaque, UINT32_C(0xffffea1d), 0x40);
+	machine->cpu.write8(machine->cpu.opaque, UINT32_C(0xffffea0a), 0xc0);
+	machine->cpu.write8(machine->cpu.opaque, UINT32_C(0xffffea0b), 0x00);
+	CHECK(machine->audio.voice[0].active);
+	CHECK(machine->audio.voice[0].release_phase == 1);
 	for (rate_index = 0; rate_index < 2; ++rate_index)
 	{
 		const uint32_t private_rate = private_ram_rates[rate_index];
@@ -698,7 +715,7 @@ int main(void)
 		machine->mmio[0xa05] = engine_divider_b[rate_index];
 		machine->cpu.waiting = 1;
 		machine->cpu.interrupt_line = 0;
-		xavix2_audio_command(&machine->audio, 0x40, descriptors, 0, 0, 0);
+		xavix2_audio_command(&machine->audio, 0x40, descriptors, 0, 0, 0, 0);
 		CHECK(xavix2_machine_run_video_frame(machine, NULL, 0) != 0);
 		audio_frame = xavix2_machine_frame_audio(machine);
 		CHECK(audio_frame != NULL);

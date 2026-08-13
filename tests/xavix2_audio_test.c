@@ -49,7 +49,7 @@ int main(void)
 	voice0[0x33] = 0x80;
 
 	xavix2_audio_init(&audio, rom, sizeof(rom));
-	xavix2_audio_command(&audio, 0x40, descriptors, 0, 0, 0);
+	xavix2_audio_command(&audio, 0x40, descriptors, 0, 0, 0, 0);
 	CHECK(xavix2_audio_status(&audio, 0) == 1);
 	xavix2_audio_render(&audio, 96000);
 	frame = xavix2_audio_frame(&audio);
@@ -67,19 +67,19 @@ int main(void)
 	rom[0x25] = 0x80;
 	store_address(voice0, 0x02, 0x06, 0x20);
 	store16(voice0 + 0x16, 0x8000);
-	/* Firmware descriptors put the sustain-loop target one byte beyond the
-	 * attack terminator.  Subsequent terminators return here, not to 0x20. */
+	/* Firmware descriptors put the secondary boundary one byte beyond the
+	 * primary terminator.  Looping returns to the primary start. */
 	store_address(voice0, 0x0e, 0x12, 0x23);
-	xavix2_audio_command(&audio, 0x240, descriptors, 0, 0, 0);
+	xavix2_audio_command(&audio, 0x240, descriptors, 0, 0, 0, 0);
 	CHECK(audio.voice[0].start_address == 0x20);
-	CHECK(audio.voice[0].loop_address == 0x23);
+	CHECK(audio.voice[0].loop_address == 0x20);
 	xavix2_audio_render(&audio, 96000);
 	frame = xavix2_audio_frame(&audio);
 	CHECK(frame[0] == 10 * 255 / 2);
 	CHECK(frame[2] == 20 * 255 / 2);
-	CHECK(frame[4] == 30 * 255 / 2);
-	CHECK(frame[6] == 40 * 255 / 2);
-	CHECK(frame[8] == 30 * 255 / 2);
+	CHECK(frame[4] == 10 * 255 / 2);
+	CHECK(frame[6] == 20 * 255 / 2);
+	CHECK(frame[8] == 10 * 255 / 2);
 	CHECK(xavix2_audio_status(&audio, 0) == 1);
 
 	/* Host diagnostics may mute a channel without changing guest-visible
@@ -99,16 +99,36 @@ int main(void)
 		xavix2_audio_set_mute_mask(&audio, 0);
 	}
 
-	xavix2_audio_command(&audio, 0xc0, descriptors, 0x4000, 7, 9);
+	audio.voice[0].position = UINT64_C(0x20) << 32;
+	xavix2_audio_command(&audio, 0xc0, descriptors, 0x4000, 0, 7, 9);
 	CHECK(xavix2_audio_status(&audio, 0) == 1);
 	CHECK(audio.voice[0].pitch == 0x4000);
 	CHECK(audio.voice[0].volume_left == 7);
 	CHECK(audio.voice[0].volume_right == 9);
 	xavix2_audio_render(&audio, 96000);
 	frame = xavix2_audio_frame(&audio);
-	CHECK(frame[0] == 30 * 7 / 2 && frame[1] == 30 * 9 / 2);
-	CHECK(frame[2] == 35 * 7 / 2 && frame[3] == 35 * 9 / 2);
-	xavix2_audio_command(&audio, 0x80, descriptors, 0, 0, 0);
+	CHECK(frame[0] == 10 * 7 / 2 && frame[1] == 10 * 9 / 2);
+	CHECK(frame[2] == 15 * 7 / 2 && frame[3] == 15 * 9 / 2);
+	/* EA1B bit 0 is the firmware's note-release form of the update command.
+	 * It keeps the guest channel allocated while its output decays. */
+	xavix2_audio_command(&audio, 0xc0, descriptors, 0x4000, 0x0100, 7, 9);
+	CHECK(xavix2_audio_status(&audio, 0) == 1);
+	CHECK(audio.voice[0].release_phase == 1);
+	xavix2_audio_render(&audio, 96000);
+	frame = xavix2_audio_frame(&audio);
+	CHECK(frame[0] == 10 * 7 / 2 && frame[1] == 10 * 9 / 2);
+	CHECK(audio.voice[0].release_phase == 2);
+	for (unsigned release_frame = 1; release_frame < 16; ++release_frame)
+		xavix2_audio_render(&audio, 96000);
+	CHECK(xavix2_audio_status(&audio, 0) == 0);
+	CHECK(audio.voice[0].release_phase == 0);
+	xavix2_audio_render(&audio, 96000);
+	frame = xavix2_audio_frame(&audio);
+	CHECK(frame[0] == 0 && frame[1] == 0);
+	/* A new note reuses the allocated voice at full level. */
+	xavix2_audio_command(&audio, 0x240, descriptors, 0, 0, 0, 0);
+	CHECK(audio.voice[0].release_phase == 0);
+	xavix2_audio_command(&audio, 0x80, descriptors, 0, 0, 0, 0);
 	CHECK(xavix2_audio_status(&audio, 0) == 0);
 
 	rom[0x30] = 10;
@@ -116,7 +136,7 @@ int main(void)
 	rom[0x32] = 100;
 	store_address(voice0, 0x02, 0x06, 0x30);
 	store16(voice0 + 0x16, 0x8000);
-	xavix2_audio_command(&audio, 0x40, descriptors, 0, 0, 0);
+	xavix2_audio_command(&audio, 0x40, descriptors, 0, 0, 0, 0);
 	xavix2_audio_render(&audio, 192000);
 	frame = xavix2_audio_frame(&audio);
 	CHECK(frame[0] == 10 * 255 / 2);
@@ -128,13 +148,13 @@ int main(void)
 	rom[0x41] = 0x80;
 	store_address(voice0, 0x02, 0x06, 0x40);
 	store_address(voice0, 0x0e, 0x12, sizeof(rom));
-	xavix2_audio_command(&audio, 0x240, descriptors, 0, 0, 0);
+	xavix2_audio_command(&audio, 0x240, descriptors, 0, 0, 0, 0);
 	CHECK(audio.voice[0].loop == 0);
 	xavix2_audio_render(&audio, 96000);
 	CHECK(xavix2_audio_status(&audio, 0) == 0);
 
 	store_address(voice0, 0x02, 0x06, sizeof(rom));
-	xavix2_audio_command(&audio, 0x40, descriptors, 0, 0, 0);
+	xavix2_audio_command(&audio, 0x40, descriptors, 0, 0, 0, 0);
 	CHECK(xavix2_audio_status(&audio, 0) == 0);
 	CHECK(xavix2_audio_status(&audio, 8) == 0);
 

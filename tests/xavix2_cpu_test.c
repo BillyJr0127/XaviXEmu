@@ -65,7 +65,7 @@ int main(void)
 	bus.rom[1] = 0x00;
 	bus.rom[2] = 0x00;
 	bus.rom[3] = 0x20;
-	/* Carry clear/set, zero clear/set, then unimplemented 0xff. */
+	/* Carry clear/set, overflow clear/set, then unimplemented 0xff. */
 	bus.rom[0x20] = 0xf0;
 	bus.rom[0x21] = 0xf1;
 	bus.rom[0x22] = 0xf6;
@@ -82,11 +82,11 @@ int main(void)
 	CHECK(cpu.pc == UINT32_C(0x40000022));
 	CHECK((cpu.hr[4] & 4) != 0);
 
-	cpu.hr[4] |= 1;
+	cpu.hr[4] |= 8;
 	CHECK(xavix2_cpu_execute(&cpu, 1) == 1);
-	CHECK((cpu.hr[4] & 1) == 0);
+	CHECK((cpu.hr[4] & 8) == 0);
 	CHECK(xavix2_cpu_execute(&cpu, 1) == 1);
-	CHECK((cpu.hr[4] & 1) != 0);
+	CHECK((cpu.hr[4] & 8) != 0);
 
 	CHECK(xavix2_cpu_execute(&cpu, 1) == 1);
 	CHECK(cpu.first_unimplemented_pc == UINT32_C(0x40000024));
@@ -110,6 +110,43 @@ int main(void)
 	CHECK(cpu.r[1] == UINT32_C(0xffffee80));
 	CHECK(xavix2_cpu_execute(&cpu, 4) == 4);
 	CHECK(cpu.r[1] == UINT32_C(0xfffff380));
+
+	/* Moving a hardware arithmetic result to a general register updates N/Z.
+	 * Naruto's angle normalizer relies on C9 43 setting N from HR3 before a
+	 * branch; retaining the flags from an older compare adds a false half-turn. */
+	memset(&bus, 0, sizeof(bus));
+	bus.rom[0] = 0xc9;
+	bus.rom[1] = 0x43; /* r5 = HR3 */
+	xavix2_cpu_init(&cpu, test_read, test_write, &bus);
+	cpu.hr[3] = UINT32_C(0xffffffff);
+	cpu.hr[4] = 1 | 4 | 8;
+	CHECK(xavix2_cpu_execute(&cpu, 2) == 2);
+	CHECK(cpu.r[5] == UINT32_C(0xffffffff));
+	CHECK((cpu.hr[4] & 15) == 2);
+
+	cpu.pc = UINT32_C(0x40000000);
+	cpu.hr[3] = 0;
+	cpu.hr[4] = 2 | 4 | 8;
+	CHECK(xavix2_cpu_execute(&cpu, 2) == 2);
+	CHECK(cpu.r[5] == 0);
+	CHECK((cpu.hr[4] & 15) == 1);
+
+	/* The 64-bit B4/B5 product is signed.  Naruto's fixed-point sine helper
+	 * multiplies a positive radius by a negative ROM-table entry with this
+	 * exact form and consumes both HR0 and HR1. */
+	memset(&bus, 0, sizeof(bus));
+	bus.rom[0] = 0xb4;
+	bus.rom[1] = 0xe0; /* HR1:HR0 = r3 * r4 */
+	xavix2_cpu_init(&cpu, test_read, test_write, &bus);
+	cpu.r[3] = UINT32_C(0x00a00000);
+	cpu.r[4] = UINT32_C(0xffffeebc);
+	CHECK(xavix2_cpu_execute(&cpu, 2) == 2);
+	{
+		uint64_t product = (uint64_t)((int64_t)(int32_t)cpu.r[3] *
+			(int32_t)cpu.r[4]);
+		CHECK(cpu.hr[0] == (uint32_t)product);
+		CHECK(cpu.hr[1] == (uint32_t)(product >> 32));
+	}
 
 	/* Instruction fetch can observe program memory independently of data reads. */
 	memset(&bus, 0, sizeof(bus));

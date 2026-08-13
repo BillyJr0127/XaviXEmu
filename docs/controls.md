@@ -129,7 +129,8 @@ sharing a reproducible problem point without sharing the ROM.
 The **XaviX2 聲道 / Channels** menu is a live audio diagnostic. Checked
 channels are audible; clearing a check mutes only the host output while the
 voice continues advancing and remains active to the game. Active entries show
-the calculated source rate, left/right volume, and `loop` state. **全部開啟 /
+the calculated source rate, left/right volume, and `loop` state; `release`
+identifies a note currently fading after the game's key-off command. **全部開啟 /
 Enable all** restores every channel. Different rates are intentional firmware
 pitch settings and should not be interpreted as a global speed error.
 Use **全部靜音 / Mute all**, then check one active channel at a time, to isolate

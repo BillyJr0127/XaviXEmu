@@ -31,6 +31,10 @@ typedef struct instruction_trace
 	uint64_t minimum_cycle;
 	uint32_t minimum_pc;
 	uint32_t maximum_pc;
+	unsigned opcode_filter;
+	int opcode_filter_enabled;
+	uint32_t register5_filter;
+	int register5_filter_enabled;
 	uint32_t limit;
 	uint32_t count;
 } instruction_trace;
@@ -59,21 +63,193 @@ typedef struct gpu_scale_trace
 	int first_valid;
 } gpu_scale_trace;
 
+typedef struct audio_channel_metrics
+{
+	uint32_t key_ons;
+	uint32_t releases;
+	uint32_t slides;
+	uint32_t stops;
+	uint32_t active_frames;
+	uint32_t first_frame;
+	uint32_t last_frame;
+	uint16_t minimum_pitch;
+	uint16_t maximum_pitch;
+	uint8_t minimum_volume;
+	uint8_t maximum_volume;
+	uint8_t seen;
+} audio_channel_metrics;
+
+static void (*probe_original_write8)(void *opaque, uint32_t address,
+	uint8_t data);
+static uint64_t geometry_command_count[256];
+static uint64_t gpu_submit_descriptor_count[64];
+static uint64_t gpu_enemy_submit_count;
+static int gpu_submit_trace_enabled;
+static int audio_command_trace_enabled;
+static int audio_descriptor_trace_enabled;
+static int audio_channel_metrics_enabled;
+static unsigned probe_video_frame;
+static audio_channel_metrics audio_metrics[XAVIX2_AUDIO_VOICES];
+
+static void update_audio_metrics(unsigned channel, unsigned operation,
+	uint16_t control_flags, const xavix2_audio_voice *voice)
+{
+	audio_channel_metrics *metrics = &audio_metrics[channel];
+	if (!metrics->seen)
+	{
+		metrics->first_frame = probe_video_frame;
+		metrics->minimum_pitch = UINT16_MAX;
+		metrics->minimum_volume = UINT8_MAX;
+		metrics->seen = 1;
+	}
+	metrics->last_frame = probe_video_frame;
+	if (operation == 0x040 || operation == 0x240)
+		metrics->key_ons++;
+	else if (operation == 0x080)
+		metrics->stops++;
+	else if (operation == 0x0c0)
+	{
+		if (control_flags & UINT16_C(0x0100))
+			metrics->releases++;
+		else
+			metrics->slides++;
+	}
+	if (operation != 0x080)
+	{
+		uint8_t volume = voice->volume_left > voice->volume_right ?
+			voice->volume_left : voice->volume_right;
+		if (voice->pitch < metrics->minimum_pitch)
+			metrics->minimum_pitch = voice->pitch;
+		if (voice->pitch > metrics->maximum_pitch)
+			metrics->maximum_pitch = voice->pitch;
+		if (volume < metrics->minimum_volume)
+			metrics->minimum_volume = volume;
+		if (volume > metrics->maximum_volume)
+			metrics->maximum_volume = volume;
+	}
+}
+
+static void trace_probe_write8(void *opaque, uint32_t address, uint8_t data)
+{
+	xavix2_machine_t *machine = (xavix2_machine_t *)opaque;
+	uint16_t audio_command = 0x03f;
+	uint16_t control_pitch = 0;
+	uint16_t control_flags = 0;
+	uint8_t control_left = 0;
+	uint8_t control_right = 0;
+	if (address == UINT32_C(0xffffe858))
+		geometry_command_count[data]++;
+	if (gpu_submit_trace_enabled && address == UINT32_C(0xffffe414))
+	{
+		uint16_t list = (uint16_t)(machine->mmio[0x40c] |
+			((uint16_t)machine->mmio[0x40d] << 8));
+		uint16_t count = (uint16_t)(machine->mmio[0x410] |
+			((uint16_t)machine->mmio[0x411] << 8));
+		uint16_t descriptor_table = (uint16_t)(machine->mmio[0x608] |
+			((uint16_t)machine->mmio[0x609] << 8));
+		unsigned index;
+		uint8_t seen[64] = { 0 };
+		int enemy_seen = 0;
+		for (index = 0; index < count && (uint32_t)list + index * 8 + 8 <=
+			XAVIX2_LOW_RAM_SIZE; ++index)
+		{
+			const uint8_t *raw = machine->low_ram + list + index * 8;
+			uint64_t command = (uint64_t)raw[0] |
+				((uint64_t)raw[1] << 8) | ((uint64_t)raw[2] << 16) |
+				((uint64_t)raw[3] << 24) | ((uint64_t)raw[4] << 32) |
+				((uint64_t)raw[5] << 40) | ((uint64_t)raw[6] << 48) |
+				((uint64_t)raw[7] << 56);
+			unsigned descriptor_index = (unsigned)((command >> 30) & 0x3f);
+			uint32_t descriptor_address = (uint32_t)descriptor_table +
+				4 * descriptor_index;
+			uint32_t descriptor = descriptor_address + 4 <= XAVIX2_LOW_RAM_SIZE ?
+				(uint32_t)machine->low_ram[descriptor_address] |
+				((uint32_t)machine->low_ram[descriptor_address + 1] << 8) |
+				((uint32_t)machine->low_ram[descriptor_address + 2] << 16) |
+				((uint32_t)machine->low_ram[descriptor_address + 3] << 24) : 0;
+			seen[descriptor_index] = 1;
+			if (descriptor == UINT32_C(0xe300654d))
+			{
+				enemy_seen = 1;
+				if (gpu_submit_trace_enabled > 1)
+					printf("gpu_enemy_submit hardware_frame=%" PRIu64
+						" list=%04X/%u index=%u descriptor_index=%u"
+						" command=%016" PRIX64 "\n", machine->frame_count,
+						list, count, index, descriptor_index, command);
+			}
+		}
+		gpu_enemy_submit_count += enemy_seen;
+		for (index = 0; index < 64; ++index)
+			gpu_submit_descriptor_count[index] += seen[index];
+	}
+	if ((audio_command_trace_enabled || audio_channel_metrics_enabled) &&
+		address == UINT32_C(0xffffea0b))
+	{
+		audio_command = (uint16_t)(machine->mmio[0xa0a] |
+			((uint16_t)data << 8));
+		control_pitch = (uint16_t)(machine->mmio[0xa18] |
+			((uint16_t)machine->mmio[0xa19] << 8));
+		control_flags = (uint16_t)(machine->mmio[0xa1a] |
+			((uint16_t)machine->mmio[0xa1b] << 8));
+		control_left = machine->mmio[0xa1c];
+		control_right = machine->mmio[0xa1d];
+	}
+	probe_original_write8(opaque, address, data);
+	if (audio_command != 0x03f)
+	{
+		unsigned channel = audio_command & 0x3f;
+		unsigned operation = audio_command & 0x3c0;
+		const xavix2_audio_voice *voice = &machine->audio.voice[channel];
+		if (audio_channel_metrics_enabled)
+			update_audio_metrics(channel, operation, control_flags, voice);
+		if (audio_command_trace_enabled)
+		{
+			printf("audio_command frame=%u cycle=%" PRIu64
+				" pc=%08" PRIX32 " cmd=%03X ch=%u"
+				" control=%u,%u,%u,%u active=%u loop=%u release=%u"
+				" pitch=%u volume=%u,%u"
+				" start=%08" PRIX32 " loop_address=%08" PRIX32 "\n",
+				probe_video_frame, machine->cpu.total_cycles, machine->cpu.pc,
+				audio_command, channel, control_pitch, control_flags,
+				control_left, control_right, voice->active, voice->loop,
+				voice->release_phase, voice->pitch, voice->volume_left,
+				voice->volume_right, voice->start_address,
+				voice->loop_address);
+			if (audio_descriptor_trace_enabled)
+			{
+				const uint8_t *descriptor = machine->video_ram + 0xf800 +
+					channel * XAVIX2_AUDIO_DESCRIPTOR_SIZE;
+				unsigned byte;
+				printf("  command_descriptor=");
+				for (byte = 0; byte < XAVIX2_AUDIO_DESCRIPTOR_SIZE; ++byte)
+					printf("%02X", descriptor[byte]);
+				putchar('\n');
+			}
+		}
+	}
+}
+
 static void trace_instruction(void *opaque, const xavix2_cpu_t *cpu,
 	uint32_t pc, uint32_t opcode, uint8_t bytes)
 {
 	instruction_trace *trace = (instruction_trace *)opaque;
 	if (cpu->total_cycles < trace->minimum_cycle ||
 		pc < trace->minimum_pc || pc > trace->maximum_pc ||
+		(trace->opcode_filter_enabled &&
+			(opcode >> 24) != trace->opcode_filter) ||
+		(trace->register5_filter_enabled &&
+			cpu->r[5] != trace->register5_filter) ||
 		trace->count >= trace->limit)
 		return;
 	printf("insn cycle=%" PRIu64 " pc=%08" PRIX32 " raw=%0*" PRIX32
 		" r=%08" PRIX32 ",%08" PRIX32 ",%08" PRIX32 ",%08" PRIX32
 		",%08" PRIX32 ",%08" PRIX32 ",%08" PRIX32 ",%08" PRIX32
+		" hr=%08" PRIX32 ",%08" PRIX32 ",%08" PRIX32 ",%08" PRIX32
 		" flags=%02" PRIX32 "\n",
 		cpu->total_cycles, pc, bytes * 2, opcode >> (32 - bytes * 8),
 		cpu->r[0], cpu->r[1], cpu->r[2], cpu->r[3], cpu->r[4], cpu->r[5],
-		cpu->r[6], cpu->r[7], cpu->hr[4] & UINT32_C(0xff));
+		cpu->r[6], cpu->r[7], cpu->hr[0], cpu->hr[1], cpu->hr[2], cpu->hr[3],
+		cpu->hr[4] & UINT32_C(0xff));
 	trace->count++;
 }
 
@@ -357,7 +533,7 @@ static uint64_t get_le64(const uint8_t *source)
 }
 
 static void trace_gpu_scale_fields(const xavix2_machine_t *machine,
-	unsigned frame, gpu_scale_trace *trace)
+	unsigned frame, int descriptor_filter, gpu_scale_trace *trace)
 {
 	uint16_t address;
 	uint16_t count;
@@ -401,6 +577,9 @@ static void trace_gpu_scale_fields(const xavix2_machine_t *machine,
 			break;
 		command = get_le64(machine->low_ram + command_address);
 		descriptor_index = (uint32_t)((command >> 30) & 0x3f);
+		if (descriptor_filter >= 0 &&
+			descriptor_index != (uint32_t)descriptor_filter)
+			continue;
 		data_index = (uint32_t)((command >> 58) & 0x3f);
 		descriptor_address = (uint32_t)descsize_address +
 			4 * descriptor_index;
@@ -1407,7 +1586,9 @@ int main(int argc, char **argv)
 	int diagnostic_ram_trace_verbose = 0;
 	int instruction_trace_enabled = 0;
 	int gpu_scale_trace_enabled = 0;
-	instruction_trace instruction_log = { 0, 0, UINT32_MAX, 256, 0 };
+	int gpu_descriptor_filter = -1;
+	int geometry_command_trace_enabled = 0;
+	instruction_trace instruction_log = { 0, 0, UINT32_MAX, 0, 0, 0, 0, 256, 0 };
 	gpu_scale_trace scale_trace = { 0 };
 
 	if ((argc < 2 || argc > 4) || !MultiByteToWideChar(CP_ACP, 0,
@@ -1500,6 +1681,8 @@ int main(int argc, char **argv)
 		const char *trace_max = getenv("XAVIX2_TRACE_PC_MAX");
 		const char *trace_limit = getenv("XAVIX2_TRACE_LIMIT");
 		const char *trace_cycle = getenv("XAVIX2_TRACE_CYCLE");
+		const char *trace_opcode = getenv("XAVIX2_TRACE_OPCODE");
+		const char *trace_register5 = getenv("XAVIX2_TRACE_R5");
 		const char *sensor_packet_text = getenv("XAVIX2_SENSOR_PACKET");
 		const char *sensor_packet_time = getenv("XAVIX2_SENSOR_PACKET_AT");
 		const char *motion_packet_text = getenv("XAVIX2_MOTION_PACKET");
@@ -1545,6 +1728,16 @@ int main(int argc, char **argv)
 		const char *video_trace_period_text =
 			getenv("XAVIX2_VIDEO_TRACE_PERIOD");
 		const char *gpu_scale_trace_text = getenv("XAVIX2_GPU_SCALE_TRACE");
+		const char *gpu_descriptor_trace_text =
+			getenv("XAVIX2_GPU_DESCRIPTOR_TRACE");
+		const char *geometry_command_trace_text =
+			getenv("XAVIX2_GE_COMMAND_TRACE");
+		const char *gpu_submit_trace_text =
+			getenv("XAVIX2_GPU_SUBMIT_TRACE");
+		const char *audio_command_trace_text =
+			getenv("XAVIX2_AUDIO_COMMAND_TRACE");
+		const char *audio_channel_metrics_text =
+			getenv("XAVIX2_AUDIO_CHANNEL_METRICS");
 		audio_wav_path = getenv("XAVIX2_AUDIO_WAV");
 		if (input) pending_input = (uint32_t)strtoul(input, NULL, 0);
 		if (at) input_at = _strtoui64(at, NULL, 0);
@@ -1584,6 +1777,15 @@ int main(int argc, char **argv)
 		{
 			machine->diagnostic_ram_first = (uint16_t)strtoul(ram_trace_first, NULL, 0);
 			machine->diagnostic_ram_last = (uint16_t)strtoul(ram_trace_last, NULL, 0);
+			/* Runtime states intentionally preserve machine diagnostics.  A new
+			 * probe request must report only accesses made after this resume,
+			 * otherwise saved trace entries can consume the bounded buffer before
+			 * the requested frame is reached. */
+			machine->diagnostic_ram_read_count = 0;
+			machine->diagnostic_ram_write_count = 0;
+			machine->diagnostic_ram_trace_count = 0;
+			machine->diagnostic_ram_trace_dropped = 0;
+			machine->diagnostic_trace_start_cycle = machine->cpu.total_cycles;
 		}
 		else
 		{
@@ -1605,6 +1807,19 @@ int main(int argc, char **argv)
 		}
 		if (trace_limit) instruction_log.limit = (uint32_t)strtoul(trace_limit, NULL, 0);
 		if (trace_cycle) instruction_log.minimum_cycle = _strtoui64(trace_cycle, NULL, 0);
+		if (trace_opcode)
+		{
+			instruction_log.opcode_filter = (unsigned)strtoul(trace_opcode, NULL, 0) & 0xff;
+			instruction_log.opcode_filter_enabled = 1;
+			instruction_trace_enabled = 1;
+		}
+		if (trace_register5)
+		{
+			instruction_log.register5_filter =
+				(uint32_t)strtoul(trace_register5, NULL, 0);
+			instruction_log.register5_filter_enabled = 1;
+			instruction_trace_enabled = 1;
+		}
 		if (video_frames_text)
 			video_frames = (unsigned)strtoul(video_frames_text, NULL, 0);
 		if (video_input_at_text)
@@ -1740,6 +1955,41 @@ int main(int argc, char **argv)
 		}
 		if (gpu_scale_trace_text)
 			gpu_scale_trace_enabled = atoi(gpu_scale_trace_text) != 0;
+		if (gpu_descriptor_trace_text)
+		{
+			gpu_descriptor_filter = (int)strtol(gpu_descriptor_trace_text,
+				NULL, 0);
+			if (gpu_descriptor_filter >= 0 && gpu_descriptor_filter < 64)
+				gpu_scale_trace_enabled = 1;
+			else
+				gpu_descriptor_filter = -1;
+		}
+		if (geometry_command_trace_text)
+			geometry_command_trace_enabled =
+				atoi(geometry_command_trace_text) != 0;
+		if (gpu_submit_trace_text)
+			gpu_submit_trace_enabled = atoi(gpu_submit_trace_text);
+		if (audio_command_trace_text)
+			audio_command_trace_enabled = atoi(audio_command_trace_text) != 0;
+		audio_descriptor_trace_enabled =
+			getenv("XAVIX2_AUDIO_DESCRIPTORS") != NULL;
+		if (audio_channel_metrics_text)
+			audio_channel_metrics_enabled =
+				atoi(audio_channel_metrics_text) != 0;
+		if (geometry_command_trace_enabled || gpu_submit_trace_enabled ||
+			audio_command_trace_enabled || audio_channel_metrics_enabled)
+		{
+			unsigned command;
+			memset(geometry_command_count, 0, sizeof(geometry_command_count));
+			memset(gpu_submit_descriptor_count, 0,
+				sizeof(gpu_submit_descriptor_count));
+			gpu_enemy_submit_count = 0;
+			memset(audio_metrics, 0, sizeof(audio_metrics));
+			probe_original_write8 = machine->cpu.write8;
+			machine->cpu.write8 = trace_probe_write8;
+			for (command = 0; command < 256; ++command)
+				geometry_command_count[command] = 0;
+		}
 		if (sensor_packet_text)
 		{
 			if (!parse_sensor_packet(sensor_packet_text, sensor_packet))
@@ -1848,10 +2098,17 @@ int main(int argc, char **argv)
 				frame < video_autofire_end &&
 				(frame - video_autofire_at) % video_autofire_period < 3) ?
 				pending_input : 0;
+			probe_video_frame = frame + 1;
 			(void)xavix2_machine_run_video_frame(machine,
 				frame_packet, frame_input);
+			if (audio_channel_metrics_enabled)
+				for (unsigned channel = 0; channel < XAVIX2_AUDIO_VOICES;
+					++channel)
+					if (machine->audio.voice[channel].active)
+						audio_metrics[channel].active_frames++;
 			if (gpu_scale_trace_enabled)
-				trace_gpu_scale_fields(machine, frame + 1, &scale_trace);
+				trace_gpu_scale_fields(machine, frame + 1,
+					gpu_descriptor_filter, &scale_trace);
 			if (audio_wav_samples)
 				memcpy(audio_wav_samples + (size_t)frame *
 					XAVIX2_AUDIO_FRAMES_PER_VIDEO_FRAME *
@@ -1886,6 +2143,55 @@ int main(int argc, char **argv)
 		}
 		if (gpu_scale_trace_enabled)
 			print_gpu_scale_trace_summary(&scale_trace);
+		if (geometry_command_trace_enabled)
+		{
+			unsigned command;
+			printf("geometry_commands");
+			for (command = 0; command < 256; ++command)
+				if (geometry_command_count[command])
+					printf(" %02X=%" PRIu64, command,
+						geometry_command_count[command]);
+			putchar('\n');
+		}
+		if (gpu_submit_trace_enabled)
+		{
+			unsigned descriptor;
+			printf("gpu_submit_descriptors");
+			for (descriptor = 0; descriptor < 64; ++descriptor)
+				if (gpu_submit_descriptor_count[descriptor])
+					printf(" %u=%" PRIu64, descriptor,
+						gpu_submit_descriptor_count[descriptor]);
+			putchar('\n');
+			printf("gpu_enemy_submissions=%" PRIu64 "\n",
+				gpu_enemy_submit_count);
+		}
+		if (audio_channel_metrics_enabled)
+		{
+			uint32_t engine_rate = xavix2_audio_engine_rate(machine->mmio[0xa00],
+				machine->mmio[0xa05]);
+			unsigned channel;
+			printf("audio_channel_metrics engine_rate=%" PRIu32 "\n", engine_rate);
+			for (channel = 0; channel < XAVIX2_AUDIO_VOICES; ++channel)
+			{
+				const audio_channel_metrics *metrics = &audio_metrics[channel];
+				if (!metrics->seen && !metrics->active_frames)
+					continue;
+				printf("audio_channel ch=%u key_on=%" PRIu32
+					" release=%" PRIu32 " slide=%" PRIu32 " stop=%" PRIu32
+					" active_frames=%" PRIu32 " events=%" PRIu32 "-%" PRIu32,
+					channel, metrics->key_ons, metrics->releases, metrics->slides,
+					metrics->stops, metrics->active_frames, metrics->first_frame,
+					metrics->last_frame);
+				if (metrics->seen && metrics->minimum_pitch != UINT16_MAX)
+					printf(" pitch=%u-%u rate=%" PRIu32 "-%" PRIu32
+						" volume=%u-%u", metrics->minimum_pitch,
+						metrics->maximum_pitch,
+						(uint32_t)(((uint64_t)metrics->minimum_pitch * engine_rate) >> 16),
+						(uint32_t)(((uint64_t)metrics->maximum_pitch * engine_rate) >> 16),
+						metrics->minimum_volume, metrics->maximum_volume);
+				putchar('\n');
+			}
+		}
 		if (audio_wav_samples)
 			printf("audio_wav=%s %s frames=%zu\n", audio_wav_path,
 				save_wav(audio_wav_path, audio_wav_samples,

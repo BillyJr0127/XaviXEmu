@@ -434,14 +434,27 @@ on the user's machine before any clock change is considered.
   0.82/0.83, 1.23/1.24, 1.64/1.65, and 3.27/3.29 seconds.  The residual roughly
   2% alignment offset is below the precision justified by a mixed-video source,
   so the hardware-like 120:60 integer cadence is retained.
-- The remaining overlapping loop noise exposed a separate waveform-address
-  error.  Channel 8, for example, starts at ROM `$7dac80`, has its second
+- The remaining overlapping loop noise exposed two separate lifecycle gaps.
+  Channel 8, for example, starts at ROM `$7dac80`, has its second descriptor
   address at `$7dc600`, and contains terminators at `$7dc5ff` and `$7dc67f`.
-  The second address is therefore the sustain-loop target selected after a
-  terminator, not an exclusive end that wraps playback to the primary start.
-  Channels 3, 10, and 13 have the same terminator-immediately-before-target
-  layout.  The audio core now plays each attack once and loops only the sustain
-  section.  Exact envelope and filter behavior remains a separate milestone.
+  Treating the second address as a sustain target selects a tiny neighbouring
+  fragment; restarting at the primary address instead gives the substantially
+  stronger match to the isolated real-hardware phrase.  The second address is
+  retained as a descriptor boundary while `$240|channel` restarts the primary
+  waveform at a terminator.
+- Command traces then separated the two forms of `$c0|channel`. Pitch slides
+  write zero to `$ea1a/$ea1b`; note releases set `$ea1b` bit 0 at routine
+  `$40055d42-$40055d89`.  Initial notes on channels 11-13 release six video
+  frames after key-on, while later melodic notes commonly release after eleven
+  frames.  The old mixer ignored this flag, leaving looped notes audible until
+  channel reuse.  Immediate deallocation was also wrong because the firmware
+  still observes the channel during the release stage.  The provisional model
+  now keeps the active bit asserted during a 16-frame linear fade, then clears
+  the voice; a new key-on cancels the fade.  An isolated title-state comparison
+  keeps the sampled pitch ratio at approximately 1.00.  Firmware field `+$36`
+  is modified by the release routine and likely selects an instrument-specific
+  envelope rate, but its transfer function and the hardware filter remain to
+  be decoded before audio can be considered exact.
 
 ## Shared controller/power status register (2026-08-12)
 
@@ -622,7 +635,62 @@ on the user's machine before any clock change is considered.
   distance result; ROM-independent tests cover zero, non-squares, squares, and
   the full 32-bit input range.
 - A 104-frame replay after F7 shows the complete enemy sprite and correctly
-  scaled projectile.  Longer replays confirm that the enemy is intentionally
-  absent between its attack windows; this is distinct from a renderer dropping
-  a submitted character command.  Later levels and a complete play-through
-  remain outside this checkpoint validation.
+  scaled projectile.  Frames without the enemy contain no matching sprite
+  command, so this is distinct from the renderer dropping a submitted layer.
+  The later trajectory investigation below found and corrected a CPU flag
+  error; earlier long-replay conclusions about the intended absence duration
+  are therefore superseded.
+
+### Second-stage hardware-video comparison and audio baseline
+
+- A newer user F7 checkpoint at hardware frame 5,877 resumes the same forest
+  encounter.  Before the CPU correction, a 600-frame command trace submitted
+  descriptor 33 (the 78x102 enemy) on only 73 hardware frames and the visible
+  positions were fragmented.  The object still existed in firmware, but its
+  motion vector repeatedly sent it beyond the 320x240 crop.
+- The movement path at `$34223-$3424b` normalizes an angle, looks up sine, and
+  performs a fixed-point multiply.  The normalizer reads the signed division
+  remainder from hardware result register HR3 with `C9 43`, then immediately
+  branches on its sign.  The interpreter moved HR3 without updating N/Z, so
+  the branch inherited the negative flag from an older comparison and added a
+  false `$400` half-turn.  The resulting lookup was negative and moved the
+  enemy offscreen in the opposite direction.  Updating N/Z on C8/C9 result
+  moves restores the expected `$0ab` angle and positive sine/movement value.
+- That flag correction made the first approach continuous, but a closer
+  hardware-video comparison at 2:38, 2:43, and 2:48 showed that it was not the
+  complete fix.  The real enemy remains present through changing poses and
+  moves between foreground and background distances, whereas the emulator's
+  object stayed in state 1/action 0 at depth 1280 and eventually ran offscreen:
+  <https://www.youtube.com/watch?v=kTcEUWf5t7U&t=147s>.
+- The remaining failure was in the B4/B5 64-bit multiply.  The fixed-point
+  helper at `$54560` multiplies a positive radius by a signed ROM sine-table
+  value, then checks that HR1 is the sign extension of HR0 before extracting
+  the Q16.16 result.  The preliminary unsigned interpretation turned every
+  negative half-cycle into an overflow.  The enemy therefore never reached the
+  ground condition that advances its behavior and replacement schedule.
+- Treating B4/B5 as signed restores the firmware-owned sequence without any
+  sprite, culling, timer, RAM, or ROM override.  At 100-frame samples of the
+  same 600-frame F7 replay, one live enemy progresses through actions 1, 2, and
+  3, behavior states 1, 2, and 7, and depths 1920, 1760, and 2240.  Captured
+  frames show different running, attack, smoke, and distant poses at frames
+  100, 200, 300, 400, 500, and 600, matching the user's observation that the
+  second-stage enemy should normally remain active while its pose and distance
+  change.
+- The boot probe now offers `XAVIX2_AUDIO_CHANNEL_METRICS=1`.  Unlike the old
+  end-of-frame log, it records each sound command at the instant it executes,
+  so a stop and restart in the same frame are not misreported as one sustained
+  voice.  A deterministic ten-second replay of this F7 point uses effect
+  channels 0 and 1 plus music channels 3-13.  Channels 3-13 each receive 20-25
+  key-ons, 17-21 release commands, and firmware pitches corresponding to about
+  9.4-42.2 kHz source rates under the common 213,068 Hz engine clock.  Only
+  channel 9 performs seven zero-flag pitch slides; the other live updates are
+  key-off releases.  This is the per-channel regression baseline for decoding
+  the remaining instrument-specific envelope/filter behavior without inventing
+  independent channel clocks.
+- All eleven looping instruments reached by the same replay have a secondary
+  descriptor address exactly one byte after the primary waveform's first `$80`
+  terminator.  The separation holds across primary lengths from 3,455 to 31,231
+  bytes, while one-shot descriptors may retain unrelated secondary values.  The
+  secondary field is therefore an end/boundary pointer here, not an alternate
+  sustain waveform; loop restart at the primary address is the evidence-backed
+  behavior.

@@ -1453,7 +1453,8 @@ static void machine_write8(void *opaque, uint32_t address, uint8_t data)
 				xavix2_audio_command(&machine->audio,
 					load16(machine->mmio + 0xa0a),
 					machine->video_ram + AUDIO_DESCRIPTOR_RAM_OFFSET,
-					load16(machine->mmio + 0xa18), machine->mmio[0xa1c],
+					load16(machine->mmio + 0xa18),
+					load16(machine->mmio + 0xa1a), machine->mmio[0xa1c],
 					machine->mmio[0xa1d]);
 			if (offset == PROJECTOR_COMMAND_REGISTER)
 				projector_start(machine, data);

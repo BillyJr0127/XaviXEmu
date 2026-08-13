@@ -417,14 +417,21 @@ uint32_t xavix2_cpu_execute(xavix2_cpu_t *cpu, uint32_t cycle_budget)
 		case 0xb2: case 0xb3: cpu->hr[0] = (uint32_t)((int64_t)(int32_t)cpu->r[r1(opcode)] * (int32_t)cpu->r[r2(opcode)]); break;
 		case 0xb4: case 0xb5:
 		{
-			uint64_t result = (uint64_t)cpu->r[r1(opcode)] * cpu->r[r2(opcode)];
+			/* The firmware fixed-point helper at $54560 feeds this form a
+			 * signed sine-table value, then validates that HR1 is the sign
+			 * extension of HR0 before extracting the Q16.16 product.  Treating
+			 * the operands as unsigned turns every negative half-cycle into an
+			 * overflow and breaks object trajectories. */
+			uint64_t result = (uint64_t)((int64_t)(int32_t)cpu->r[r1(opcode)] *
+				(int32_t)cpu->r[r2(opcode)]);
 			cpu->hr[0] = (uint32_t)result;
 			cpu->hr[1] = (uint32_t)(result >> 32);
 			break;
 		}
 		case 0xb6: case 0xb7:
 		{
-			uint64_t result = (uint64_t)((int64_t)(int32_t)cpu->r[r1(opcode)] * (int32_t)cpu->r[r2(opcode)]);
+			uint64_t result = (uint64_t)((int64_t)(int32_t)cpu->r[r1(opcode)] *
+				(int32_t)cpu->r[r2(opcode)]);
 			cpu->hr[0] = (uint32_t)result;
 			cpu->hr[1] = (uint32_t)(result >> 32);
 			break;
@@ -454,7 +461,14 @@ uint32_t xavix2_cpu_execute(xavix2_cpu_t *cpu, uint32_t cycle_budget)
 
 		case 0xc0: case 0xc1: case 0xc2: case 0xc3: case 0xc4: case 0xc5: case 0xc6: case 0xc7:
 			/* MAME currently treats these encodings as no-ops. */ break;
-		case 0xc8: case 0xc9: cpu->r[r1(opcode)] = cpu->hr[val6u(opcode)]; break;
+		/* Firmware branches directly on values moved out of the multiply/divide
+		 * result registers.  In particular, the angle normalizer at 0x54468
+		 * tests the sign of HR3 immediately after C9 43.  Updating N/Z here is
+		 * therefore part of the instruction, not a side effect of the preceding
+		 * divide. */
+		case 0xc8: case 0xc9:
+			cpu->r[r1(opcode)] = snz(cpu, cpu->hr[val6u(opcode)]);
+			break;
 		case 0xca: case 0xcb: cpu->hr[val6u(opcode)] = cpu->r[r1(opcode)]; break;
 		case 0xcc: case 0xcd: case 0xce: case 0xcf:
 			/* MAME currently treats these encodings as no-ops. */ break;
@@ -490,8 +504,8 @@ uint32_t xavix2_cpu_execute(xavix2_cpu_t *cpu, uint32_t cycle_budget)
 		case 0xf3: cpu->hr[4] |= F_Z; break;
 		case 0xf4: cpu->hr[4] &= ~F_N; break;
 		case 0xf5: cpu->hr[4] |= F_N; break;
-		case 0xf6: cpu->hr[4] &= ~F_Z; break;
-		case 0xf7: cpu->hr[4] |= F_Z; break;
+		case 0xf6: cpu->hr[4] &= ~F_V; break;
+		case 0xf7: cpu->hr[4] |= F_V; break;
 		case 0xf8: cpu->hr[4] &= ~F_I; break;
 		case 0xf9: cpu->hr[4] |= F_I; cpu->enable_interrupt_delay = 2; break;
 		case 0xfa: case 0xfb: record_unimplemented(cpu, instruction_pc, first); break;

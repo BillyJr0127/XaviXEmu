@@ -812,6 +812,7 @@ static void update_xavix2_audio_channel_menu(void)
 			_snwprintf(label, sizeof(label) / sizeof(label[0]),
 				L"%02u  %5lu Hz  L%u R%u%s", channel,
 				(unsigned long)rate, voice->volume_left, voice->volume_right,
+				voice->release_phase ? L"  release" :
 				voice->loop ? L"  loop" : L"");
 		}
 		else

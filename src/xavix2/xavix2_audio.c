@@ -9,6 +9,15 @@
 #include <limits.h>
 #include <string.h>
 
+enum
+{
+	/* Naruto's isolated title phrase fits a roughly 0.2-0.27 second release.
+	 * Keep this explicit until the descriptor envelope-rate field has been
+	 * decoded across more instruments. */
+	XAVIX2_AUDIO_RELEASE_FRAMES = 16,
+	XAVIX2_AUDIO_RELEASE_FINISHED = XAVIX2_AUDIO_RELEASE_FRAMES + 1
+};
+
 static uint16_t load16(const uint8_t *source)
 {
 	return (uint16_t)(source[0] | ((uint16_t)source[1] << 8));
@@ -47,6 +56,7 @@ static void stop_voice(xavix2_audio_voice *voice)
 	voice->volume_right = 0;
 	voice->active = 0;
 	voice->loop = 0;
+	voice->release_phase = 0;
 }
 
 void xavix2_audio_init(xavix2_audio *audio, const uint8_t *rom,
@@ -61,7 +71,8 @@ void xavix2_audio_init(xavix2_audio *audio, const uint8_t *rom,
 
 void xavix2_audio_command(xavix2_audio *audio, uint16_t command,
 	const uint8_t descriptors[XAVIX2_AUDIO_DESCRIPTOR_BYTES],
-	uint16_t control_pitch, uint8_t control_left, uint8_t control_right)
+	uint16_t control_pitch, uint16_t control_flags,
+	uint8_t control_left, uint8_t control_right)
 {
 	unsigned channel;
 	unsigned operation;
@@ -89,6 +100,13 @@ void xavix2_audio_command(xavix2_audio *audio, uint16_t command,
 			voice->pitch = control_pitch;
 			voice->volume_left = control_left;
 			voice->volume_right = control_right;
+			/* Firmware pitch slides submit this command with EA1A/EA1B zero.
+			 * Note release instead sets EA1B bit 0.  The hardware keeps the
+			 * channel allocated while its envelope decays, so do not clear the
+			 * guest-visible active bit at this boundary. */
+			if ((control_flags & UINT16_C(0x0100)) &&
+				voice->release_phase == 0)
+				voice->release_phase = 1;
 		}
 		return;
 	}
@@ -103,18 +121,19 @@ void xavix2_audio_command(xavix2_audio *audio, uint16_t command,
 	}
 	voice->position = (uint64_t)start << 32;
 	voice->start_address = start;
-	/* The second waveform address is the target selected when a 0x80
-	 * terminator is encountered, not an exclusive end address.  Real Naruto
-	 * descriptors place the end of an instrument's attack immediately before
-	 * this address, then keep a short sustain waveform after it. */
+	/* Looping samples return to their primary waveform.  In Naruto the second
+	 * descriptor address is immediately after the primary 0x80 terminator;
+	 * treating it as a loop target selects a tiny neighbouring fragment and
+	 * produces a timbre absent from the isolated real-hardware phrase. */
 	loop_address = descriptor_address(descriptor, 0x0e, 0x12);
 	voice->loop = operation == 0x240 && loop_address < audio->rom_size;
 	voice->loop_address = voice->loop ?
-		loop_address : 0;
+		start : 0;
 	voice->pitch = load16(descriptor + 0x16);
 	voice->volume_left = descriptor[0x32];
 	voice->volume_right = descriptor[0x33];
 	voice->active = 1;
+	voice->release_phase = 0;
 }
 
 static int current_sample(xavix2_audio *audio, xavix2_audio_voice *voice,
@@ -224,6 +243,7 @@ void xavix2_audio_render(xavix2_audio *audio, uint32_t engine_rate)
 		for (channel = 0; channel < XAVIX2_AUDIO_VOICES; ++channel)
 		{
 			xavix2_audio_voice *voice = &audio->voice[channel];
+			uint32_t release_gain = UINT16_C(0x10000);
 			uint64_t step;
 			int32_t sample;
 			if (!voice->active)
@@ -233,10 +253,20 @@ void xavix2_audio_render(xavix2_audio *audio, uint32_t engine_rate)
 			sample = interpolated_sample(audio, voice);
 			if (!voice->active)
 				continue;
+			if (voice->release_phase)
+			{
+				const uint32_t total = XAVIX2_AUDIO_RELEASE_FRAMES *
+					XAVIX2_AUDIO_FRAMES_PER_VIDEO_FRAME;
+				const uint32_t elapsed =
+					((uint32_t)voice->release_phase - 1U) *
+					XAVIX2_AUDIO_FRAMES_PER_VIDEO_FRAME + frame;
+				release_gain = elapsed < total ?
+					(uint32_t)(((uint64_t)(total - elapsed) << 16) / total) : 0;
+			}
 			if (!voice->host_muted)
 			{
-				left += sample * voice->volume_left;
-				right += sample * voice->volume_right;
+				left += ((int64_t)sample * voice->volume_left * release_gain) >> 16;
+				right += ((int64_t)sample * voice->volume_right * release_gain) >> 16;
 			}
 			/* Firmware computes pitch as source_rate * 65536 / engine_rate.
 			 * Convert that Q16 phase increment to the host output cadence. */
@@ -251,6 +281,17 @@ void xavix2_audio_render(xavix2_audio *audio, uint32_t engine_rate)
 		right /= 2;
 		audio->frame[frame * 2] = clamp16(left);
 		audio->frame[frame * 2 + 1] = clamp16(right);
+	}
+	for (unsigned channel = 0; channel < XAVIX2_AUDIO_VOICES; ++channel)
+	{
+		xavix2_audio_voice *voice = &audio->voice[channel];
+		if (voice->release_phase > 0 &&
+			voice->release_phase < XAVIX2_AUDIO_RELEASE_FINISHED)
+		{
+			++voice->release_phase;
+			if (voice->release_phase == XAVIX2_AUDIO_RELEASE_FINISHED)
+				stop_voice(voice);
+		}
 	}
 }
 
