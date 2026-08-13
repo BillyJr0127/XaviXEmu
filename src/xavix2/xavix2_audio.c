@@ -41,7 +41,7 @@ static void stop_voice(xavix2_audio_voice *voice)
 {
 	voice->position = 0;
 	voice->start_address = 0;
-	voice->end_address = 0;
+	voice->loop_address = 0;
 	voice->pitch = 0;
 	voice->volume_left = 0;
 	voice->volume_right = 0;
@@ -68,7 +68,7 @@ void xavix2_audio_command(xavix2_audio *audio, uint16_t command,
 	const uint8_t *descriptor;
 	xavix2_audio_voice *voice;
 	uint32_t start;
-	uint32_t end;
+	uint32_t loop_address;
 
 	if (!audio || !descriptors)
 		return;
@@ -103,10 +103,14 @@ void xavix2_audio_command(xavix2_audio *audio, uint16_t command,
 	}
 	voice->position = (uint64_t)start << 32;
 	voice->start_address = start;
-	voice->loop = operation == 0x240;
-	end = descriptor_address(descriptor, 0x0e, 0x12);
-	voice->end_address = voice->loop && end > start && end <= audio->rom_size ?
-		end : 0;
+	/* The second waveform address is the target selected when a 0x80
+	 * terminator is encountered, not an exclusive end address.  Real Naruto
+	 * descriptors place the end of an instrument's attack immediately before
+	 * this address, then keep a short sustain waveform after it. */
+	loop_address = descriptor_address(descriptor, 0x0e, 0x12);
+	voice->loop = operation == 0x240 && loop_address < audio->rom_size;
+	voice->loop_address = voice->loop ?
+		loop_address : 0;
 	voice->pitch = load16(descriptor + 0x16);
 	voice->volume_left = descriptor[0x32];
 	voice->volume_right = descriptor[0x33];
@@ -120,11 +124,6 @@ static int current_sample(xavix2_audio *audio, xavix2_audio_voice *voice,
 	uint8_t value;
 
 	address = (uint32_t)(voice->position >> 32);
-	if (voice->loop && voice->end_address && address >= voice->end_address)
-	{
-		voice->position = (uint64_t)voice->start_address << 32;
-		address = voice->start_address;
-	}
 	if (address >= audio->rom_size)
 	{
 		stop_voice(voice);
@@ -133,13 +132,13 @@ static int current_sample(xavix2_audio *audio, xavix2_audio_voice *voice,
 	value = audio->rom[address];
 	if (value == 0x80)
 	{
-		if (!voice->loop || voice->start_address >= audio->rom_size)
+		if (!voice->loop || voice->loop_address >= audio->rom_size)
 		{
 			stop_voice(voice);
 			return 0;
 		}
-		voice->position = (uint64_t)voice->start_address << 32;
-		value = audio->rom[voice->start_address];
+		voice->position = (uint64_t)voice->loop_address << 32;
+		value = audio->rom[voice->loop_address];
 		if (value == 0x80)
 		{
 			stop_voice(voice);
@@ -168,9 +167,9 @@ static int32_t interpolated_sample(xavix2_audio *audio,
 	next = audio->rom[address + 1];
 	if (next == 0x80)
 	{
-		if (voice->loop && voice->start_address < audio->rom_size &&
-			audio->rom[voice->start_address] != 0x80)
-			second = (int8_t)audio->rom[voice->start_address];
+		if (voice->loop && voice->loop_address < audio->rom_size &&
+			audio->rom[voice->loop_address] != 0x80)
+			second = (int8_t)audio->rom[voice->loop_address];
 		else
 			second = 0;
 	}
@@ -187,18 +186,6 @@ static void advance_voice(xavix2_audio *audio, xavix2_audio_voice *voice,
 	uint32_t next_address = (uint32_t)(next_position >> 32);
 	uint32_t address;
 
-	if (voice->loop && voice->end_address > voice->start_address &&
-		next_address >= voice->end_address)
-	{
-		const uint64_t loop_bytes =
-			(uint64_t)(voice->end_address - voice->start_address) << 32;
-		const uint64_t beyond_end = next_position -
-			((uint64_t)voice->end_address << 32);
-		voice->position = ((uint64_t)voice->start_address << 32) +
-			beyond_end % loop_bytes;
-		return;
-	}
-
 	/* Faster-than-output-rate voices may cross the 0x80 terminator without
 	 * landing on it.  Check every newly crossed source byte so a one-shot
 	 * cannot continue into unrelated ROM and a sentinel-loop cannot emit the
@@ -207,9 +194,9 @@ static void advance_voice(xavix2_audio *audio, xavix2_audio_voice *voice,
 	{
 		if (address >= audio->rom_size || audio->rom[address] == 0x80)
 		{
-			if (voice->loop && voice->start_address < audio->rom_size &&
-				audio->rom[voice->start_address] != 0x80)
-				voice->position = (uint64_t)voice->start_address << 32;
+			if (voice->loop && voice->loop_address < audio->rom_size &&
+				audio->rom[voice->loop_address] != 0x80)
+				voice->position = (uint64_t)voice->loop_address << 32;
 			else
 				stop_voice(voice);
 			return;
@@ -246,8 +233,11 @@ void xavix2_audio_render(xavix2_audio *audio, uint32_t engine_rate)
 			sample = interpolated_sample(audio, voice);
 			if (!voice->active)
 				continue;
-			left += sample * voice->volume_left;
-			right += sample * voice->volume_right;
+			if (!voice->host_muted)
+			{
+				left += sample * voice->volume_left;
+				right += sample * voice->volume_right;
+			}
 			/* Firmware computes pitch as source_rate * 65536 / engine_rate.
 			 * Convert that Q16 phase increment to the host output cadence. */
 			step = ((uint64_t)voice->pitch * engine_rate << 16) /
@@ -262,6 +252,16 @@ void xavix2_audio_render(xavix2_audio *audio, uint32_t engine_rate)
 		audio->frame[frame * 2] = clamp16(left);
 		audio->frame[frame * 2 + 1] = clamp16(right);
 	}
+}
+
+void xavix2_audio_set_mute_mask(xavix2_audio *audio, uint64_t mute_mask)
+{
+	unsigned channel;
+	if (!audio)
+		return;
+	for (channel = 0; channel < XAVIX2_AUDIO_VOICES; ++channel)
+		audio->voice[channel].host_muted =
+			(uint8_t)((mute_mask >> channel) & 1U);
 }
 
 uint8_t xavix2_audio_status(const xavix2_audio *audio, unsigned byte_index)

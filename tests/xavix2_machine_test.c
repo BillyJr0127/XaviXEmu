@@ -27,6 +27,11 @@ static void store16(uint8_t *destination, uint16_t value)
 	destination[1] = (uint8_t)(value >> 8);
 }
 
+static uint16_t load16(const uint8_t *source)
+{
+	return (uint16_t)(source[0] | ((uint16_t)source[1] << 8));
+}
+
 static void store_address(uint8_t *descriptor, unsigned high_offset,
 	unsigned low_offset, uint32_t address)
 {
@@ -105,7 +110,20 @@ int main(void)
 	const uint8_t engine_divider_b[] = { 0x0d, 0x0f };
 	unsigned rate_index;
 	CHECK(rom && machine);
+	CHECK(XAVIX2_CPU_CLOCK == XAVIX2_AUDIO_MASTER_CLOCK);
+	CHECK(XAVIX2_TIMER_CYCLES * 2 == XAVIX2_CYCLES_PER_FRAME);
 	CHECK(xavix2_machine_init(machine, rom, UINT32_C(0x10000)));
+	/* IRQ 7 is an independent 120 Hz timer, not the 60 Hz vblank event.
+	 * Reaching the half-frame boundary must raise it without clearing or
+	 * advancing the framebuffer. */
+	machine->interrupt_enabled = UINT32_C(1) << 7;
+	machine->cpu.waiting = 1;
+	CHECK(xavix2_machine_execute(machine, XAVIX2_TIMER_CYCLES) ==
+		XAVIX2_TIMER_CYCLES);
+	CHECK(machine->frame_count == 0);
+	CHECK(machine->next_timer_cycle == 2 * XAVIX2_TIMER_CYCLES);
+	CHECK(machine->interrupt_active & (UINT32_C(1) << 7));
+	xavix2_machine_reset(machine);
 	/* Board inputs default low.  A ROM profile explicitly enables the
 	 * receiver-present input only on hardware where firmware requires it. */
 	CHECK((machine->cpu.read8(machine->cpu.opaque,
@@ -148,6 +166,25 @@ int main(void)
 		((uint16_t)machine->low_ram[0x1005] << 8)) == 111);
 	CHECK((int16_t)(machine->low_ram[0x1006] |
 		((uint16_t)machine->low_ram[0x1007] << 8)) == -1475);
+
+	/* Command 11 returns floor(sqrt(E800.l)) through E804.w.  Naruto calls
+	 * this path for cursor/target distance tests during gameplay. */
+	{
+		static const uint32_t input[] =
+		{
+			0, 1, 2, 9, UINT32_C(0xffffffff)
+		};
+		static const uint16_t expected[] = { 0, 1, 1, 3, 65535 };
+		unsigned value;
+		for (value = 0; value < sizeof(input) / sizeof(input[0]); ++value)
+		{
+			store32(machine->mmio + 0x800, input[value]);
+			store16(machine->mmio + 0x804, UINT16_C(0xa55a));
+			machine->cpu.write8(machine->cpu.opaque,
+				UINT32_C(0xffffe858), 0x11);
+			CHECK(load16(machine->mmio + 0x804) == expected[value]);
+		}
+	}
 
 	/* Command 10 uses a Q8.24 left basis with a Q16.16 right affine matrix;
 	 * the composed matrix remains Q16.16. Translation comes from the left
@@ -668,6 +705,72 @@ int main(void)
 		CHECK(audio_frame[0] == 64 * 64 / 2);
 		CHECK(audio_frame[1] == 64 * 64 / 2);
 		CHECK(machine->audio.voice[0].position == expected_position);
+	}
+
+	/* Save states preserve the complete guest machine while rebinding ROM and
+	 * bus callbacks to the current process on load. */
+	{
+		const size_t state_size = xavix2_machine_state_size();
+		uint8_t *state = (uint8_t *)malloc(state_size);
+		size_t written = 0;
+		const xavix2_read8_fn read8 = machine->cpu.read8;
+		const xavix2_write8_fn write8 = machine->cpu.write8;
+		CHECK(state != NULL);
+		machine->low_ram[0x4321] = 0x9a;
+		machine->cpu.pc = UINT32_C(0x40012345);
+		machine->audio.voice[3].position = UINT64_C(0x123456789a);
+		CHECK(xavix2_machine_state_save(machine, state, state_size, &written));
+		CHECK(written == state_size);
+		memset(state + 16 + offsetof(xavix2_machine_t, rom), 0,
+			sizeof(machine->rom));
+		memset(state + 16 + offsetof(xavix2_machine_t, cpu) +
+			offsetof(xavix2_cpu_t, read8), 0, sizeof(machine->cpu.read8));
+		machine->low_ram[0x4321] = 0;
+		machine->cpu.pc = 0;
+		machine->audio.voice[3].position = 0;
+		xavix2_audio_set_mute_mask(&machine->audio, UINT64_C(1) << 3);
+		CHECK(xavix2_machine_state_load(machine, state, state_size));
+		CHECK(machine->low_ram[0x4321] == 0x9a);
+		CHECK(machine->cpu.pc == UINT32_C(0x40012345));
+		CHECK(machine->audio.voice[3].position == UINT64_C(0x123456789a));
+		CHECK(machine->audio.voice[3].host_muted == 1);
+		CHECK(machine->rom == rom);
+		CHECK(machine->audio.rom == rom);
+		CHECK(machine->cpu.read8 == read8);
+		CHECK(machine->cpu.write8 == write8);
+		CHECK(machine->cpu.opaque == machine);
+		state[8] ^= 1;
+		CHECK(!xavix2_machine_state_load(machine, state, state_size));
+		state[8] ^= 1;
+		CHECK(!xavix2_machine_state_load(machine, state, state_size - 1));
+		/* Version-1 files ended immediately before next_timer_cycle.  They
+		 * remain loadable and acquire the next 120 Hz phase from their saved
+		 * vblank position. */
+		store32(state + 8, 1);
+		store32(state + 12,
+			(uint32_t)offsetof(xavix2_machine_t, next_timer_cycle));
+		store64(state + 16 + offsetof(xavix2_machine_t, cpu) +
+			offsetof(xavix2_cpu_t, total_cycles), 1000);
+		store64(state + 16 + offsetof(xavix2_machine_t, next_vblank_cycle),
+			XAVIX2_CYCLES_PER_FRAME);
+		CHECK(xavix2_machine_state_load(machine, state,
+			16 + offsetof(xavix2_machine_t, next_timer_cycle)));
+		CHECK(machine->next_timer_cycle == XAVIX2_TIMER_CYCLES);
+		free(state);
+	}
+
+	/* A state captured just after an IRQ handler crossed vblank must resume
+	 * one normal frame ahead, not underflow into a near-UINT64_MAX run. */
+	xavix2_machine_reset(machine);
+	machine->cpu.waiting = 1;
+	machine->cpu.total_cycles = machine->next_vblank_cycle + 32;
+	{
+		const uint64_t before_cycles = machine->cpu.total_cycles;
+		const uint64_t before_frames = machine->frame_count;
+		const uint64_t ran = xavix2_machine_run_video_frame(machine, NULL, 0);
+		CHECK(ran < XAVIX2_CYCLES_PER_FRAME * 2U);
+		CHECK(machine->frame_count == before_frames + 1);
+		CHECK(machine->cpu.total_cycles > before_cycles);
 	}
 
 	free(machine);

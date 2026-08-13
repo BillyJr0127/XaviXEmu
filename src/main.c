@@ -41,7 +41,12 @@ enum
 	ID_VIEW_FULLSCREEN,
 	ID_LANGUAGE_ZH_TW,
 	ID_LANGUAGE_ENGLISH,
-	ID_HELP_ABOUT
+	ID_HELP_ABOUT,
+	ID_XAVIX2_AUDIO_ENABLE_ALL = 900,
+	ID_XAVIX2_AUDIO_MUTE_ALL = 901,
+	ID_XAVIX2_AUDIO_CHANNEL_FIRST = 902,
+	ID_XAVIX2_AUDIO_CHANNEL_LAST =
+		ID_XAVIX2_AUDIO_CHANNEL_FIRST + XAVIX2_AUDIO_VOICES - 1
 };
 
 enum interface_language
@@ -340,6 +345,26 @@ static const uint8_t EPO_HAMC_ROM_SHA1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
 	0xed, 0x01, 0x09, 0x6e, 0xbb, 0x63, 0xb7, 0x22, 0x67, 0xad,
 	0x7e, 0x0b, 0x21, 0x15, 0x22, 0x4b, 0xba, 0xb6, 0x40, 0x11
 };
+static const uint8_t BAN_NARU_ROM_SHA1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+{
+	0x13, 0xe3, 0xd2, 0xde, 0x5d, 0x5a, 0x08, 0x46, 0x35, 0xca,
+	0xb1, 0x58, 0xf3, 0x63, 0x9a, 0x1e, 0xa7, 0x32, 0x65, 0xdc
+};
+static const uint8_t BAN_BLDJ_ROM_SHA1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+{
+	0x2f, 0x5f, 0x48, 0x09, 0xa0, 0x7a, 0x2f, 0x56, 0x71, 0xf8,
+	0x1a, 0xa2, 0x2e, 0x37, 0x9c, 0x11, 0xc4, 0x39, 0x43, 0xa0
+};
+static const uint8_t BAN_DB2J_ROM_SHA1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+{
+	0xf1, 0x88, 0x04, 0x70, 0xf0, 0xdb, 0x56, 0x13, 0x5d, 0x9b,
+	0xc8, 0x8d, 0x71, 0x93, 0xd0, 0x37, 0xac, 0x49, 0xb9, 0x96
+};
+static const uint8_t BAN_DBZ_ROM_SHA1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+{
+	0x6c, 0x74, 0x6a, 0xf7, 0x63, 0x27, 0x3b, 0xd9, 0xe4, 0x79,
+	0x29, 0xc3, 0xba, 0x85, 0x7c, 0x7a, 0xf5, 0x63, 0xbf, 0x79
+};
 static const uint8_t EPO_HAMD_ROM_SHA1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
 {
 	0xc6, 0x1d, 0x43, 0x6d, 0x6b, 0x80, 0x37, 0x17, 0xb8, 0xc8,
@@ -381,6 +406,8 @@ static unsigned g_frame_width = FRAME_WIDTH;
 static unsigned g_frame_height = FRAME_HEIGHT;
 static unsigned g_frame_stride = FRAME_WIDTH;
 static HMENU g_menu;
+static HMENU g_xavix2_channel_menu;
+static uint64_t g_xavix2_audio_mute_mask;
 static enum interface_language g_language = LANGUAGE_ZH_TW;
 static enum window_status g_window_status = WINDOW_STATUS_IDLE;
 static int g_fullscreen;
@@ -570,6 +597,14 @@ static const uint8_t *rom_sha1_for_kind(enum drgqst_rom_kind kind)
 		return EPO_ES2J_ROM_SHA1;
 	case DRGQST_ROM_EPO_HAMC:
 		return EPO_HAMC_ROM_SHA1;
+	case DRGQST_ROM_BAN_NARU:
+		return BAN_NARU_ROM_SHA1;
+	case DRGQST_ROM_BAN_BLDJ:
+		return BAN_BLDJ_ROM_SHA1;
+	case DRGQST_ROM_BAN_DB2J:
+		return BAN_DB2J_ROM_SHA1;
+	case DRGQST_ROM_BAN_DBZ:
+		return BAN_DBZ_ROM_SHA1;
 	case DRGQST_ROM_EPO_HAMD:
 		return EPO_HAMD_ROM_SHA1;
 	case DRGQST_ROM_TVPC_DOR:
@@ -636,6 +671,18 @@ static enum drgqst_persistence_kind persistence_kind_for_rom(
 	case DRGQST_ROM_EPO_HAMC:
 		return kind == DRGQST_PERSISTENCE_RUNTIME_STATE ?
 			DRGQST_PERSISTENCE_EPO_HAMC_RUNTIME_STATE : kind;
+	case DRGQST_ROM_BAN_NARU:
+		return kind == DRGQST_PERSISTENCE_RUNTIME_STATE ?
+			DRGQST_PERSISTENCE_BAN_NARU_RUNTIME_STATE : kind;
+	case DRGQST_ROM_BAN_BLDJ:
+		return kind == DRGQST_PERSISTENCE_RUNTIME_STATE ?
+			DRGQST_PERSISTENCE_BAN_BLDJ_RUNTIME_STATE : kind;
+	case DRGQST_ROM_BAN_DB2J:
+		return kind == DRGQST_PERSISTENCE_RUNTIME_STATE ?
+			DRGQST_PERSISTENCE_BAN_DB2J_RUNTIME_STATE : kind;
+	case DRGQST_ROM_BAN_DBZ:
+		return kind == DRGQST_PERSISTENCE_RUNTIME_STATE ?
+			DRGQST_PERSISTENCE_BAN_DBZ_RUNTIME_STATE : kind;
 	case DRGQST_ROM_EPO_BOWL:
 		return kind == DRGQST_PERSISTENCE_EEPROM ?
 			DRGQST_PERSISTENCE_EPO_BOWL_EEPROM :
@@ -679,7 +726,7 @@ static size_t eeprom_size_for_rom(enum drgqst_rom_kind kind)
 	if (kind == DRGQST_ROM_EPO_HAMD || kind == DRGQST_ROM_EPO_ES2J ||
 		kind == DRGQST_ROM_EPO_HAMC ||
 		rom_uses_parallel_nvram(kind) ||
-		kind == DRGQST_ROM_BAN_NARU)
+		drgqst_rom_is_xavix2(kind))
 		return 0;
 	if (drgqst_rom_is_tvpc(kind))
 		return DRGQST_PERSISTENCE_EEPROM24C16_SIZE;
@@ -736,6 +783,50 @@ static void initialize_idle_framebuffer(void)
 	}
 }
 
+static void update_xavix2_audio_channel_menu(void)
+{
+	unsigned channel;
+	uint32_t engine_rate = g_xavix2 ?
+		xavix2_audio_engine_rate(g_xavix2->mmio[0xa00],
+			g_xavix2->mmio[0xa05]) : 0;
+
+	if (!g_xavix2_channel_menu)
+		return;
+	EnableMenuItem(g_xavix2_channel_menu, ID_XAVIX2_AUDIO_ENABLE_ALL,
+		MF_BYCOMMAND | (g_xavix2 ? MF_ENABLED : MF_GRAYED));
+	EnableMenuItem(g_xavix2_channel_menu, ID_XAVIX2_AUDIO_MUTE_ALL,
+		MF_BYCOMMAND | (g_xavix2 ? MF_ENABLED : MF_GRAYED));
+	for (channel = 0; channel < XAVIX2_AUDIO_VOICES; ++channel)
+	{
+		const UINT id = ID_XAVIX2_AUDIO_CHANNEL_FIRST + channel;
+		wchar_t label[64];
+		UINT flags = MF_BYCOMMAND | MF_STRING;
+		if (channel && channel % 16 == 0)
+			flags |= MF_MENUBARBREAK;
+		if (g_xavix2 && g_xavix2->audio.voice[channel].active)
+		{
+			const xavix2_audio_voice *voice =
+				&g_xavix2->audio.voice[channel];
+			uint32_t rate = (uint32_t)(((uint64_t)voice->pitch *
+				engine_rate + 32768U) >> 16);
+			_snwprintf(label, sizeof(label) / sizeof(label[0]),
+				L"%02u  %5lu Hz  L%u R%u%s", channel,
+				(unsigned long)rate, voice->volume_left, voice->volume_right,
+				voice->loop ? L"  loop" : L"");
+		}
+		else
+			_snwprintf(label, sizeof(label) / sizeof(label[0]),
+				L"%02u  idle", channel);
+		label[sizeof(label) / sizeof(label[0]) - 1] = L'\0';
+		ModifyMenuW(g_xavix2_channel_menu, id, flags, id, label);
+		EnableMenuItem(g_xavix2_channel_menu, id,
+			MF_BYCOMMAND | (g_xavix2 ? MF_ENABLED : MF_GRAYED));
+		CheckMenuItem(g_xavix2_channel_menu, id, MF_BYCOMMAND |
+			(!(g_xavix2_audio_mute_mask & (UINT64_C(1) << channel)) ?
+				MF_CHECKED : MF_UNCHECKED));
+	}
+}
+
 static HMENU create_application_menu(void)
 {
 	const interface_strings *text = interface_text();
@@ -744,8 +835,10 @@ static HMENU create_application_menu(void)
 	HMENU state_menu = CreatePopupMenu();
 	HMENU view_menu = CreatePopupMenu();
 	HMENU language_menu = CreatePopupMenu();
+	HMENU audio_menu = CreatePopupMenu();
 	HMENU help_menu = CreatePopupMenu();
-	UINT state_flags = MF_STRING | (g_core ? MF_ENABLED : MF_GRAYED);
+	UINT state_flags = MF_STRING |
+		(emulator_loaded() ? MF_ENABLED : MF_GRAYED);
 	UINT screenshot_flags = MF_STRING |
 		(emulator_loaded() ? MF_ENABLED : MF_GRAYED);
 
@@ -786,9 +879,32 @@ static HMENU create_application_menu(void)
 		ID_LANGUAGE_ENGLISH, MF_BYCOMMAND);
 
 	AppendMenuW(help_menu, MF_STRING, ID_HELP_ABOUT, text->menu_about);
+	g_xavix2_channel_menu = audio_menu;
+	AppendMenuW(audio_menu, MF_STRING, ID_XAVIX2_AUDIO_ENABLE_ALL,
+		L"全部開啟 / Enable all");
+	AppendMenuW(audio_menu, MF_STRING, ID_XAVIX2_AUDIO_MUTE_ALL,
+		L"全部靜音 / Mute all");
+	AppendMenuW(audio_menu, MF_SEPARATOR, 0, NULL);
+	{
+		unsigned channel;
+		for (channel = 0; channel < XAVIX2_AUDIO_VOICES; ++channel)
+		{
+			wchar_t label[16];
+			UINT flags = MF_STRING;
+			if (channel && channel % 16 == 0)
+				flags |= MF_MENUBARBREAK;
+			_snwprintf(label, sizeof(label) / sizeof(label[0]),
+				L"%02u", channel);
+			AppendMenuW(audio_menu, flags,
+				ID_XAVIX2_AUDIO_CHANNEL_FIRST + channel, label);
+		}
+	}
+	update_xavix2_audio_channel_menu();
 
 	AppendMenuW(menu, MF_POPUP, (UINT_PTR)file_menu, text->menu_file);
 	AppendMenuW(menu, MF_POPUP, (UINT_PTR)state_menu, text->menu_state);
+	AppendMenuW(menu, MF_POPUP, (UINT_PTR)audio_menu,
+		L"XaviX2 聲道 / Channels");
 	AppendMenuW(menu, MF_POPUP, (UINT_PTR)view_menu, text->menu_view);
 	AppendMenuW(menu, MF_POPUP, (UINT_PTR)language_menu,
 		text->menu_language);
@@ -1742,9 +1858,10 @@ static int save_runtime_state(HWND window)
 	int encoded;
 	int success;
 
-	if (!g_core)
+	if (!emulator_loaded())
 		return 0;
-	state_size = drgqst_state_serialized_size();
+	state_size = g_xavix2 ? xavix2_machine_state_size() :
+		drgqst_state_serialized_size();
 	state = (uint8_t *)malloc(state_size);
 	if (!state)
 	{
@@ -1753,7 +1870,9 @@ static int save_runtime_state(HWND window)
 		return 0;
 	}
 	error[0] = L'\0';
-	encoded = drgqst_state_save(g_core, state, state_size, &written) &&
+	encoded = (g_xavix2 ?
+		xavix2_machine_state_save(g_xavix2, state, state_size, &written) :
+		drgqst_state_save(g_core, state, state_size, &written)) &&
 		written == state_size;
 	success = encoded && drgqst_persistence_save(
 			g_executable_directory,
@@ -1787,9 +1906,10 @@ static int load_runtime_state(HWND window)
 	int success;
 	int loaded_from_legacy = 0;
 
-	if (!g_core)
+	if (!emulator_loaded())
 		return 0;
-	state_size = drgqst_state_serialized_size();
+	state_size = g_xavix2 ? xavix2_machine_state_size() :
+		drgqst_state_serialized_size();
 	state = (uint8_t *)malloc(state_size);
 	if (!state)
 	{
@@ -1805,6 +1925,51 @@ static int load_runtime_state(HWND window)
 		MessageBoxW(window, text->state_load_error,
 			text->state_load_title, MB_OK | MB_ICONERROR);
 		return 0;
+	}
+	if (g_xavix2)
+	{
+		unsigned width;
+		unsigned height;
+		unsigned stride;
+
+		success = xavix2_machine_state_load(g_xavix2, state, loaded);
+		if (!success)
+		{
+			free(state);
+			MessageBoxW(window, text->state_incompatible_error,
+				text->state_load_title, MB_OK | MB_ICONERROR);
+			return 0;
+		}
+		if (loaded_from_legacy &&
+			!drgqst_persistence_save(g_executable_directory,
+				persistence_kind_for_rom(DRGQST_PERSISTENCE_RUNTIME_STATE,
+					g_rom.kind),
+				rom_sha1_for_kind(g_rom.kind), state, loaded,
+				error, sizeof(error) / sizeof(error[0])))
+			MessageBoxW(window, text->state_save_error,
+				text->state_save_title, MB_OK | MB_ICONERROR);
+		free(state);
+		g_naruto_joined_hands = 0;
+		g_naruto_execute_delay = 0;
+		g_naruto_execute_frames = 0;
+		g_xavix2_area_gesture_frame = 0;
+		g_xavix2_area_gesture_frames = 0;
+		g_xavix2_gesture_kind = 0;
+		win_audio_shutdown(&g_audio_output);
+		win_audio_init(&g_audio_output);
+		win_audio_open(&g_audio_output);
+		g_framebuffer = xavix2_machine_visible_frame(g_xavix2,
+			&width, &height, &stride);
+		g_frame_width = width;
+		g_frame_height = height;
+		g_frame_stride = stride;
+		drgqst_cursor_presentation_reset(&g_cursor_presentation);
+		update_xavix2_audio_channel_menu();
+		start_frame_clock(window);
+		g_window_status = WINDOW_STATUS_STATE_LOADED;
+		update_window_title(window);
+		InvalidateRect(window, NULL, FALSE);
+		return 1;
 	}
 
 	/* Runtime states never rewind or overwrite the game's durable EEPROM. */
@@ -1916,6 +2081,9 @@ static int activate_xavix2_rom(HWND window, drgqst_rom_image *image,
 	drgqst_rom_release(&g_rom);
 	g_core = NULL;
 	g_xavix2 = machine;
+	g_xavix2_audio_mute_mask = 0;
+	xavix2_audio_set_mute_mask(&g_xavix2->audio,
+		g_xavix2_audio_mute_mask);
 	g_rom = *image;
 	memset(image, 0, sizeof(*image));
 	g_ban_onep_menu_input = 0;
@@ -1946,11 +2114,12 @@ static int activate_xavix2_rom(HWND window, drgqst_rom_image *image,
 	run_xavix2_frame();
 	g_window_status = WINDOW_STATUS_RUNNING;
 	update_window_title(window);
-	EnableMenuItem(g_menu, ID_STATE_SAVE, MF_BYCOMMAND | MF_GRAYED);
-	EnableMenuItem(g_menu, ID_STATE_LOAD, MF_BYCOMMAND | MF_GRAYED);
+	EnableMenuItem(g_menu, ID_STATE_SAVE, MF_BYCOMMAND | MF_ENABLED);
+	EnableMenuItem(g_menu, ID_STATE_LOAD, MF_BYCOMMAND | MF_ENABLED);
 	EnableMenuItem(g_menu, ID_FILE_SCREENSHOT,
 		MF_BYCOMMAND | MF_ENABLED);
 	DrawMenuBar(window);
+	update_xavix2_audio_channel_menu();
 	start_frame_clock(window);
 	InvalidateRect(window, NULL, FALSE);
 	return 1;
@@ -2047,6 +2216,7 @@ static int load_rom(HWND window, const wchar_t *path, int show_error)
 	EnableMenuItem(g_menu, ID_FILE_SCREENSHOT,
 		MF_BYCOMMAND | MF_ENABLED);
 	DrawMenuBar(window);
+	update_xavix2_audio_channel_menu();
 	start_frame_clock(window);
 	InvalidateRect(window, NULL, FALSE);
 	return 1;
@@ -2089,11 +2259,14 @@ static void draw_mouse_target(HDC device, const display_viewport *viewport)
 	HPEN pen;
 	HGDIOBJ old_pen;
 	HGDIOBJ old_brush;
+	int xavix2_naruto_target = g_xavix2 &&
+		g_rom.kind == DRGQST_ROM_BAN_NARU;
 	int center_x;
 	int center_y;
 	int radius;
 
-	if (!g_core || rom_has_internal_cursor(g_rom.kind) ||
+	if ((!g_core && !xavix2_naruto_target) ||
+		(!xavix2_naruto_target && rom_has_internal_cursor(g_rom.kind)) ||
 		g_rom.kind == DRGQST_ROM_EPO_HAMD ||
 		g_rom.kind == DRGQST_ROM_TVPC_DOR ||
 		g_rom.kind == DRGQST_ROM_TAK_CHQ ||
@@ -2102,10 +2275,10 @@ static void draw_mouse_target(HDC device, const display_viewport *viewport)
 		g_rom.kind == DRGQST_ROM_TOM_DPGM ||
 		g_rom.kind == DRGQST_ROM_EPO_MINI ||
 		rom_uses_digital_direction_input(g_rom.kind) ||
-		(!rom_uses_camera(g_rom.kind) &&
+		(!xavix2_naruto_target && !rom_uses_camera(g_rom.kind) &&
 		drgqst_core_feather_visible(g_core)))
 		return;
-	if (rom_uses_camera(g_rom.kind))
+	if (xavix2_naruto_target || rom_uses_camera(g_rom.kind))
 	{
 		center_x = viewport->x +
 			(g_mouse_x * (viewport->width - 1) + 127) / 255;
@@ -2314,7 +2487,37 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT message,
 {
 	switch (message)
 	{
+	case WM_INITMENUPOPUP:
+		if ((HMENU)wparam == g_xavix2_channel_menu)
+			update_xavix2_audio_channel_menu();
+		break;
+
 	case WM_COMMAND:
+		if (LOWORD(wparam) == ID_XAVIX2_AUDIO_ENABLE_ALL && g_xavix2)
+		{
+			g_xavix2_audio_mute_mask = 0;
+			xavix2_audio_set_mute_mask(&g_xavix2->audio, 0);
+			update_xavix2_audio_channel_menu();
+			return 0;
+		}
+		if (LOWORD(wparam) == ID_XAVIX2_AUDIO_MUTE_ALL && g_xavix2)
+		{
+			g_xavix2_audio_mute_mask = UINT64_MAX;
+			xavix2_audio_set_mute_mask(&g_xavix2->audio, UINT64_MAX);
+			update_xavix2_audio_channel_menu();
+			return 0;
+		}
+		if (LOWORD(wparam) >= ID_XAVIX2_AUDIO_CHANNEL_FIRST &&
+			LOWORD(wparam) <= ID_XAVIX2_AUDIO_CHANNEL_LAST && g_xavix2)
+		{
+			unsigned channel = LOWORD(wparam) -
+				ID_XAVIX2_AUDIO_CHANNEL_FIRST;
+			g_xavix2_audio_mute_mask ^= UINT64_C(1) << channel;
+			xavix2_audio_set_mute_mask(&g_xavix2->audio,
+				g_xavix2_audio_mute_mask);
+			update_xavix2_audio_channel_menu();
+			return 0;
+		}
 		switch (LOWORD(wparam))
 		{
 		case ID_FILE_OPEN:
@@ -2572,13 +2775,13 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT message,
 				pulse_ban_onep_menu_input(wparam == VK_UP ? 0x08 : 0x04);
 			return 0;
 		}
-		if (wparam == VK_F5 && g_core)
+		if (wparam == VK_F5 && emulator_loaded())
 		{
 			if (!(lparam & ((LPARAM)1 << 30)))
 				save_runtime_state(window);
 			return 0;
 		}
-		if (wparam == VK_F7 && g_core)
+		if (wparam == VK_F7 && emulator_loaded())
 		{
 			if (!(lparam & ((LPARAM)1 << 30)))
 				load_runtime_state(window);

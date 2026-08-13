@@ -31,6 +31,18 @@ enum
 	CONTROLLER_POWER_STATUS_GOOD = 0x04
 };
 
+enum
+{
+	XAVIX2_STATE_HEADER_SIZE = 16,
+	XAVIX2_STATE_VERSION = 2,
+	XAVIX2_STATE_LEGACY_VERSION = 1
+};
+
+static const uint8_t XAVIX2_STATE_MAGIC[8] =
+{
+	'X', 'A', 'V', 'I', 'X', '2', 'S', 'T'
+};
+
 static uint8_t machine_read8(void *opaque, uint32_t address);
 static uint32_t pio_read(const xavix2_machine_t *machine);
 
@@ -319,6 +331,27 @@ static void geometry_project_triangles(xavix2_machine_t *machine,
 		(uint16_t)output_count);
 }
 
+static uint16_t geometry_integer_sqrt(uint32_t value)
+{
+	uint32_t result = 0;
+	uint32_t bit = UINT32_C(1) << 30;
+
+	while (bit > value)
+		bit >>= 2;
+	while (bit)
+	{
+		if (value >= result + bit)
+		{
+			value -= result + bit;
+			result = (result >> 1) + bit;
+		}
+		else
+			result >>= 1;
+		bit >>= 2;
+	}
+	return (uint16_t)result;
+}
+
 static void projector_start(xavix2_machine_t *machine, uint8_t command)
 {
 	uint32_t source;
@@ -360,6 +393,16 @@ static void projector_start(xavix2_machine_t *machine, uint8_t command)
 			load16(machine->mmio + PROJECTOR_SOURCE_REGISTER),
 			load16(machine->mmio + PROJECTOR_POLYGON_REGISTER),
 			(uint32_t)load16(machine->mmio + PROJECTOR_COUNT_REGISTER) + 1);
+		return;
+	}
+	if (command == 0x11)
+	{
+		uint32_t input = load32(machine->mmio + 0x800);
+		uint16_t result = geometry_integer_sqrt(input);
+		/* Firmware uses command 11 as an unsigned 32-bit square root.  The
+		 * input is written to E800 and the 16-bit floor result is read from
+		 * E804.  Naruto uses it for live two-dimensional hit distances. */
+		store16(machine->mmio + 0x804, result);
 		return;
 	}
 	if (command != 2)
@@ -1479,6 +1522,7 @@ int xavix2_machine_init(xavix2_machine_t *machine, const uint8_t *rom,
 	xavix2_cpu_set_fetch(&machine->cpu, machine_fetch8);
 	xavix2_cpu_set_interrupt_ack(&machine->cpu, acknowledge_interrupt, machine);
 	machine->next_vblank_cycle = XAVIX2_CYCLES_PER_FRAME;
+	machine->next_timer_cycle = XAVIX2_TIMER_CYCLES;
 	return 1;
 }
 
@@ -1524,6 +1568,8 @@ void xavix2_machine_reset(xavix2_machine_t *machine)
 static uint64_t next_event_cycle(const xavix2_machine_t *machine)
 {
 	uint64_t next = machine->next_vblank_cycle;
+	if (machine->next_timer_cycle < next)
+		next = machine->next_timer_cycle;
 	if (machine->dma_completion_cycle && machine->dma_completion_cycle < next)
 		next = machine->dma_completion_cycle;
 	return next;
@@ -1531,6 +1577,11 @@ static uint64_t next_event_cycle(const xavix2_machine_t *machine)
 
 static void process_events(xavix2_machine_t *machine)
 {
+	while (machine->cpu.total_cycles >= machine->next_timer_cycle)
+	{
+		raise_interrupt(machine, IRQ_TIMER);
+		machine->next_timer_cycle += XAVIX2_TIMER_CYCLES;
+	}
 	while (machine->cpu.total_cycles >= machine->next_vblank_cycle)
 	{
 		uint16_t background = load16(machine->mmio + 0x60e);
@@ -1546,7 +1597,6 @@ static void process_events(xavix2_machine_t *machine)
 			if (machine->experimental_dispatch_input)
 				machine->experimental_callback_pending |= changed;
 		}
-		raise_interrupt(machine, IRQ_TIMER);
 		machine->next_vblank_cycle += XAVIX2_CYCLES_PER_FRAME;
 	}
 	if (machine->dma_completion_cycle &&
@@ -1645,10 +1695,16 @@ uint64_t xavix2_machine_run_video_frame(xavix2_machine_t *machine,
 			xavix2_machine_clear_irq(machine, IRQ_MOTION);
 		}
 	}
+	/* A save may land after the short IRQ-10 service crosses a vblank
+	 * boundary. Process that already-due event before subtracting the next
+	 * event cycle; otherwise the unsigned difference becomes a huge budget
+	 * and the first frame after F7 fast-forwards the guest. */
+	process_events(machine);
 
 	/* Stop just before vertical blank clears the command-list framebuffer.
 	 * The next call crosses that boundary and renders the following frame. */
-	if (machine->cpu.total_cycles + render_margin >=
+	if (machine->cpu.total_cycles < machine->next_vblank_cycle &&
+		machine->cpu.total_cycles + render_margin >=
 		machine->next_vblank_cycle)
 	{
 		uint64_t remaining = machine->next_vblank_cycle -
@@ -1695,4 +1751,112 @@ const uint32_t *xavix2_machine_visible_frame(const xavix2_machine_t *machine,
 const int16_t *xavix2_machine_frame_audio(const xavix2_machine_t *machine)
 {
 	return machine ? xavix2_audio_frame(&machine->audio) : NULL;
+}
+
+size_t xavix2_machine_state_size(void)
+{
+	return XAVIX2_STATE_HEADER_SIZE + sizeof(xavix2_machine_t);
+}
+
+int xavix2_machine_state_save(const xavix2_machine_t *machine,
+	void *output, size_t output_capacity, size_t *output_size)
+{
+	uint8_t *bytes = (uint8_t *)output;
+	const size_t required = xavix2_machine_state_size();
+
+	if (output_size)
+		*output_size = required;
+	if (!machine || !bytes || output_capacity < required ||
+		sizeof(xavix2_machine_t) > UINT32_MAX)
+		return 0;
+	memcpy(bytes, XAVIX2_STATE_MAGIC, sizeof(XAVIX2_STATE_MAGIC));
+	store32(bytes + 8, XAVIX2_STATE_VERSION);
+	store32(bytes + 12, (uint32_t)sizeof(xavix2_machine_t));
+	memcpy(bytes + XAVIX2_STATE_HEADER_SIZE, machine, sizeof(*machine));
+	return 1;
+}
+
+int xavix2_machine_state_load(xavix2_machine_t *machine,
+	const void *input, size_t input_size)
+{
+	const uint8_t *bytes = (const uint8_t *)input;
+	const size_t legacy_size = offsetof(xavix2_machine_t, next_timer_cycle);
+	uint32_t version;
+	uint32_t payload_size;
+	int legacy;
+	const uint8_t *rom;
+	size_t rom_size;
+	xavix2_read8_fn read8;
+	xavix2_read8_fn fetch8;
+	xavix2_write8_fn write8;
+	void *opaque;
+	xavix2_interrupt_ack_fn interrupt_ack;
+	void *interrupt_ack_opaque;
+	xavix2_trace_fn trace;
+	void *trace_opaque;
+	uint64_t audio_mute_mask;
+	unsigned channel;
+
+	if (!machine || !bytes || input_size < XAVIX2_STATE_HEADER_SIZE ||
+		memcmp(bytes, XAVIX2_STATE_MAGIC, sizeof(XAVIX2_STATE_MAGIC)))
+		return 0;
+	version = load32(bytes + 8);
+	payload_size = load32(bytes + 12);
+	legacy = version == XAVIX2_STATE_LEGACY_VERSION &&
+		payload_size == legacy_size;
+	if ((!legacy && (version != XAVIX2_STATE_VERSION ||
+		payload_size != sizeof(xavix2_machine_t))) ||
+		input_size != XAVIX2_STATE_HEADER_SIZE + (size_t)payload_size)
+		return 0;
+	if ((uint32_t)load16(bytes + XAVIX2_STATE_HEADER_SIZE +
+		offsetof(xavix2_machine_t, motion_packet_address)) +
+		XAVIX2_MOTION_PACKET_SIZE > XAVIX2_LOW_RAM_SIZE)
+		return 0;
+
+	/* Files capture guest hardware only.  Keep the current ROM and host bus
+	 * callbacks so a state never restores stale process addresses. */
+	rom = machine->rom;
+	rom_size = machine->rom_size;
+	read8 = machine->cpu.read8;
+	fetch8 = machine->cpu.fetch8;
+	write8 = machine->cpu.write8;
+	opaque = machine->cpu.opaque;
+	interrupt_ack = machine->cpu.interrupt_ack;
+	interrupt_ack_opaque = machine->cpu.interrupt_ack_opaque;
+	trace = machine->cpu.trace;
+	trace_opaque = machine->cpu.trace_opaque;
+	audio_mute_mask = 0;
+	for (channel = 0; channel < XAVIX2_AUDIO_VOICES; ++channel)
+		if (machine->audio.voice[channel].host_muted)
+			audio_mute_mask |= UINT64_C(1) << channel;
+	if (legacy)
+	{
+		memcpy(machine, bytes + XAVIX2_STATE_HEADER_SIZE, legacy_size);
+		/* Version 1 tied IRQ 7 to vblank.  Resume at the next half-frame
+		 * boundary so an existing F5 file immediately acquires the independent
+		 * 120 Hz timer without losing the saved video phase. */
+		if (machine->next_vblank_cycle >= XAVIX2_TIMER_CYCLES &&
+			machine->cpu.total_cycles <
+			machine->next_vblank_cycle - XAVIX2_TIMER_CYCLES)
+			machine->next_timer_cycle =
+				machine->next_vblank_cycle - XAVIX2_TIMER_CYCLES;
+		else
+			machine->next_timer_cycle = machine->next_vblank_cycle;
+	}
+	else
+		memcpy(machine, bytes + XAVIX2_STATE_HEADER_SIZE, sizeof(*machine));
+	machine->rom = rom;
+	machine->rom_size = rom_size;
+	machine->audio.rom = rom;
+	machine->audio.rom_size = rom_size;
+	xavix2_audio_set_mute_mask(&machine->audio, audio_mute_mask);
+	machine->cpu.read8 = read8;
+	machine->cpu.fetch8 = fetch8;
+	machine->cpu.write8 = write8;
+	machine->cpu.opaque = opaque;
+	machine->cpu.interrupt_ack = interrupt_ack;
+	machine->cpu.interrupt_ack_opaque = interrupt_ack_opaque;
+	machine->cpu.trace = trace;
+	machine->cpu.trace_opaque = trace_opaque;
+	return 1;
 }

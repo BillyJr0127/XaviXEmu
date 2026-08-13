@@ -114,12 +114,11 @@ modify, or add files to the selected ZIP.
 
 ## Saves and screenshots
 
-For supported original XaviX and XaviX 2000 profiles, EEPROM (where present)
-and F5/F7 runtime states are stored beside the executable. F8 writes a PNG
-under a local `snap` directory. These files are runtime output and must not be
-committed or attached to bug reports.
-
-XaviX 2 EEPROM and runtime states are not implemented in v0.3.0-alpha.
+For supported original XaviX, XaviX 2000, and XaviX 2 profiles, EEPROM (where
+present) and F5/F7 runtime states are stored beside the executable. F8 writes
+a PNG under a local `snap` directory. These files are runtime output and must
+not be committed. XaviX 2 states are independent per ROM and can be shared
+privately for focused debugging without sharing the ROM itself.
 
 ## Known limitations
 

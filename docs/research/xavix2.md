@@ -33,18 +33,18 @@
 - Instruction sequence: load unsigned byte from `$0c5c` into R0, test R0 by
   OR-ing it with itself, then branch back while zero.
 - Relevant state: the preceding code enables interrupts (`$f9`), writes zero
-  to `$0c5c`, and waits.  The vertical blank IRQ (level 7), DMA completion IRQ
+  to `$0c5c`, and waits.  The level-7 timer callback, DMA completion IRQ
   (level 12), PIO/24C08 traffic, and IRQ acknowledgement all continue working.
 - Initial hypothesis: XaviX 2 has another timer/event source that invokes the
   firmware callback at about ROM `$1f325`, where code writes 1 to `$0c5c`.
 - Experiment: raise each currently enabled IRQ level and separately apply a
   probe-only diagnostic pulse to RAM `$0c5c`.
 - Result: the diagnostic `$0c5c = 1` pulse fast-forwards the loop and reaches
-  the title, but a full timing run proved that the normal level-7 vertical blank
-  callback also releases it once per frame.  At the configured 98 MHz CPU clock
-  and 60 Hz video rate, an unmodified 3,000,000,000-byte-cycle run reaches the
-  full title naturally.  `$0c5c` is a frame synchronization flag, not the first
-  functional blocker.
+  the title, but a full timing run proved that the normal level-7 timer callback
+  releases it naturally.  The first model incorrectly raised this timer only
+  at 60 Hz vblank; isolated title audio later established its independent
+  120 Hz cadence.  `$0c5c` is a synchronization flag, not the first functional
+  blocker.
 - Permanent code changed: none.  The pulse is an opt-in boot-probe experiment,
   not part of `XaviXEmu.exe`.
 
@@ -239,8 +239,10 @@ so the GUI crops that area before applying its optional 4:3 presentation.
   game-specific timing hack was changed.
 
 Opcode `$ff`, gameplay gesture classification, exact audio envelopes and
-filtering, EEPROM persistence, and save states remain later milestones; XaviX 2
-support is therefore experimental rather than claimed complete.
+filtering, and EEPROM persistence remain later milestones. Versioned,
+ROM-isolated F5/F7 runtime states now capture the XaviX 2 CPU, GPU, audio,
+timing, controller, and EEPROM hardware while rebinding process-local ROM and
+bus callbacks on load. XaviX 2 support remains experimental.
 
 ## Four-image boot investigation (2026-08-12)
 
@@ -347,6 +349,12 @@ voices during menu transitions, exact envelopes, filtering, and opcode `$ff`
 remain separate research milestones rather than being hidden behind another
 global playback multiplier.
 
+The initial CPU scheduler still used a rounded 98 MHz estimate even though the
+same firmware exposes the exact 98,437,488 Hz system source used by the audio
+divider. The scheduler now uses that exact source as well. This is a 0.446%
+timing correction, not a title-specific music multiplier; exact envelopes and
+filtering remain open.
+
 Follow-up validation confirmed that Q16 gives normal voice pitch while the
 game still feels slow and polyphonic menu passages retain audible noise.  A
 30-second automated title-to-character-select capture reached the signed
@@ -389,6 +397,51 @@ on the user's machine before any clock change is considered.
   around 47.7 seconds and `ban_dbz` around 46.1 seconds. At 60 seconds all
   four images report active voices and non-zero PCM. No additional audio IRQ,
   title delay bypass, or ROM-specific start command was introduced.
+
+### Naruto title-state channel isolation (2026-08-13)
+
+- A user-supplied F5 state at the title restores nine active voices on channels
+  5 through 13. Their firmware-derived source rates form intentional families
+  near 12, 18, 24, and 35 kHz; forcing every channel to one rate would alter
+  the music's pitch and is not a valid speed correction.
+- Channels 5, 6, 7, 10, 11, 12, and 13 are looping in this checkpoint, while
+  channels 8 and 9 are one-shot voices. The checkpoint alone cannot establish
+  which loop should already have stopped or faded, so no title-specific channel
+  was disabled.
+- The GUI now exposes all 64 voices with live rate, volume, and loop labels.
+  Host muting deliberately leaves source position and guest-visible active bits
+  unchanged. This permits channel-by-channel isolation without changing the
+  timing that produced the fault; the resulting channel number can then be
+  traced back to its `$80|channel` stop or `$c0|channel` update lifecycle.
+- The earlier full-mix comparison was invalid: accompaniment peaks hid the
+  timing error in an isolated melodic voice.  A new capture with every voice
+  except channel 8 host-muted was aligned to the same flute phrase at 10 seconds
+  in the reference video.  Its moving harmonic sequence has a clear optimum at
+  0.5025 emulator/reference speed (neighbouring 0.5000 and 0.5050 are the next
+  candidates), establishing that firmware music events were running at about
+  half speed.
+- The channel-8 descriptor still derives a plausible approximately 16 kHz PCM
+  source rate from the `$ea00/$ea05` sound dividers.  Doubling CPU byte-cycle
+  throughput while preserving the PCM clock produced a WAV byte-for-byte
+  identical to the slow baseline, proving that the sequencer is interrupt-
+  paced rather than CPU-bound.  The correction keeps 60 Hz video and the
+  98,437,488 Hz CPU/PCM sources, but separates IRQ 7 from vblank and schedules
+  it at 120 Hz.  This doubles note start/stop and game-event cadence without
+  shifting sample pitch.  Version-1 F5 files migrate their timer phase at load.
+- Repeating the same-state channel-8 capture with the 120 Hz timer moves the
+  sequence-alignment optimum from 0.5025 to 1.0225; its narrow-band pitch ratio
+  remains 1.0000.  Reference and emulator onset families now agree around
+  0.82/0.83, 1.23/1.24, 1.64/1.65, and 3.27/3.29 seconds.  The residual roughly
+  2% alignment offset is below the precision justified by a mixed-video source,
+  so the hardware-like 120:60 integer cadence is retained.
+- The remaining overlapping loop noise exposed a separate waveform-address
+  error.  Channel 8, for example, starts at ROM `$7dac80`, has its second
+  address at `$7dc600`, and contains terminators at `$7dc5ff` and `$7dc67f`.
+  The second address is therefore the sustain-loop target selected after a
+  terminator, not an exclusive end that wraps playback to the primary start.
+  Channels 3, 10, and 13 have the same terminator-immediately-before-target
+  layout.  The audio core now plays each attack once and loops only the sustain
+  section.  Exact envelope and filter behavior remains a separate milestone.
 
 ## Shared controller/power status register (2026-08-12)
 
@@ -550,3 +603,26 @@ on the user's machine before any clock change is considered.
   fixed-point normalization and light calculations are not guessed. Current
   geometry is therefore a rendering milestone, not a claim of correct battle
   terrain, model lighting, or complete later effects.
+
+## Naruto second-stage distance unit (2026-08-13)
+
+- An F7 checkpoint at hardware frame 13,584 resumes the forest battle with the
+  terrain, HUD, enemy sprite, and rotating projectile supplied by independent
+  GPU lists.  The enemy is a 78x102 source sprite using the normal six-bit
+  Q2.4 scale path; it is not a missing polygon layer.
+- Firmware wrapper `$40054392-$400543a6` writes a 32-bit value to `$e800`,
+  starts geometry command `$11`, and reads a 16-bit result from `$e804`.
+  Its callers form `x*x + y*y` before the call and use the result for live
+  cursor/target distance decisions, identifying the operation as unsigned
+  floor square root.
+- With command `$11` ignored, `$e804` retained an unrelated prior value.  A
+  controlled replay changed the rotating projectile's orientation and command
+  count even though CPU state, ROM, and input sequence were otherwise equal.
+  Implementing `floor(sqrt(E800.l)) -> E804.w` restores the firmware-owned
+  distance result; ROM-independent tests cover zero, non-squares, squares, and
+  the full 32-bit input range.
+- A 104-frame replay after F7 shows the complete enemy sprite and correctly
+  scaled projectile.  Longer replays confirm that the enemy is intentionally
+  absent between its attack windows; this is distinct from a renderer dropping
+  a submitted character command.  Later levels and a complete play-through
+  remain outside this checkpoint validation.

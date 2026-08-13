@@ -59,23 +59,45 @@ int main(void)
 	CHECK(frame[6] == 0 && frame[7] == 0);
 	CHECK(xavix2_audio_status(&audio, 0) == 0);
 
-	rom[0x20] = 10;
+	rom[0x20] = 10; /* attack */
 	rom[0x21] = 20;
 	rom[0x22] = 0x80;
+	rom[0x23] = 30; /* sustain loop */
+	rom[0x24] = 40;
+	rom[0x25] = 0x80;
 	store_address(voice0, 0x02, 0x06, 0x20);
 	store16(voice0 + 0x16, 0x8000);
-	/* Firmware descriptors put the looping sample end (one byte beyond the
-	 * terminator) here; playback loops to the primary start address. */
+	/* Firmware descriptors put the sustain-loop target one byte beyond the
+	 * attack terminator.  Subsequent terminators return here, not to 0x20. */
 	store_address(voice0, 0x0e, 0x12, 0x23);
 	xavix2_audio_command(&audio, 0x240, descriptors, 0, 0, 0);
 	CHECK(audio.voice[0].start_address == 0x20);
-	CHECK(audio.voice[0].end_address == 0x23);
+	CHECK(audio.voice[0].loop_address == 0x23);
 	xavix2_audio_render(&audio, 96000);
 	frame = xavix2_audio_frame(&audio);
 	CHECK(frame[0] == 10 * 255 / 2);
 	CHECK(frame[2] == 20 * 255 / 2);
-	CHECK(frame[4] == 10 * 255 / 2);
+	CHECK(frame[4] == 30 * 255 / 2);
+	CHECK(frame[6] == 40 * 255 / 2);
+	CHECK(frame[8] == 30 * 255 / 2);
 	CHECK(xavix2_audio_status(&audio, 0) == 1);
+
+	/* Host diagnostics may mute a channel without changing guest-visible
+	 * status or pausing its source position. */
+	{
+		uint64_t position = audio.voice[0].position;
+		xavix2_audio_set_mute_mask(&audio, 1);
+		/* Use a cadence that cannot wrap this two-byte loop back to the
+		 * same Q32 position after one complete output frame. */
+		xavix2_audio_render(&audio, 72000);
+		frame = xavix2_audio_frame(&audio);
+		CHECK(frame[0] == 0 && frame[1] == 0);
+		CHECK(xavix2_audio_status(&audio, 0) == 1);
+		CHECK(audio.voice[0].position != position);
+		/* Restore this fixture's phase before the following update test. */
+		audio.voice[0].position = position;
+		xavix2_audio_set_mute_mask(&audio, 0);
+	}
 
 	xavix2_audio_command(&audio, 0xc0, descriptors, 0x4000, 7, 9);
 	CHECK(xavix2_audio_status(&audio, 0) == 1);
@@ -84,8 +106,8 @@ int main(void)
 	CHECK(audio.voice[0].volume_right == 9);
 	xavix2_audio_render(&audio, 96000);
 	frame = xavix2_audio_frame(&audio);
-	CHECK(frame[0] == 10 * 7 / 2 && frame[1] == 10 * 9 / 2);
-	CHECK(frame[2] == 15 * 7 / 2 && frame[3] == 15 * 9 / 2);
+	CHECK(frame[0] == 30 * 7 / 2 && frame[1] == 30 * 9 / 2);
+	CHECK(frame[2] == 35 * 7 / 2 && frame[3] == 35 * 9 / 2);
 	xavix2_audio_command(&audio, 0x80, descriptors, 0, 0, 0);
 	CHECK(xavix2_audio_status(&audio, 0) == 0);
 
@@ -99,6 +121,16 @@ int main(void)
 	frame = xavix2_audio_frame(&audio);
 	CHECK(frame[0] == 10 * 255 / 2);
 	CHECK(frame[2] == 0);
+	CHECK(xavix2_audio_status(&audio, 0) == 0);
+
+	/* An invalid loop target must not silently wrap to ROM address zero. */
+	rom[0x40] = 10;
+	rom[0x41] = 0x80;
+	store_address(voice0, 0x02, 0x06, 0x40);
+	store_address(voice0, 0x0e, 0x12, sizeof(rom));
+	xavix2_audio_command(&audio, 0x240, descriptors, 0, 0, 0);
+	CHECK(audio.voice[0].loop == 0);
+	xavix2_audio_render(&audio, 96000);
 	CHECK(xavix2_audio_status(&audio, 0) == 0);
 
 	store_address(voice0, 0x02, 0x06, sizeof(rom));

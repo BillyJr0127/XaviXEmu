@@ -23,8 +23,9 @@ enum
 	XAVIX2_PROGRAM_RAM_SIZE = 0x10000,
 	XAVIX2_VIDEO_RAM_SIZE = 0x1f800,
 	XAVIX2_MMIO_SIZE = 0x2000,
-	XAVIX2_CPU_CLOCK = 98000000,
+	XAVIX2_CPU_CLOCK = XAVIX2_AUDIO_MASTER_CLOCK,
 	XAVIX2_CYCLES_PER_FRAME = XAVIX2_CPU_CLOCK / 60,
+	XAVIX2_TIMER_CYCLES = XAVIX2_CPU_CLOCK / 120,
 	XAVIX2_CAPTURE_REGISTER_FIRST = 0x240,
 	XAVIX2_CAPTURE_REGISTER_COUNT = 12,
 	XAVIX2_CAPTURE_TRACE_CAPACITY = 1024,
@@ -168,6 +169,7 @@ typedef struct xavix2_machine
 	uint16_t maximum_gpu_count;
 	uint8_t debug_text[256];
 	unsigned debug_length;
+	uint64_t next_timer_cycle;
 } xavix2_machine_t;
 
 int xavix2_machine_init(xavix2_machine_t *machine, const uint8_t *rom,
@@ -189,6 +191,11 @@ uint64_t xavix2_machine_run_video_frame(xavix2_machine_t *machine,
 const uint32_t *xavix2_machine_visible_frame(const xavix2_machine_t *machine,
 	unsigned *width, unsigned *height, unsigned *stride);
 const int16_t *xavix2_machine_frame_audio(const xavix2_machine_t *machine);
+size_t xavix2_machine_state_size(void);
+int xavix2_machine_state_save(const xavix2_machine_t *machine,
+	void *output, size_t output_capacity, size_t *output_size);
+int xavix2_machine_state_load(xavix2_machine_t *machine,
+	const void *input, size_t input_size);
 
 #ifdef __cplusplus
 }

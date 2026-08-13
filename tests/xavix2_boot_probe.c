@@ -561,6 +561,53 @@ static int save_bytes(const char *path, const void *data, size_t size)
 	return fclose(file) == 0;
 }
 
+static int load_runtime_state(const char *path, xavix2_machine_t *machine)
+{
+	FILE *file;
+	uint8_t *data;
+	long file_size;
+	uint32_t payload_size;
+	int loaded;
+
+	if (!path || !machine)
+		return 0;
+	file = fopen(path, "rb");
+	if (!file || fseek(file, 0, SEEK_END))
+	{
+		if (file) fclose(file);
+		return 0;
+	}
+	file_size = ftell(file);
+	if (file_size < 40 || fseek(file, 0, SEEK_SET))
+	{
+		fclose(file);
+		return 0;
+	}
+	data = (uint8_t *)malloc((size_t)file_size);
+	if (!data)
+	{
+		fclose(file);
+		return 0;
+	}
+	if (fread(data, 1, (size_t)file_size, file) != (size_t)file_size)
+	{
+		fclose(file);
+		free(data);
+		return 0;
+	}
+	if (fclose(file))
+	{
+		free(data);
+		return 0;
+	}
+	payload_size = get_le32(data + 32);
+	loaded = !memcmp(data, "DRGQSAVE", 8) &&
+		(uint64_t)payload_size + 40 == (uint64_t)file_size &&
+		xavix2_machine_state_load(machine, data + 40, payload_size);
+	free(data);
+	return loaded;
+}
+
 static int save_wav(const char *path, const int16_t *samples, size_t frames)
 {
 	FILE *file;
@@ -1164,6 +1211,7 @@ static void print_audio_summary(const xavix2_machine_t *machine)
 
 static void print_audio_voices(const xavix2_machine_t *machine)
 {
+	const int show_descriptors = getenv("XAVIX2_AUDIO_DESCRIPTORS") != NULL;
 	const uint8_t *descriptors = machine->video_ram + 0xf800;
 	uint32_t engine_rate = xavix2_audio_engine_rate(machine->mmio[0xa00],
 		machine->mmio[0xa05]);
@@ -1191,12 +1239,22 @@ static void print_audio_voices(const xavix2_machine_t *machine)
 			(descriptor[0x12] | ((uint32_t)descriptor[0x13] << 8));
 		pitch = voice->pitch;
 		source_rate = (uint32_t)(((uint64_t)pitch * engine_rate + 32768U) >> 16);
-		printf("  ch=%u looped=%u start=%08" PRIX32 " end=%08" PRIX32
+		printf("  ch=%u looped=%u start=%08" PRIX32 " loop=%08" PRIX32
 			" pos=%08" PRIX32 "+%08" PRIX32 " pitch=%u rate=%" PRIu32
-			" volume=%u,%u\n",
+			" volume=%u,%u descriptor14=%02X%02X%02X%02X%02X%02X\n",
 			channel, voice->loop, start, loop,
 			(uint32_t)(voice->position >> 32), (uint32_t)voice->position,
-			pitch, source_rate, voice->volume_left, voice->volume_right);
+			pitch, source_rate, voice->volume_left, voice->volume_right,
+			descriptor[0x14], descriptor[0x15], descriptor[0x16],
+			descriptor[0x17], descriptor[0x18], descriptor[0x19]);
+		if (show_descriptors)
+		{
+			unsigned byte;
+			printf("    descriptor=");
+			for (byte = 0; byte < XAVIX2_AUDIO_DESCRIPTOR_SIZE; ++byte)
+				printf("%02X", descriptor[byte]);
+			putchar('\n');
+		}
 	}
 }
 
@@ -1383,6 +1441,26 @@ int main(int argc, char **argv)
 		motion_packet_address_for_rom(image.kind));
 	xavix2_machine_set_fixed_pio_input(machine,
 		fixed_pio_input_for_rom(image.kind));
+	{
+		const char *state_path = getenv("XAVIX2_LOAD_STATE");
+		if (state_path && !load_runtime_state(state_path, machine))
+		{
+			fprintf(stderr, "could not load XAVIX2_LOAD_STATE\n");
+			free(machine);
+			drgqst_rom_release(&image);
+			return 2;
+		}
+		if (state_path)
+			printf("state_resume cycles=%" PRIu64 " next_vblank=%" PRIu64
+				" frame=%" PRIu64 "\n", machine->cpu.total_cycles,
+				machine->next_vblank_cycle, machine->frame_count);
+	}
+	{
+		const char *mute_mask = getenv("XAVIX2_AUDIO_MUTE_MASK");
+		if (mute_mask)
+			xavix2_audio_set_mute_mask(&machine->audio,
+				_strtoui64(mute_mask, NULL, 0));
+	}
 	{
 		const char *input = getenv("XAVIX2_INPUT");
 		const char *at = getenv("XAVIX2_INPUT_AT");
@@ -1788,12 +1866,17 @@ int main(int argc, char **argv)
 				printf("video_frame=%u hardware_frame=%" PRIu64
 					" byte_cycles=%" PRIu64 " instructions=%" PRIu64
 					" interrupts=%" PRIu64 " pc=%08" PRIX32
-					" hash=%016" PRIX64 " hit=%08" PRIX32 " audio=",
+					" hash=%016" PRIX64 " hit=%08" PRIX32
+					" gpu=%04X/%u,%04X/%u audio=",
 					frame + 1, machine->frame_count,
 					machine->cpu.total_cycles,
 					machine->cpu.total_instructions,
 					machine->cpu.interrupt_count, machine->cpu.pc,
-					frame_hash(machine), get_le32(machine->low_ram + 0x6468));
+					frame_hash(machine), get_le32(machine->low_ram + 0x6468),
+					get_le16(machine->mmio + 0x400),
+					get_le16(machine->mmio + 0x404),
+					get_le16(machine->mmio + 0x40c),
+					get_le16(machine->mmio + 0x410));
 				for (audio_byte = 0;
 					audio_byte < XAVIX2_AUDIO_VOICES / 8; ++audio_byte)
 					printf("%02X", xavix2_audio_status(&machine->audio,
@@ -1928,6 +2011,11 @@ int main(int argc, char **argv)
 		machine->last_gpu_pc, machine->last_gpu_register, machine->last_gpu_count,
 		machine->maximum_gpu_count,
 		machine->dma_transfer_count);
+	printf("gpu_lists=%04X/%u,%04X/%u tables=%04X/%04X crop=%04X/%04X\n",
+		get_le16(machine->mmio + 0x400), get_le16(machine->mmio + 0x404),
+		get_le16(machine->mmio + 0x40c), get_le16(machine->mmio + 0x410),
+		get_le16(machine->mmio + 0x608), get_le16(machine->mmio + 0x622),
+		get_le16(machine->mmio + 0x656), get_le16(machine->mmio + 0x658));
 	printf("irq_active=%08" PRIX32 " irq_enabled=%08" PRIX32
 		" irq_nmi=%08" PRIX32 " level_reads=%" PRIu64
 		" clear_writes=%" PRIu64 " last_clear=%04X@%08" PRIX32

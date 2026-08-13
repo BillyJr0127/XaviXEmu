@@ -60,6 +60,10 @@ static const wchar_t TOM_DPGM_EEPROM_FILENAME[] = L"tom_dpgm-eeprom.sav";
 static const wchar_t TOM_DPGM_STATE_FILENAME[] = L"tom_dpgm-runtime-state.sav";
 static const wchar_t EPO_MINI_EEPROM_FILENAME[] = L"epo_mini-eeprom.sav";
 static const wchar_t EPO_MINI_STATE_FILENAME[] = L"epo_mini-runtime-state.sav";
+static const wchar_t BAN_NARU_STATE_FILENAME[] = L"ban_naru-runtime-state.sav";
+static const wchar_t BAN_BLDJ_STATE_FILENAME[] = L"ban_bldj-runtime-state.sav";
+static const wchar_t BAN_DB2J_STATE_FILENAME[] = L"ban_db2j-runtime-state.sav";
+static const wchar_t BAN_DBZ_STATE_FILENAME[] = L"ban_dbz-runtime-state.sav";
 static volatile LONG temporary_counter;
 
 static void clear_error(wchar_t *error, size_t error_length)
@@ -176,6 +180,14 @@ static const wchar_t *filename_for_kind(enum drgqst_persistence_kind kind)
 		return EPO_MINI_EEPROM_FILENAME;
 	case DRGQST_PERSISTENCE_EPO_MINI_RUNTIME_STATE:
 		return EPO_MINI_STATE_FILENAME;
+	case DRGQST_PERSISTENCE_BAN_NARU_RUNTIME_STATE:
+		return BAN_NARU_STATE_FILENAME;
+	case DRGQST_PERSISTENCE_BAN_BLDJ_RUNTIME_STATE:
+		return BAN_BLDJ_STATE_FILENAME;
+	case DRGQST_PERSISTENCE_BAN_DB2J_RUNTIME_STATE:
+		return BAN_DB2J_STATE_FILENAME;
+	case DRGQST_PERSISTENCE_BAN_DBZ_RUNTIME_STATE:
+		return BAN_DBZ_STATE_FILENAME;
 	default:
 		return NULL;
 	}
@@ -248,7 +260,11 @@ static int validate_payload_size(
 		kind == DRGQST_PERSISTENCE_TVPC_HAM_RUNTIME_STATE ||
 		kind == DRGQST_PERSISTENCE_TVPC_HK_RUNTIME_STATE ||
 		kind == DRGQST_PERSISTENCE_TOM_DPGM_RUNTIME_STATE ||
-		kind == DRGQST_PERSISTENCE_EPO_MINI_RUNTIME_STATE)
+		kind == DRGQST_PERSISTENCE_EPO_MINI_RUNTIME_STATE ||
+		kind == DRGQST_PERSISTENCE_BAN_NARU_RUNTIME_STATE ||
+		kind == DRGQST_PERSISTENCE_BAN_BLDJ_RUNTIME_STATE ||
+		kind == DRGQST_PERSISTENCE_BAN_DB2J_RUNTIME_STATE ||
+		kind == DRGQST_PERSISTENCE_BAN_DBZ_RUNTIME_STATE)
 	{
 		if (!payload_size || payload_size > DRGQST_PERSISTENCE_MAX_STATE_SIZE)
 		{

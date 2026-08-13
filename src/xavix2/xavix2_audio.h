@@ -32,12 +32,16 @@ typedef struct xavix2_audio_voice
 {
 	uint64_t position;
 	uint32_t start_address;
-	uint32_t end_address;
+	uint32_t loop_address;
 	uint16_t pitch;
 	uint8_t volume_left;
 	uint8_t volume_right;
 	uint8_t active;
 	uint8_t loop;
+	/* Host-only diagnostic flags occupy the structure's former padding so
+	 * version-1 runtime-state size and all guest fields remain compatible. */
+	uint8_t host_muted;
+	uint8_t reserved;
 } xavix2_audio_voice;
 
 typedef struct xavix2_audio
@@ -56,6 +60,7 @@ void xavix2_audio_command(xavix2_audio *audio, uint16_t command,
 	uint16_t control_pitch, uint8_t control_left, uint8_t control_right);
 uint32_t xavix2_audio_engine_rate(uint8_t divider_a, uint8_t divider_b);
 void xavix2_audio_render(xavix2_audio *audio, uint32_t engine_rate);
+void xavix2_audio_set_mute_mask(xavix2_audio *audio, uint64_t mute_mask);
 uint8_t xavix2_audio_status(const xavix2_audio *audio, unsigned byte_index);
 const int16_t *xavix2_audio_frame(const xavix2_audio *audio);
 

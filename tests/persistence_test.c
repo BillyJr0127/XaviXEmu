@@ -1027,6 +1027,59 @@ static void test_epo_mini_persistence(void)
 	RemoveDirectoryW(root);
 }
 
+static void test_xavix2_runtime_state_persistence(void)
+{
+	static const enum drgqst_persistence_kind kinds[] =
+	{
+		DRGQST_PERSISTENCE_BAN_NARU_RUNTIME_STATE,
+		DRGQST_PERSISTENCE_BAN_BLDJ_RUNTIME_STATE,
+		DRGQST_PERSISTENCE_BAN_DB2J_RUNTIME_STATE,
+		DRGQST_PERSISTENCE_BAN_DBZ_RUNTIME_STATE
+	};
+	static const wchar_t *const filenames[] =
+	{
+		L"\\ban_naru-runtime-state.sav",
+		L"\\ban_bldj-runtime-state.sav",
+		L"\\ban_db2j-runtime-state.sav",
+		L"\\ban_dbz-runtime-state.sav"
+	};
+	wchar_t root[MAX_PATH];
+	wchar_t paths[4][MAX_PATH] = { { 0 } };
+	wchar_t error[512];
+	uint8_t sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] = { 0 };
+	uint8_t state[4] = { 'X', '2', 'S', 0 };
+	uint8_t output[sizeof(state)] = { 0 };
+	size_t output_size;
+	size_t index;
+
+	if (!create_test_root(root))
+	{
+		CHECK(0 && "create XaviX2 persistence root");
+		return;
+	}
+	for (index = 0; index < sizeof(kinds) / sizeof(kinds[0]); ++index)
+	{
+		sha1[0] = (uint8_t)(index + 1);
+		state[3] = (uint8_t)index;
+		CHECK(drgqst_persistence_get_path(root, kinds[index], paths[index],
+			MAX_PATH, error, sizeof(error) / sizeof(error[0])));
+		CHECK(wcsstr(paths[index], filenames[index]) != NULL);
+		CHECK(drgqst_persistence_save(root, kinds[index], sha1, state,
+			sizeof(state), error, sizeof(error) / sizeof(error[0])));
+		memset(output, 0, sizeof(output));
+		output_size = 0;
+		CHECK(drgqst_persistence_load(root, kinds[index], sha1, output,
+			sizeof(output), &output_size, error,
+			sizeof(error) / sizeof(error[0])));
+		CHECK(output_size == sizeof(state));
+		CHECK(!memcmp(output, state, sizeof(state)));
+	}
+	for (index = 0; index < sizeof(paths) / sizeof(paths[0]); ++index)
+		if (*paths[index])
+			DeleteFileW(paths[index]);
+	RemoveDirectoryW(root);
+}
+
 int main(void)
 {
 	test_default_directory();
@@ -1039,6 +1092,7 @@ int main(void)
 	test_tvpc_pair_persistence();
 	test_tom_dpgm_persistence();
 	test_epo_mini_persistence();
+	test_xavix2_runtime_state_persistence();
 
 	if (failures)
 	{

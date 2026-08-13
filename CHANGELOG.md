@@ -5,8 +5,24 @@ semantic versioning while experimental releases carry a pre-release suffix.
 
 ## Unreleased
 
+- Correct XaviX2 game and music-event timing from half speed to full speed by
+  separating the 120 Hz timer interrupt from 60 Hz vblank.  The CPU and PCM
+  clocks remain unchanged, preserving sample pitch; version-1 F5 states migrate
+  their timer phase when loaded.
+- Keep a host target visible for Naruto when its pre-battle game-owned cursor
+  layer disappears while optical hit testing remains active.
+
 ### Added
 
+- Add independent F5/F7 runtime states for all four recognized XaviX 2 games.
+  State files preserve CPU, GPU, audio, EEPROM, timing, and controller hardware
+  while safely rebinding the current ROM and host callbacks after loading.
+- Add a live XaviX 2 channel diagnostic menu. Each of the 64 channels shows its
+  current source rate, stereo volume, and loop state and can be muted without
+  pausing it or changing the status observed by the game.
+- Make XaviX 2 frame resume robust when an IRQ service crosses a vertical-blank
+  boundary immediately before an F5 capture, avoiding an unsigned cycle-budget
+  underflow on the first frame after F7.
 - Restore DB2J/DBZ optical cursors and per-title calibration, allowing the
   motion-game route to traverse Shenron/Kame House pages, mission selection,
   and its first battle, while DBZ enters a real battle without a firmware
@@ -62,6 +78,16 @@ semantic versioning while experimental releases carry a pre-release suffix.
 
 ### Fixed
 
+- Implement the XaviX 2 geometry unit's unsigned square-root command used by
+  Naruto for cursor/target distance checks.  A resumed second-stage checkpoint
+  now renders its submitted enemy and rotating projectile sprites while attack
+  hit testing receives the real distance instead of a stale register value.
+- Treat the second XaviX 2 waveform address as the sustain-loop target selected
+  by a `$80` terminator. The earlier end-address interpretation repeatedly
+  replayed instrument attacks and produced overlapping, never-settling music.
+- Pace the XaviX 2 CPU from the firmware-observed 98,437,488 Hz system source
+  instead of the early rounded 98 MHz estimate, keeping event timing aligned
+  with the already verified sound-divider clock.
 - Decode XaviX 2 opcodes `$06/$07` with their signed 19-bit immediate. The old
   wider sign field pinned both Dragon Ball optical cursors outside menu bounds.
 - Follow the guest-selected XaviX 2 visible origin, including the Dragon Ball

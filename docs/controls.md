@@ -88,6 +88,9 @@ control feel remain experimental.
 
 Naruto (`ban_naru`) places both samples at the same location for its documented
 joined-hands guard gesture; left mouse is its verified Execute/confirm input.
+Its game-owned marker disappears during some pre-battle transitions even though
+the optical hit position remains active, so XaviXEmu keeps a small blue host
+target visible at the actual mouse position throughout Naruto scenes.
 Blue Dragon (`ban_bldj`) separates the second sample vertically by two sensor
 units because its firmware merges perfectly overlapping blobs. Holding right
 mouse or Space therefore operates its on-screen `決定` gesture without a
@@ -118,6 +121,19 @@ play-through, so these mappings remain experimental.
 
 Independent two-hand positions and the complete later gameplay gesture
 vocabulary are not yet implemented.
+
+F5 and F7 save and restore an independent runtime-state file for each XaviX 2
+ROM. These files include the audio engine state and are suitable for privately
+sharing a reproducible problem point without sharing the ROM.
+
+The **XaviX2 聲道 / Channels** menu is a live audio diagnostic. Checked
+channels are audible; clearing a check mutes only the host output while the
+voice continues advancing and remains active to the game. Active entries show
+the calculated source rate, left/right volume, and `loop` state. **全部開啟 /
+Enable all** restores every channel. Different rates are intentional firmware
+pitch settings and should not be interpreted as a global speed error.
+Use **全部靜音 / Mute all**, then check one active channel at a time, to isolate
+a stale loop without changing the game's audio timing.
 
 ## `epo_hamd` (experimental)
 
