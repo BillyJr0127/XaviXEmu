@@ -8,6 +8,7 @@
 #include "resource.h"
 #include "rom_loader.h"
 #include "screenshot.h"
+#include "video_recorder.h"
 #include "win_audio.h"
 #include "xavix2/xavix2_machine.h"
 
@@ -400,6 +401,7 @@ static drgqst_rom_image g_rom;
 static drgqst_core *g_core;
 static xavix2_machine_t *g_xavix2;
 static win_audio g_audio_output;
+static xavix_video_recorder g_video_recorder;
 static uint32_t g_idle_framebuffer[FRAME_WIDTH * FRAME_HEIGHT];
 static const uint32_t *g_framebuffer = g_idle_framebuffer;
 static unsigned g_frame_width = FRAME_WIDTH;
@@ -745,6 +747,11 @@ static void update_window_title(HWND window)
 {
 	const interface_strings *text = interface_text();
 	const wchar_t *title = text->window_title_idle;
+	if (xavix_video_recorder_active(&g_video_recorder))
+	{
+		SetWindowTextW(window, L"XaviXEmu - REC (F10 to stop)");
+		return;
+	}
 
 	switch (g_window_status)
 	{
@@ -1786,6 +1793,8 @@ static void update_timing_diagnostics(HWND window, LONGLONG now)
 		(double)(interrupts - g_timing_interrupts) / elapsed : 0.0;
 	win_audio_get_stats(&g_audio_output, &audio_stats);
 	swprintf(title, sizeof(title) / sizeof(title[0]),
+		xavix_video_recorder_active(&g_video_recorder) ?
+		L"XaviXEmu REC | %.1f FPS | %.2f ms/frame | dropped %llu | guest %.1f M/s | IRQ %.1f/s | audio drop %llu / under %llu" :
 		L"XaviXEmu | %.1f FPS | %.2f ms/frame | dropped %llu | guest %.1f M/s | IRQ %.1f/s | audio drop %llu / under %llu",
 		fps, core_ms, (unsigned long long)g_timing_dropped_frames,
 		guest_rate, irq_rate,
@@ -1798,6 +1807,75 @@ static void update_timing_diagnostics(HWND window, LONGLONG now)
 	g_timing_dropped_frames = 0;
 	g_timing_guest_cycles = guest_cycles;
 	g_timing_interrupts = interrupts;
+}
+
+static void stop_video_recording(HWND window, int show_result)
+{
+	wchar_t path[MAX_PATH];
+	wchar_t error[384];
+	wchar_t message[MAX_PATH + 96];
+
+	if (!xavix_video_recorder_active(&g_video_recorder))
+		return;
+	if (!xavix_video_recorder_stop(&g_video_recorder, path,
+		sizeof(path) / sizeof(path[0]), error,
+		sizeof(error) / sizeof(error[0])))
+	{
+		if (show_result)
+			MessageBoxW(window, error, L"Recording failed",
+				MB_OK | MB_ICONERROR);
+		return;
+	}
+	g_window_status = WINDOW_STATUS_RUNNING;
+	update_window_title(window);
+	if (show_result)
+	{
+		_snwprintf(message, sizeof(message) / sizeof(message[0]),
+			L"AVI recording saved:\r\n\r\n%ls", path);
+		message[sizeof(message) / sizeof(message[0]) - 1] = L'\0';
+		MessageBoxW(window, message, L"Recording saved",
+			MB_OK | MB_ICONINFORMATION);
+	}
+}
+
+static void start_video_recording(HWND window)
+{
+	wchar_t path[MAX_PATH];
+	wchar_t error[384];
+
+	if (!emulator_loaded() ||
+		xavix_video_recorder_active(&g_video_recorder))
+		return;
+	if (!xavix_video_recorder_start(&g_video_recorder,
+		g_executable_directory, g_frame_width, g_frame_height,
+		path, sizeof(path) / sizeof(path[0]), error,
+		sizeof(error) / sizeof(error[0])))
+	{
+		MessageBoxW(window, error, L"Recording failed", MB_OK | MB_ICONERROR);
+		return;
+	}
+	update_window_title(window);
+}
+
+static void record_video_frame(HWND window, const int16_t *audio,
+	size_t audio_frames)
+{
+	wchar_t error[384];
+	wchar_t stop_error[384];
+	wchar_t path[MAX_PATH];
+
+	if (!xavix_video_recorder_active(&g_video_recorder))
+		return;
+	if (xavix_video_recorder_write_frame(&g_video_recorder,
+		g_framebuffer, g_frame_stride, audio, audio_frames,
+		error, sizeof(error) / sizeof(error[0])))
+		return;
+	(void)xavix_video_recorder_stop(&g_video_recorder, path,
+		sizeof(path) / sizeof(path[0]), stop_error,
+		sizeof(stop_error) / sizeof(stop_error[0]));
+	g_window_status = WINDOW_STATUS_RUNNING;
+	update_window_title(window);
+	MessageBoxW(window, error, L"Recording stopped", MB_OK | MB_ICONERROR);
 }
 
 static void run_due_frames(HWND window)
@@ -1814,7 +1892,12 @@ static void run_due_frames(HWND window)
 	{
 		QueryPerformanceCounter(&frame_start);
 		if (g_xavix2)
+		{
 			run_xavix2_frame();
+			record_video_frame(window,
+				xavix2_machine_frame_audio(g_xavix2),
+				XAVIX2_AUDIO_FRAMES_PER_VIDEO_FRAME);
+		}
 		else
 		{
 			update_hamd_input();
@@ -1827,6 +1910,8 @@ static void run_due_frames(HWND window)
 			update_cursor_presentation();
 			win_audio_submit(&g_audio_output,
 				drgqst_core_frame_audio(g_core),
+				DRGQST_AUDIO_FRAMES_PER_VIDEO_FRAME);
+			record_video_frame(window, drgqst_core_frame_audio(g_core),
 				DRGQST_AUDIO_FRAMES_PER_VIDEO_FRAME);
 			poll_persistent_eeprom(window);
 		}
@@ -2075,6 +2160,7 @@ static int activate_xavix2_rom(HWND window, drgqst_rom_image *image,
 	xavix2_machine_set_fixed_pio_input(machine,
 		xavix2_fixed_pio_input(image->kind));
 
+	stop_video_recording(window, 1);
 	stop_frame_clock(window);
 	save_persistent_eeprom(window, 1);
 	free(g_core);
@@ -2163,6 +2249,7 @@ static int load_rom(HWND window, const wchar_t *path, int show_error)
 	}
 	load_persistent_eeprom(window, core, image.kind);
 
+	stop_video_recording(window, 1);
 	stop_frame_clock(window);
 	save_persistent_eeprom(window, 1);
 	free(g_core);
@@ -2678,7 +2765,18 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT message,
 		break;
 
 	case WM_KEYDOWN:
+		if (wparam == VK_F9 && emulator_loaded() &&
+			!(lparam & ((LPARAM)1 << 30)))
+		{
+			start_video_recording(window);
+			return 0;
+		}
 		if (wparam == VK_F10 && !(lparam & ((LPARAM)1 << 30)))
+		{
+			stop_video_recording(window, 1);
+			return 0;
+		}
+		if (wparam == VK_F11 && !(lparam & ((LPARAM)1 << 30)))
 		{
 			LARGE_INTEGER now;
 			g_timing_diagnostics = !g_timing_diagnostics;
@@ -2874,6 +2972,7 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT message,
 
 	case WM_DESTROY:
 		stop_frame_clock(window);
+		stop_video_recording(window, 0);
 		save_persistent_eeprom(window, 1);
 		win_audio_shutdown(&g_audio_output);
 		release_capture_surface();
@@ -2914,6 +3013,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous_instance,
 			!(timing_length == 1 && timing_value[0] == L'0');
 	}
 	win_audio_init(&g_audio_output);
+	xavix_video_recorder_init(&g_video_recorder);
 	arguments = CommandLineToArgvW(GetCommandLineW(), &argument_count);
 	if (arguments && argument_count >= 3 &&
 		lstrcmpiW(arguments[1], L"--verify-rom") == 0)

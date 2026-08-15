@@ -10,6 +10,10 @@ original accessories used ordinary buttons.
 - F5: save the single runtime-state slot where supported.
 - F7: load the runtime-state slot where supported.
 - F8: save a local PNG screenshot.
+- F9: start a native-resolution, 60 FPS MJPEG AVI recording.
+- F10: stop and finalize the AVI recording. Recordings include synchronized
+  48 kHz stereo sound and are saved beside the executable.
+- F11: toggle runtime timing diagnostics.
 - Alt+Enter: toggle borderless fullscreen.
 - Escape: leave fullscreen.
 

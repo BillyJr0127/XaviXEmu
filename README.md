@@ -66,7 +66,7 @@ does not mean that a game is fully playable.
 - 24C02, 24C04, 24C08, and 24C16 EEPROM models.
 - Per-game EEPROM and runtime-state files for supported original XaviX and
   XaviX 2000 profiles.
-- PNG screenshots generated locally by the user.
+- PNG screenshots and MJPEG AVI recordings generated locally by the user.
 - Strict ROM size, CRC32, and SHA-1 verification.
 - ROM-independent automated CPU, video, audio, peripheral, persistence,
   screenshot, and state tests.
@@ -112,13 +112,15 @@ download is needed during configuration or compilation.
 The emulator does not scan the computer for games and does not copy, rename,
 modify, or add files to the selected ZIP.
 
-## Saves and screenshots
+## Saves, screenshots, and recordings
 
 For supported original XaviX, XaviX 2000, and XaviX 2 profiles, EEPROM (where
 present) and F5/F7 runtime states are stored beside the executable. F8 writes
-a PNG under a local `snap` directory. These files are runtime output and must
-not be committed. XaviX 2 states are independent per ROM and can be shared
-privately for focused debugging without sharing the ROM itself.
+a PNG under a local `snap` directory. F9 starts a native-resolution 60 FPS
+MJPEG AVI with synchronized 48 kHz stereo sound; F10 stops and saves it beside
+the executable. These files are runtime output and must not be committed.
+XaviX 2 states are independent per ROM and can be shared privately for focused
+debugging without sharing the ROM itself.
 
 ## Known limitations
 

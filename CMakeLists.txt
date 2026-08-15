@@ -21,6 +21,7 @@ add_executable(xavixemu WIN32
 	src/persistence.c
 	src/rom_loader.c
 	src/screenshot.c
+	src/video_recorder.c
 	src/sha1.c
 	src/win_audio.c
 	${MINIZ_DIRECTORY}/miniz.c
@@ -71,6 +72,7 @@ target_link_libraries(xavixemu PRIVATE
 	shell32
 	user32
 	winmm
+	vfw32
 	ole32
 	windowscodecs
 )
@@ -170,6 +172,18 @@ if(BUILD_TESTING)
 	target_compile_definitions(screenshot-test PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
 	target_link_libraries(screenshot-test PRIVATE gdi32 ole32 windowscodecs)
 	add_test(NAME screenshot-test COMMAND screenshot-test)
+
+	add_executable(video-recorder-test
+		tests/video_recorder_test.c
+		src/video_recorder.c
+	)
+	target_include_directories(video-recorder-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+	target_compile_definitions(video-recorder-test PRIVATE
+		WIN32_LEAN_AND_MEAN
+		NOMINMAX
+	)
+	target_link_libraries(video-recorder-test PRIVATE ole32 vfw32 windowscodecs)
+	add_test(NAME video-recorder-test COMMAND video-recorder-test)
 
 	add_executable(cursor-presentation-test
 		tests/cursor_presentation_test.c

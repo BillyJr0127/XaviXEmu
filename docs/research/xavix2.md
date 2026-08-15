@@ -361,7 +361,7 @@ game still feels slow and polyphonic menu passages retain audible noise.  A
 16-bit output rails during ordinary music, proving that the provisional mixer
 had no accumulator headroom.  The output conversion now preserves one guard
 bit before saturation.  This changes neither source pitch nor firmware event
-timing.  F10 exposes live FPS, guest byte-cycles, dropped frames, and WinMM
+timing.  F11 exposes live FPS, guest byte-cycles, dropped frames, and WinMM
 drop/underrun counters so host scheduling can be separated from guest timing
 on the user's machine before any clock change is considered.
 

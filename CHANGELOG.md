@@ -5,6 +5,8 @@ semantic versioning while experimental releases carry a pre-release suffix.
 
 ## Unreleased
 
+- Add F9/F10 native-resolution AVI recording with 60 FPS MJPEG video and
+  synchronized 48 kHz stereo PCM audio. Runtime timing diagnostics move to F11.
 - Restore Naruto's title and menu hit testing by keeping XaviX 2 opcodes
   `$f6/$f7` on the zero flag used by the firmware's immediate equality
   branches. The host cursor and click signal were still moving, but the
@@ -166,7 +168,7 @@ semantic versioning while experimental releases carry a pre-release suffix.
 
 - Opt-in XaviX 2 WAV capture and per-frame hit/audio diagnostics in the
   ROM-dependent boot probe.
-- Add an F10 runtime timing display with FPS, guest CPU rate, dropped frames,
+- Add an F11 runtime timing display with FPS, guest CPU rate, dropped frames,
   and audio delivery counters for diagnosing host-dependent slowdown.
 - Model LOTR right-mouse defense as a stationary upright broad reflection, and
   map held Space to the rotating elongated-reflection gesture accepted by the
