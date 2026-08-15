@@ -640,11 +640,23 @@ int main(void)
 		CHECK(visible_width == 320);
 		CHECK(visible_height == 240);
 		CHECK(visible_stride == 0x800);
+		/* Startup mode 08 exposes a 640x480 surface rather than a 320x240
+		 * crop of its upper-left quarter. */
+		machine->mmio[0x650] = 0x08;
+		store16(machine->mmio + 0x656, 0x02c0);
+		store16(machine->mmio + 0x658, 0x0106);
+		visible = xavix2_machine_visible_frame(machine, &visible_width,
+			&visible_height, &visible_stride);
+		CHECK(visible == machine->screen_data + 0x0106 * 0x800 + 0x02c0);
+		CHECK(visible_width == 640);
+		CHECK(visible_height == 480);
+		CHECK(visible_stride == 0x800);
 		store16(machine->mmio + 0x656, 0x07ff);
 		store16(machine->mmio + 0x658, 0x03ff);
 		visible = xavix2_machine_visible_frame(machine, NULL, NULL, NULL);
 		CHECK(visible == machine->screen_data +
-			(0x200 - 120) * 0x800 + (0x400 - 160));
+			(0x200 - 240) * 0x800 + (0x400 - 320));
+		machine->mmio[0x650] = 0x10;
 	}
 
 	/* Low-address DMA seeds both views; later CPU stores change only data. */

@@ -5,6 +5,9 @@ semantic versioning while experimental releases carry a pre-release suffix.
 
 ## Unreleased
 
+- Honor XaviX 2 display mode `$08` as a 640x480 startup surface. The BANDAI
+  and XaviX logos now use the complete two-sprite frame instead of showing
+  only its upper-left 320x240 quarter; normal gameplay remains 320x240.
 - Restore XaviX 2 indexed-palette transparency and premultiplied half-alpha
   blending. Blue Dragon's result screen now retains its translucent blue and
   orange record panels instead of discarding their high-bit palette colors.

@@ -1764,11 +1764,27 @@ const uint32_t *xavix2_machine_visible_frame(const xavix2_machine_t *machine,
 {
 	uint32_t origin_x;
 	uint32_t origin_y;
+	uint32_t visible_width;
+	uint32_t visible_height;
 
 	if (!machine)
 		return NULL;
-	if (width) *width = 320;
-	if (height) *height = 240;
+	/* Display mode 08 exposes the 640x480 startup surface.  Its GPU lists
+	 * deliberately cover that full area (for example DB2J emits two adjacent
+	 * 320x480 sprites).  Cropping a fixed 320x240 window here showed exactly
+	 * the upper-left quarter of every XaviX2 startup logo. */
+	if (machine->mmio[0x650] == 0x08)
+	{
+		visible_width = 640;
+		visible_height = 480;
+	}
+	else
+	{
+		visible_width = 320;
+		visible_height = 240;
+	}
+	if (width) *width = visible_width;
+	if (height) *height = visible_height;
 	if (stride) *stride = 0x800;
 	/* E656/E658 are the guest-selected visible origin.  Title firmware uses
 	 * 0x360/0x188, while the Dragon Ball gameplay setup deliberately shifts
@@ -1776,11 +1792,11 @@ const uint32_t *xavix2_machine_visible_frame(const xavix2_machine_t *machine,
 	 * programmed a complete, in-range pair. */
 	origin_x = load16(machine->mmio + 0x656);
 	origin_y = load16(machine->mmio + 0x658);
-	if ((!origin_x && !origin_y) || origin_x + 320 > 0x800 ||
-		origin_y + 240 > 0x400)
+	if ((!origin_x && !origin_y) || origin_x + visible_width > 0x800 ||
+		origin_y + visible_height > 0x400)
 	{
-		origin_x = 0x400 - 160;
-		origin_y = 0x200 - 120;
+		origin_x = 0x400 - visible_width / 2;
+		origin_y = 0x200 - visible_height / 2;
 	}
 	return machine->screen_data + origin_y * 0x800 + origin_x;
 }

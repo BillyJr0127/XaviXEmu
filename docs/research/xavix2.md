@@ -735,3 +735,13 @@ on the user's machine before any clock change is considered.
   secondary field is therefore an end/boundary pointer here, not an alternate
   sustain waveform; loop restart at the primary address is the evidence-backed
   behavior.
+
+## 640x480 startup display mode (2026-08-15)
+
+- DB2J programs `$e650=$0008` with visible origin `$02c0,$0106` during the
+  common XaviX 2 startup sequence. Its GPU list contains two adjacent
+  320x480 sprites which form one 640x480 logo frame.
+- Returning a fixed 320x240 viewport therefore exposed exactly the upper-left
+  quarter. Mode `$08` now reports the full 640x480 surface and validates the
+  origin against that size; later title and gameplay modes continue to report
+  their programmed 320x240 viewport.
