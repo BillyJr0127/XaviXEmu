@@ -531,6 +531,17 @@ void xavix2_machine_set_capture(xavix2_machine_t *machine,
 	machine->experimental_capture_b = capture_b;
 }
 
+static int pio_uses_epoch_24c04_pins(const xavix2_machine_t *machine)
+{
+	uint32_t mode1 = load32(machine->mmio + 0x204);
+	/* Epoch's documented 24C04 boards use PIO16/SDA and PIO17/SCL.  The
+	 * Bandai wrist-receiver boards configure PIO20/21 instead; prefer those
+	 * pins whenever their mode fields are active so unrelated PIO16 outputs
+	 * cannot steal the EEPROM bus. */
+	return !(mode1 & UINT32_C(0x00000f00)) &&
+		(mode1 & UINT32_C(0x0000000f));
+}
+
 static void update_pio(xavix2_machine_t *machine)
 {
 	uint32_t mode0 = load32(machine->mmio + 0x200);
@@ -547,16 +558,32 @@ static void update_pio(xavix2_machine_t *machine)
 			mask |= UINT32_C(1) << bit;
 	}
 	machine->pio_output_mask = mask;
-	xavix_eeprom24c08_set_lines(&machine->eeprom,
-		(mask & (UINT32_C(1) << 20)) ? !!(data & (UINT32_C(1) << 20)) : 0,
-		(mask & (UINT32_C(1) << 21)) ? !!(data & (UINT32_C(1) << 21)) : 1);
+	if (pio_uses_epoch_24c04_pins(machine))
+		xavix_eeprom24c04_set_lines(&machine->eeprom,
+			(mask & (UINT32_C(1) << 17)) ?
+				!!(data & (UINT32_C(1) << 17)) : 0,
+			(mask & (UINT32_C(1) << 16)) ?
+				!!(data & (UINT32_C(1) << 16)) : 1);
+	else
+		xavix_eeprom24c08_set_lines(&machine->eeprom,
+			(mask & (UINT32_C(1) << 20)) ?
+				!!(data & (UINT32_C(1) << 20)) : 0,
+			(mask & (UINT32_C(1) << 21)) ?
+				!!(data & (UINT32_C(1) << 21)) : 1);
 }
 
 static uint32_t pio_read(const xavix2_machine_t *machine)
 {
 	uint32_t input = machine->pio_input;
 	uint32_t output = load32(machine->mmio + 0x208);
-	if (xavix_eeprom24c08_read_sda(&machine->eeprom))
+	if (pio_uses_epoch_24c04_pins(machine))
+	{
+		if (xavix_eeprom24c08_read_sda(&machine->eeprom))
+			input |= UINT32_C(1) << 16;
+		else
+			input &= ~(UINT32_C(1) << 16);
+	}
+	else if (xavix_eeprom24c08_read_sda(&machine->eeprom))
 		input |= UINT32_C(1) << 21;
 	else
 		input &= ~(UINT32_C(1) << 21);
@@ -1719,7 +1746,7 @@ uint64_t xavix2_machine_run_video_frame(xavix2_machine_t *machine,
 	/* The two wrist reflectors are latched by the level-10 handler.  Pulse the
 	 * line only at the firmware's wait point, matching the observed hardware
 	 * cadence and avoiding interference with another active interrupt. */
-	if (machine->cpu.waiting && !machine->interrupt_active)
+	if (motion_packet && machine->cpu.waiting && !machine->interrupt_active)
 	{
 		uint64_t reads_before = machine->irq_level_read_count;
 		unsigned steps;

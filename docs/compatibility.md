@@ -15,9 +15,9 @@ when the stated milestone has been reproduced from an exact supported image.
 - **Not working**: the title is recognized but cannot currently reach a useful
   interactive milestone.
 
-No accepted title is classified **Working** in v0.3.0-alpha. No accepted title
-is currently classified **Not working**; unknown ROMs are unsupported and are
-rejected rather than assigned a compatibility status.
+No accepted title is classified **Working** in v0.3.0-alpha. Exact supported
+images that still fail to reach a useful interactive milestone are explicitly
+listed as **Not working**; unknown ROMs are rejected rather than guessed.
 
 ## Compatibility table
 
@@ -47,6 +47,11 @@ rejected rather than assigned a compatibility status.
 | `ban_bldj` | XaviX 2 | Experimental | Exact image accepted; title, mode selection, story, and battle render with fractional GPU scaling and translucent indexed-palette panels; the two-reflector confirm path, provisional PCM, and independent F5/F7 state are verified | Full gesture vocabulary, sustained gameplay, exact downscale sampling/audio, and EEPROM are unverified |
 | `ban_db2j` | XaviX 2 | Experimental | Exact image accepted; title route selection, optical cursor/dwell menus, Shenron/Kame House story pages, mission selection, first-battle entry, per-title motion packets, provisional PCM, and independent F5/F7 state are verified | Polygon material/light commands `$0b/$0e` are incomplete, so battle terrain/effects are not yet rendered correctly; complete actions/play-through, EEPROM, and exact audio are unverified |
 | `ban_dbz` | XaviX 2 | Experimental | Exact image accepted; receiver detection, optical cursor/dwell selection, real battle entry, basic/two-hand/deflect action paths, continuous fractional zoom, provisional PCM, and independent F5/F7 state are verified | Polygon material/light commands `$0b/$0e` are incomplete, so canyon/enemy/effect layers are not yet rendered correctly; the complete gesture vocabulary/play-through, EEPROM, and exact audio are unverified |
+| `epo_dab2j` | XaviX 2 | Experimental | Exact image recognition, centered XaviX/EPOCH logos, Japanese safety warning, later book-screen rendering, nonzero PCM output, and isolated runtime-state routing are verified | The title and interactive input have not yet been reached; controller protocol, EEPROM durability, later video, and exact audio remain unverified |
+| `epo_dtcj` | XaviX 2 | Experimental | Exact image recognition, startup logos, complete Doraemon tutorial rendering, nonzero PCM output, and isolated runtime-state routing are verified | Controller protocol, interactive play, EEPROM durability, later video, and exact audio remain unverified |
+| `epo_pabj` | XaviX 2 | Experimental | Exact image recognition, startup logos, complete Pooh name-entry screen rendering, nonzero PCM output, and isolated runtime-state routing are verified | Name input, interactive play, EEPROM durability, later video, and exact audio remain unverified |
+| `epo_ssk2` | XaviX 2 | Not working | Exact image recognition, isolated runtime-state routing, and the board's 24C04-compatible PIO serial-bus route are implemented | The firmware still falls into an unresolved CPU/MMIO loop before producing a visible frame; title, controls, audio, and gameplay are not working |
+| `epo_sskj` | XaviX 2 | Not working | Exact image recognition, isolated runtime-state routing, early CPU/audio activity, and the board's 24C04-compatible PIO serial-bus route are implemented | Startup ends on a blank white frame, likely awaiting an unmodelled controller or hardware condition; title and gameplay are not working |
 
 ## Reporting results
 

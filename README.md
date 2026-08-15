@@ -51,6 +51,11 @@ holders or MAMEdev. See [the legal notes](docs/legal.md).
 | XaviX 2 | `ban_bldj` | Experimental | Title, mode selection, story/battle rendering milestones, two-reflector confirm, and provisional PCM |
 | XaviX 2 | `ban_db2j` | Experimental | Optical route/dwell menus, Shenron/Kame House story, first-battle entry, corrected motion input, and provisional PCM; polygon materials remain incomplete |
 | XaviX 2 | `ban_dbz` | Experimental | Receiver/optical selection, real first-person battle entry, basic/two-hand/deflect inputs, fractional zoom, and provisional PCM; polygon materials remain incomplete |
+| XaviX 2 | `epo_dab2j` | Experimental | XaviX/EPOCH logos, safety warning, later book-screen rendering, isolated runtime state, and PCM output |
+| XaviX 2 | `epo_dtcj` | Experimental | XaviX/EPOCH startup and complete Doraemon tutorial rendering, isolated runtime state, and PCM output |
+| XaviX 2 | `epo_pabj` | Experimental | XaviX/EPOCH startup and complete Pooh name-entry rendering, isolated runtime state, and PCM output |
+| XaviX 2 | `epo_ssk2` | Not working | Exact ROM recognition, isolated runtime state, and 24C04-compatible serial-bus routing |
+| XaviX 2 | `epo_sskj` | Not working | Exact ROM recognition, isolated runtime state, and 24C04-compatible serial-bus routing |
 
 The status terms and known limitations are defined in
 [docs/compatibility.md](docs/compatibility.md). In particular, reaching a menu

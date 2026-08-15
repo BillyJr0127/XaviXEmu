@@ -516,6 +516,14 @@ static uint16_t motion_packet_address_for_rom(enum drgqst_rom_kind kind)
 	return XAVIX2_MOTION_PACKET_FIRST;
 }
 
+static int rom_uses_motion_packet(enum drgqst_rom_kind kind)
+{
+	return kind == DRGQST_ROM_BAN_NARU ||
+		kind == DRGQST_ROM_BAN_BLDJ ||
+		kind == DRGQST_ROM_BAN_DB2J ||
+		kind == DRGQST_ROM_BAN_DBZ;
+}
+
 static uint32_t fixed_pio_input_for_rom(enum drgqst_rom_kind kind)
 {
 	return kind == DRGQST_ROM_BAN_DBZ ? UINT32_C(1) << 23 : 0;
@@ -2100,7 +2108,8 @@ int main(int argc, char **argv)
 				pending_input : 0;
 			probe_video_frame = frame + 1;
 			(void)xavix2_machine_run_video_frame(machine,
-				frame_packet, frame_input);
+				rom_uses_motion_packet(image.kind) ? frame_packet : NULL,
+				frame_input);
 			if (audio_channel_metrics_enabled)
 				for (unsigned channel = 0; channel < XAVIX2_AUDIO_VOICES;
 					++channel)

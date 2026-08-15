@@ -55,6 +55,21 @@ int main(void)
 	CHECK(!strcmp(drgqst_rom_short_name(DRGQST_ROM_EPO_MINI), "epo_mini"));
 	CHECK(!drgqst_rom_is_xavix2(DRGQST_ROM_EPO_MINI));
 	CHECK(!drgqst_rom_is_tvpc(DRGQST_ROM_EPO_MINI));
+	CHECK(EPO_DAB2J_ROM_CRC32 == UINT32_C(0xe3d12ee6));
+	CHECK(!strcmp(drgqst_rom_short_name(DRGQST_ROM_EPO_DAB2J), "epo_dab2j"));
+	CHECK(drgqst_rom_is_xavix2(DRGQST_ROM_EPO_DAB2J));
+	CHECK(EPO_DTCJ_ROM_CRC32 == UINT32_C(0x64c2aabb));
+	CHECK(!strcmp(drgqst_rom_short_name(DRGQST_ROM_EPO_DTCJ), "epo_dtcj"));
+	CHECK(drgqst_rom_is_xavix2(DRGQST_ROM_EPO_DTCJ));
+	CHECK(EPO_PABJ_ROM_CRC32 == UINT32_C(0xac46991c));
+	CHECK(!strcmp(drgqst_rom_short_name(DRGQST_ROM_EPO_PABJ), "epo_pabj"));
+	CHECK(drgqst_rom_is_xavix2(DRGQST_ROM_EPO_PABJ));
+	CHECK(EPO_SSK2_ROM_CRC32 == UINT32_C(0xd5902e48));
+	CHECK(!strcmp(drgqst_rom_short_name(DRGQST_ROM_EPO_SSK2), "epo_ssk2"));
+	CHECK(drgqst_rom_is_xavix2(DRGQST_ROM_EPO_SSK2));
+	CHECK(EPO_SSKJ_ROM_CRC32 == UINT32_C(0x3344b2fc));
+	CHECK(!strcmp(drgqst_rom_short_name(DRGQST_ROM_EPO_SSKJ), "epo_sskj"));
+	CHECK(drgqst_rom_is_xavix2(DRGQST_ROM_EPO_SSKJ));
 	puts("rom_loader_metadata_test: all tests passed");
 	return 0;
 }

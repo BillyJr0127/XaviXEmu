@@ -1034,17 +1034,27 @@ static void test_xavix2_runtime_state_persistence(void)
 		DRGQST_PERSISTENCE_BAN_NARU_RUNTIME_STATE,
 		DRGQST_PERSISTENCE_BAN_BLDJ_RUNTIME_STATE,
 		DRGQST_PERSISTENCE_BAN_DB2J_RUNTIME_STATE,
-		DRGQST_PERSISTENCE_BAN_DBZ_RUNTIME_STATE
+		DRGQST_PERSISTENCE_BAN_DBZ_RUNTIME_STATE,
+		DRGQST_PERSISTENCE_EPO_DAB2J_RUNTIME_STATE,
+		DRGQST_PERSISTENCE_EPO_DTCJ_RUNTIME_STATE,
+		DRGQST_PERSISTENCE_EPO_PABJ_RUNTIME_STATE,
+		DRGQST_PERSISTENCE_EPO_SSK2_RUNTIME_STATE,
+		DRGQST_PERSISTENCE_EPO_SSKJ_RUNTIME_STATE
 	};
 	static const wchar_t *const filenames[] =
 	{
 		L"\\ban_naru-runtime-state.sav",
 		L"\\ban_bldj-runtime-state.sav",
 		L"\\ban_db2j-runtime-state.sav",
-		L"\\ban_dbz-runtime-state.sav"
+		L"\\ban_dbz-runtime-state.sav",
+		L"\\epo_dab2j-runtime-state.sav",
+		L"\\epo_dtcj-runtime-state.sav",
+		L"\\epo_pabj-runtime-state.sav",
+		L"\\epo_ssk2-runtime-state.sav",
+		L"\\epo_sskj-runtime-state.sav"
 	};
 	wchar_t root[MAX_PATH];
-	wchar_t paths[4][MAX_PATH] = { { 0 } };
+	wchar_t paths[9][MAX_PATH] = { { 0 } };
 	wchar_t error[512];
 	uint8_t sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] = { 0 };
 	uint8_t state[4] = { 'X', '2', 'S', 0 };

@@ -29,6 +29,11 @@ identify exact, user-supplied images.
 | `ban_bldj` | 8,388,608 | `aa865fe3` | `2f5f4809a07a2f5671f81aa22e379c11c43943a0` |
 | `ban_db2j` | 8,388,608 | `7362ac0d` | `f1880470f0db56135d9bc88d7193d037ac49b996` |
 | `ban_dbz` | 8,388,608 | `7e535ea2` | `6c746af763273bd9e47929c3ba857c7af563bf79` |
+| `epo_dab2j` | 8,388,608 | `e3d12ee6` | `a2f930f4ffe778e02556b5e1a1836f88888e7c82` |
+| `epo_dtcj` | 8,388,608 | `64c2aabb` | `14f02eb01f1c6e76202f7a70818c300ba23fd879` |
+| `epo_pabj` | 8,388,608 | `ac46991c` | `06c2b493824085502e96a7c1e46e9e89433e7301` |
+| `epo_ssk2` | 8,388,608 | `d5902e48` | `010bc2417814ded24a474d9165f6b9523af7d1ef` |
+| `epo_sskj` | 8,388,608 | `3344b2fc` | `cda27bd1c7d6ccdb6da06cd837aa9cde5a58e5e4` |
 
 `epo_hamd` is stored as two verified chips in the ZIP. XaviXEmu places the
 1,048,576-byte image with CRC32 `6c2d9d98` and SHA-1

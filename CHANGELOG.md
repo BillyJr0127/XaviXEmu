@@ -5,6 +5,16 @@ semantic versioning while experimental releases carry a pre-release suffix.
 
 ## Unreleased
 
+- Add exact image recognition and isolated runtime-state files for five EPOCH
+  XaviX 2 titles: `epo_dab2j`, `epo_dtcj`, `epo_pabj`, `epo_ssk2`, and
+  `epo_sskj`. The first three reach verified startup/tutorial/name-entry
+  screens; the two SASUKE titles remain explicitly not working.
+- Route the EPOCH XaviX 2 board's PIO16/P16 SDA and PIO17/P17 SCL traffic to
+  the existing 24C04-compatible serial EEPROM model. Bandai XaviX 2 titles
+  retain their existing PIO20/PIO21 24C08 route.
+- Do not inject the Bandai wrist-reflector IRQ into newly recognized EPOCH
+  titles. Their controller protocol remains unknown and is kept isolated from
+  the already verified Bandai motion profiles.
 - Honor XaviX 2 display mode `$08` as a 640x480 startup surface. The BANDAI
   and XaviX logos now use the complete two-sprite frame instead of showing
   only its upper-left 320x240 quarter; normal gameplay remains 320x240.

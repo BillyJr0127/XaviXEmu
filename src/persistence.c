@@ -64,6 +64,11 @@ static const wchar_t BAN_NARU_STATE_FILENAME[] = L"ban_naru-runtime-state.sav";
 static const wchar_t BAN_BLDJ_STATE_FILENAME[] = L"ban_bldj-runtime-state.sav";
 static const wchar_t BAN_DB2J_STATE_FILENAME[] = L"ban_db2j-runtime-state.sav";
 static const wchar_t BAN_DBZ_STATE_FILENAME[] = L"ban_dbz-runtime-state.sav";
+static const wchar_t EPO_DAB2J_STATE_FILENAME[] = L"epo_dab2j-runtime-state.sav";
+static const wchar_t EPO_DTCJ_STATE_FILENAME[] = L"epo_dtcj-runtime-state.sav";
+static const wchar_t EPO_PABJ_STATE_FILENAME[] = L"epo_pabj-runtime-state.sav";
+static const wchar_t EPO_SSK2_STATE_FILENAME[] = L"epo_ssk2-runtime-state.sav";
+static const wchar_t EPO_SSKJ_STATE_FILENAME[] = L"epo_sskj-runtime-state.sav";
 static volatile LONG temporary_counter;
 
 static void clear_error(wchar_t *error, size_t error_length)
@@ -188,6 +193,16 @@ static const wchar_t *filename_for_kind(enum drgqst_persistence_kind kind)
 		return BAN_DB2J_STATE_FILENAME;
 	case DRGQST_PERSISTENCE_BAN_DBZ_RUNTIME_STATE:
 		return BAN_DBZ_STATE_FILENAME;
+	case DRGQST_PERSISTENCE_EPO_DAB2J_RUNTIME_STATE:
+		return EPO_DAB2J_STATE_FILENAME;
+	case DRGQST_PERSISTENCE_EPO_DTCJ_RUNTIME_STATE:
+		return EPO_DTCJ_STATE_FILENAME;
+	case DRGQST_PERSISTENCE_EPO_PABJ_RUNTIME_STATE:
+		return EPO_PABJ_STATE_FILENAME;
+	case DRGQST_PERSISTENCE_EPO_SSK2_RUNTIME_STATE:
+		return EPO_SSK2_STATE_FILENAME;
+	case DRGQST_PERSISTENCE_EPO_SSKJ_RUNTIME_STATE:
+		return EPO_SSKJ_STATE_FILENAME;
 	default:
 		return NULL;
 	}
@@ -264,7 +279,12 @@ static int validate_payload_size(
 		kind == DRGQST_PERSISTENCE_BAN_NARU_RUNTIME_STATE ||
 		kind == DRGQST_PERSISTENCE_BAN_BLDJ_RUNTIME_STATE ||
 		kind == DRGQST_PERSISTENCE_BAN_DB2J_RUNTIME_STATE ||
-		kind == DRGQST_PERSISTENCE_BAN_DBZ_RUNTIME_STATE)
+		kind == DRGQST_PERSISTENCE_BAN_DBZ_RUNTIME_STATE ||
+		kind == DRGQST_PERSISTENCE_EPO_DAB2J_RUNTIME_STATE ||
+		kind == DRGQST_PERSISTENCE_EPO_DTCJ_RUNTIME_STATE ||
+		kind == DRGQST_PERSISTENCE_EPO_PABJ_RUNTIME_STATE ||
+		kind == DRGQST_PERSISTENCE_EPO_SSK2_RUNTIME_STATE ||
+		kind == DRGQST_PERSISTENCE_EPO_SSKJ_RUNTIME_STATE)
 	{
 		if (!payload_size || payload_size > DRGQST_PERSISTENCE_MAX_STATE_SIZE)
 		{

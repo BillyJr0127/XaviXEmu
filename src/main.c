@@ -366,6 +366,31 @@ static const uint8_t BAN_DBZ_ROM_SHA1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
 	0x6c, 0x74, 0x6a, 0xf7, 0x63, 0x27, 0x3b, 0xd9, 0xe4, 0x79,
 	0x29, 0xc3, 0xba, 0x85, 0x7c, 0x7a, 0xf5, 0x63, 0xbf, 0x79
 };
+static const uint8_t EPO_DAB2J_ROM_SHA1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+{
+	0xa2, 0xf9, 0x30, 0xf4, 0xff, 0xe7, 0x78, 0xe0, 0x25, 0x56,
+	0xb5, 0xe1, 0xa1, 0x83, 0x6f, 0x88, 0x88, 0x8e, 0x7c, 0x82
+};
+static const uint8_t EPO_DTCJ_ROM_SHA1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+{
+	0x14, 0xf0, 0x2e, 0xb0, 0x1f, 0x1c, 0x6e, 0x76, 0x20, 0x2f,
+	0x7a, 0x70, 0x81, 0x8c, 0x30, 0x0b, 0xa2, 0x3f, 0xd8, 0x79
+};
+static const uint8_t EPO_PABJ_ROM_SHA1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+{
+	0x06, 0xc2, 0xb4, 0x93, 0x82, 0x40, 0x85, 0x50, 0x2e, 0x96,
+	0xa7, 0xc1, 0xe4, 0x6e, 0x9e, 0x89, 0x43, 0x3e, 0x73, 0x01
+};
+static const uint8_t EPO_SSK2_ROM_SHA1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+{
+	0x01, 0x0b, 0xc2, 0x41, 0x78, 0x14, 0xde, 0xd2, 0x4a, 0x47,
+	0x4d, 0x91, 0x65, 0xf6, 0xb9, 0x52, 0x3a, 0xf7, 0xd1, 0xef
+};
+static const uint8_t EPO_SSKJ_ROM_SHA1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+{
+	0xcd, 0xa2, 0x7b, 0xd1, 0xc7, 0xd6, 0xcc, 0xdb, 0x6d, 0xa0,
+	0x6c, 0xd8, 0x37, 0xaa, 0x9c, 0xde, 0x5a, 0x58, 0xe5, 0xe4
+};
 static const uint8_t EPO_HAMD_ROM_SHA1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
 {
 	0xc6, 0x1d, 0x43, 0x6d, 0x6b, 0x80, 0x37, 0x17, 0xb8, 0xc8,
@@ -517,6 +542,14 @@ static uint16_t xavix2_motion_packet_address(enum drgqst_rom_kind kind)
 	}
 }
 
+static int xavix2_uses_motion_packet(enum drgqst_rom_kind kind)
+{
+	return kind == DRGQST_ROM_BAN_NARU ||
+		kind == DRGQST_ROM_BAN_BLDJ ||
+		kind == DRGQST_ROM_BAN_DB2J ||
+		kind == DRGQST_ROM_BAN_DBZ;
+}
+
 static uint32_t xavix2_fixed_pio_input(enum drgqst_rom_kind kind)
 {
 	/* Dragon Ball Z samples this receiver-present input once during boot.
@@ -607,6 +640,16 @@ static const uint8_t *rom_sha1_for_kind(enum drgqst_rom_kind kind)
 		return BAN_DB2J_ROM_SHA1;
 	case DRGQST_ROM_BAN_DBZ:
 		return BAN_DBZ_ROM_SHA1;
+	case DRGQST_ROM_EPO_DAB2J:
+		return EPO_DAB2J_ROM_SHA1;
+	case DRGQST_ROM_EPO_DTCJ:
+		return EPO_DTCJ_ROM_SHA1;
+	case DRGQST_ROM_EPO_PABJ:
+		return EPO_PABJ_ROM_SHA1;
+	case DRGQST_ROM_EPO_SSK2:
+		return EPO_SSK2_ROM_SHA1;
+	case DRGQST_ROM_EPO_SSKJ:
+		return EPO_SSKJ_ROM_SHA1;
 	case DRGQST_ROM_EPO_HAMD:
 		return EPO_HAMD_ROM_SHA1;
 	case DRGQST_ROM_TVPC_DOR:
@@ -685,6 +728,21 @@ static enum drgqst_persistence_kind persistence_kind_for_rom(
 	case DRGQST_ROM_BAN_DBZ:
 		return kind == DRGQST_PERSISTENCE_RUNTIME_STATE ?
 			DRGQST_PERSISTENCE_BAN_DBZ_RUNTIME_STATE : kind;
+	case DRGQST_ROM_EPO_DAB2J:
+		return kind == DRGQST_PERSISTENCE_RUNTIME_STATE ?
+			DRGQST_PERSISTENCE_EPO_DAB2J_RUNTIME_STATE : kind;
+	case DRGQST_ROM_EPO_DTCJ:
+		return kind == DRGQST_PERSISTENCE_RUNTIME_STATE ?
+			DRGQST_PERSISTENCE_EPO_DTCJ_RUNTIME_STATE : kind;
+	case DRGQST_ROM_EPO_PABJ:
+		return kind == DRGQST_PERSISTENCE_RUNTIME_STATE ?
+			DRGQST_PERSISTENCE_EPO_PABJ_RUNTIME_STATE : kind;
+	case DRGQST_ROM_EPO_SSK2:
+		return kind == DRGQST_PERSISTENCE_RUNTIME_STATE ?
+			DRGQST_PERSISTENCE_EPO_SSK2_RUNTIME_STATE : kind;
+	case DRGQST_ROM_EPO_SSKJ:
+		return kind == DRGQST_PERSISTENCE_RUNTIME_STATE ?
+			DRGQST_PERSISTENCE_EPO_SSKJ_RUNTIME_STATE : kind;
 	case DRGQST_ROM_EPO_BOWL:
 		return kind == DRGQST_PERSISTENCE_EEPROM ?
 			DRGQST_PERSISTENCE_EPO_BOWL_EEPROM :
@@ -1752,7 +1810,8 @@ static void run_xavix2_frame(void)
 		pio_input |= UINT32_C(1) << 16;
 	if (g_rom.kind == DRGQST_ROM_BAN_DB2J && g_right_button)
 		pio_input |= UINT32_C(1) << 19;
-	(void)xavix2_machine_run_video_frame(g_xavix2, packet, pio_input);
+	(void)xavix2_machine_run_video_frame(g_xavix2,
+		xavix2_uses_motion_packet(g_rom.kind) ? packet : NULL, pio_input);
 	win_audio_submit(&g_audio_output,
 		xavix2_machine_frame_audio(g_xavix2),
 		XAVIX2_AUDIO_FRAMES_PER_VIDEO_FRAME);

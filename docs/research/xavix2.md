@@ -745,3 +745,26 @@ on the user's machine before any clock change is considered.
   quarter. Mode `$08` now reports the full 640x480 surface and validates the
   origin against that size; later title and gameplay modes continue to report
   their programmed 320x240 viewport.
+
+## EPOCH XaviX 2 recognition batch (2026-08-15)
+
+XaviX 2 is not a PlayStation 2 software profile. Its firmware directly
+programs the XaviX 2 geometry unit, perspective projector, polygon lists, and
+sprite lists. A title may nevertheless choose mostly scaled two-dimensional
+art: Naruto and Blue Dragon rely heavily on the sprite channel, while the two
+Dragon Ball battle paths exercise the polygon channel substantially more.
+
+Five additional exact 8 MiB images were verified read-only and added without
+filename-based guessing. `epo_dtcj` reaches a complete Doraemon tutorial
+screen and `epo_pabj` reaches the Pooh name-entry UI. `epo_dab2j` reaches the
+XaviX/EPOCH logos, safety warning, and a later book-like screen, but not yet a
+verified title. All three keep the CPU running and produce nonzero PCM.
+
+`epo_ssk2` and `epo_sskj` are deliberately listed as not working. The former
+continues into an unresolved low-ROM CPU/MMIO loop without a visible frame;
+the latter completes early initialization and then holds a blank white frame.
+PIO16/P16 SDA and PIO17/P17 SCL traffic is now routed to the 24C04-compatible
+EEPROM model documented for this EPOCH board family, but that board-level fix
+does not justify inventing controller packets or bypassing either firmware
+wait. Each title has a separate runtime-state identity so later fixes cannot
+cross-load state from another XaviX 2 image.

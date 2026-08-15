@@ -368,8 +368,36 @@ int main(void)
 		CHECK(memcmp(machine->low_ram + XAVIX2_MOTION_PACKET_FIRST,
 			packet, sizeof(packet)) != 0);
 		machine->cpu.waiting = 0;
+
+		/* A board without a verified motion receiver must not get a synthetic
+		 * level-10 interrupt merely because the caller advances a video frame. */
+		machine->interrupt_enabled = UINT32_C(1) << 10;
+		machine->interrupt_nmi = 0;
+		machine->interrupt_active = 0;
+		machine->interrupt_pending = 0;
+		machine->cpu.waiting = 1;
+		machine->cpu.hr[4] |= 16;
+		{
+			const uint64_t interrupts_before = machine->cpu.interrupt_count;
+			(void)xavix2_machine_run_video_frame(machine, NULL, 0);
+			CHECK(machine->cpu.interrupt_count == interrupts_before);
+			CHECK(!(machine->interrupt_active & (UINT32_C(1) << 10)));
+		}
+		machine->interrupt_enabled = 0;
+		machine->cpu.waiting = 0;
 	}
 	CHECK(machine->mmio[0xc48] == 0x00);
+
+	/* Epoch XaviX 2 boards configure the 24C04 bus on PIO16/17 rather than
+	 * Bandai's PIO20/21 pair.  Exercise the real MMIO mode/data bridge. */
+	machine->cpu.write8(machine->cpu.opaque, UINT32_C(0xffffe204), 0x0f);
+	machine->cpu.write8(machine->cpu.opaque, UINT32_C(0xffffe20a), 0x03);
+	CHECK(machine->eeprom.scl == 1);
+	CHECK(machine->eeprom.master_sda == 1);
+	machine->cpu.write8(machine->cpu.opaque, UINT32_C(0xffffe20a), 0x01);
+	CHECK(machine->eeprom.scl == 0);
+	CHECK(machine->eeprom.master_sda == 1);
+	machine->cpu.write8(machine->cpu.opaque, UINT32_C(0xffffe204), 0x00);
 
 	/* Writes retain only the firmware counter; reads restore status bit 2. */
 	machine->program_ram[4] = 0x1a;
