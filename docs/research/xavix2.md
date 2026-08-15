@@ -567,9 +567,11 @@ on the user's machine before any clock change is considered.
 - SSD's RPU patent describes palette entries as premultiplied RGB plus
   `(1-alpha)` and blends them as `destination * (1-alpha) + source`.
   <https://patents.google.com/patent/CN101116112A/zh>. The observed one-bit
-  palette form is consistent with half transparency: texel zero is skipped,
-  while a nonzero high-bit entry adds its premultiplied RGB555 value to half
-  the existing framebuffer color.
+  palette form is consistent with half transparency: the repeated `$8421`
+  entry is the transparent key, while other high-bit entries add their
+  premultiplied RGB555 value to half the existing framebuffer color. Texel
+  zero is not intrinsically transparent; Blue Dragon's sky uses it for normal
+  opaque colors.
 - Applying that model restores both colored panels and leaves the background
   engraving visible through them, matching the supplied hardware capture and
   the result sequence around 4:43 in

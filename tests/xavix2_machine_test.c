@@ -442,8 +442,9 @@ int main(void)
 	CHECK(machine->screen_data[9] != 0);
 	CHECK(machine->screen_data[10] == 0);
 
-	/* Texel zero is transparent; palette bit 15 selects premultiplied
-	 * half-transparency.  Opaque black sprites must cover an existing pixel. */
+	/* The repeated $8421 palette key is transparent. Palette bit 15 on other
+	 * colors selects premultiplied half-transparency; texel zero can still
+	 * carry an ordinary opaque color. */
 	store16(machine->palette_ram + 4, 0);
 	machine->screen_data[0] = UINT32_C(0xffffffff);
 	store64(machine->low_ram + 0x0500, gpu_command(0x10, 0x10));
@@ -462,12 +463,19 @@ int main(void)
 	CHECK(machine->screen_data[0] == UINT32_C(0xff7b007f));
 
 	store64(machine->low_ram + 0x4000, 0);
+	store16(machine->palette_ram, UINT16_C(0x8421));
 	machine->screen_data[0] = UINT32_C(0xffffffff);
 	machine->cpu.r[0] = 0;
 	machine->cpu.r[1] = UINT32_C(0xffffe414);
 	machine->cpu.pc = 4;
 	CHECK(xavix2_cpu_execute(&machine->cpu, 4) == 4);
 	CHECK(machine->screen_data[0] == UINT32_C(0xffffffff));
+	store16(machine->palette_ram, UINT16_C(0x7c00));
+	machine->cpu.r[0] = 0;
+	machine->cpu.r[1] = UINT32_C(0xffffe414);
+	machine->cpu.pc = 4;
+	CHECK(xavix2_cpu_execute(&machine->cpu, 4) == 4);
+	CHECK(machine->screen_data[0] == UINT32_C(0xff0000ff));
 	store64(machine->low_ram + 0x4000, UINT64_MAX);
 
 	/* The 16-byte GPU channel also carries Type-1 Gouraud triangles.  RGB555
@@ -495,13 +503,14 @@ int main(void)
 	CHECK(xavix2_cpu_execute(&machine->cpu, 4) == 4);
 	CHECK(machine->screen_data[1 * 0x800 + 1] == UINT32_C(0xff7f007f));
 
-	/* An opaque black nonzero texel must overwrite the framebuffer. */
+	/* An opaque black texel must overwrite the framebuffer, including index
+	 * zero when its selected palette entry is not the transparent key. */
 	store16(machine->mmio + 0x608, 0x0200);
 	store16(machine->mmio + 0x622, 0x0300);
 	store32(machine->low_ram + 0x0200, 0);
 	store16(machine->low_ram + 0x0300, 0);
-	machine->low_ram[0] = 1;
-	store16(machine->palette_ram + 4, 0);
+	machine->low_ram[0] = 0;
+	store16(machine->palette_ram, 0);
 	store_triangle_record(machine->low_ram + 0x0600, 0,
 		0, 0, 4, 0, 0, 4, UINT32_C(0x00000040),
 		UINT32_C(0x00022000));
@@ -512,7 +521,7 @@ int main(void)
 	CHECK(xavix2_cpu_execute(&machine->cpu, 4) == 4);
 	CHECK(machine->screen_data[1 * 0x800 + 1] == UINT32_C(0xff000000));
 
-	store16(machine->palette_ram + 4, UINT16_C(0x800f));
+	store16(machine->palette_ram, UINT16_C(0x800f));
 	machine->screen_data[1 * 0x800 + 1] = UINT32_C(0xff0000ff);
 	machine->cpu.r[0] = 0;
 	machine->cpu.r[1] = UINT32_C(0xffffe408);
@@ -520,7 +529,7 @@ int main(void)
 	CHECK(xavix2_cpu_execute(&machine->cpu, 4) == 4);
 	CHECK(machine->screen_data[1 * 0x800 + 1] == UINT32_C(0xff7b007f));
 
-	machine->low_ram[0] = 0;
+	store16(machine->palette_ram, UINT16_C(0x8421));
 	machine->screen_data[1 * 0x800 + 1] = UINT32_C(0xffffffff);
 	machine->cpu.r[0] = 0;
 	machine->cpu.r[1] = UINT32_C(0xffffe408);

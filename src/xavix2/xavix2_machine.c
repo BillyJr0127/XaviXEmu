@@ -974,14 +974,20 @@ static uint32_t rgb555(uint16_t color)
 	return UINT32_C(0xff000000) | (r << 16) | (g << 8) | b;
 }
 
-static uint32_t blend_palette_color(uint16_t raw_color, uint32_t destination)
+static int palette_color(uint16_t raw_color, uint32_t destination,
+	uint32_t *result)
 {
 	uint32_t source = rgb555(raw_color);
-	uint32_t result = UINT32_C(0xff000000);
+	uint32_t output = UINT32_C(0xff000000);
 	unsigned shift;
 
+	if (!result || raw_color == UINT16_C(0x8421))
+		return 0;
 	if (!(raw_color & 0x8000))
-		return source;
+	{
+		*result = source;
+		return 1;
+	}
 
 	/* Palette bit 15 selects the SSD RPU's half-transparent form.  Its
 	 * RGB555 components are already premultiplied by alpha, so the color
@@ -993,9 +999,10 @@ static uint32_t blend_palette_color(uint16_t raw_color, uint32_t destination)
 			((source >> shift) & 0xff);
 		if (component > 0xff)
 			component = 0xff;
-		result |= component << shift;
+		output |= component << shift;
 	}
-	return result;
+	*result = output;
+	return 1;
 }
 
 static int compare_gpu_order(const void *left, const void *right)
@@ -1072,15 +1079,10 @@ static int triangle_texture_color(xavix2_machine_t *machine,
 	}
 	texel = (uint32_t)(packed >> bit_address) &
 		((UINT32_C(1) << bpp) - 1);
-	/* Texel zero is transparent.  Palette bit 15 is instead the RPU's
-	 * half-transparent blend flag and must not discard nonzero texels. */
-	if (!texel)
-		return 0;
 	palette_index = (((descriptor >> 27) & 0x1f) << bpp) | texel;
 	raw_color = palette_index < 0x200 ?
 		load16(machine->palette_ram + palette_index * 4) : UINT16_C(0x8000);
-	*color = blend_palette_color(raw_color, *color);
-	return 1;
+	return palette_color(raw_color, *color, color);
 }
 
 static uint32_t blend_triangle_gouraud(uint32_t d2, uint32_t d3,
@@ -1352,7 +1354,7 @@ static void render_gpu_depth_range(xavix2_machine_t *machine, uint16_t count,
 				palette_index = palette_base | texel;
 				raw_color = palette_index < 0x200 ?
 					load16(machine->palette_ram + palette_index * 4) : UINT16_C(0x8000);
-				if (texel)
+				if (raw_color != UINT16_C(0x8421))
 				{
 					uint32_t draw_x_first = x +
 						(uint32_t)(((uint64_t)xx * scale_x) >> 4);
@@ -1371,10 +1373,13 @@ static void render_gpu_depth_range(xavix2_machine_t *machine, uint16_t count,
 						{
 							if (draw_x < 0x800)
 							{
-								color = blend_palette_color(raw_color,
-									machine->screen_data[draw_y_first * 0x800 + draw_x]);
-								machine->screen_data[draw_y_first * 0x800 + draw_x] = color;
-								machine->gpu_pixel_write_count++;
+								if (palette_color(raw_color,
+									machine->screen_data[draw_y_first * 0x800 + draw_x],
+									&color))
+								{
+									machine->screen_data[draw_y_first * 0x800 + draw_x] = color;
+									machine->gpu_pixel_write_count++;
+								}
 							}
 						}
 					}
