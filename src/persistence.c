@@ -69,6 +69,9 @@ static const wchar_t EPO_DTCJ_STATE_FILENAME[] = L"epo_dtcj-runtime-state.sav";
 static const wchar_t EPO_PABJ_STATE_FILENAME[] = L"epo_pabj-runtime-state.sav";
 static const wchar_t EPO_SSK2_STATE_FILENAME[] = L"epo_ssk2-runtime-state.sav";
 static const wchar_t EPO_SSKJ_STATE_FILENAME[] = L"epo_sskj-runtime-state.sav";
+static const wchar_t EPO_DTCJ_EEPROM_FILENAME[] = L"epo_dtcj-eeprom.sav";
+static const wchar_t EPO_SSK2_EEPROM_FILENAME[] = L"epo_ssk2-eeprom.sav";
+static const wchar_t EPO_SSKJ_EEPROM_FILENAME[] = L"epo_sskj-eeprom.sav";
 static volatile LONG temporary_counter;
 
 static void clear_error(wchar_t *error, size_t error_length)
@@ -203,6 +206,12 @@ static const wchar_t *filename_for_kind(enum drgqst_persistence_kind kind)
 		return EPO_SSK2_STATE_FILENAME;
 	case DRGQST_PERSISTENCE_EPO_SSKJ_RUNTIME_STATE:
 		return EPO_SSKJ_STATE_FILENAME;
+	case DRGQST_PERSISTENCE_EPO_DTCJ_EEPROM:
+		return EPO_DTCJ_EEPROM_FILENAME;
+	case DRGQST_PERSISTENCE_EPO_SSK2_EEPROM:
+		return EPO_SSK2_EEPROM_FILENAME;
+	case DRGQST_PERSISTENCE_EPO_SSKJ_EEPROM:
+		return EPO_SSKJ_EEPROM_FILENAME;
 	default:
 		return NULL;
 	}
@@ -241,6 +250,18 @@ static int validate_payload_size(
 		if (payload_size != DRGQST_PERSISTENCE_EEPROM24C16_SIZE)
 		{
 			set_error(error, error_length, L"24C16 EEPROM saves must contain exactly 2048 bytes.");
+			return 0;
+		}
+		return 1;
+	}
+	if (kind == DRGQST_PERSISTENCE_EPO_DTCJ_EEPROM ||
+		kind == DRGQST_PERSISTENCE_EPO_SSK2_EEPROM ||
+		kind == DRGQST_PERSISTENCE_EPO_SSKJ_EEPROM)
+	{
+		if (payload_size != DRGQST_PERSISTENCE_EEPROM24C04_SIZE)
+		{
+			set_error(error, error_length,
+				L"24C04 EEPROM saves must contain exactly 512 bytes.");
 			return 0;
 		}
 		return 1;

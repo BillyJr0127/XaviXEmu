@@ -732,17 +732,20 @@ static enum drgqst_persistence_kind persistence_kind_for_rom(
 		return kind == DRGQST_PERSISTENCE_RUNTIME_STATE ?
 			DRGQST_PERSISTENCE_EPO_DAB2J_RUNTIME_STATE : kind;
 	case DRGQST_ROM_EPO_DTCJ:
-		return kind == DRGQST_PERSISTENCE_RUNTIME_STATE ?
-			DRGQST_PERSISTENCE_EPO_DTCJ_RUNTIME_STATE : kind;
+		return kind == DRGQST_PERSISTENCE_EEPROM ?
+			DRGQST_PERSISTENCE_EPO_DTCJ_EEPROM :
+			DRGQST_PERSISTENCE_EPO_DTCJ_RUNTIME_STATE;
 	case DRGQST_ROM_EPO_PABJ:
 		return kind == DRGQST_PERSISTENCE_RUNTIME_STATE ?
 			DRGQST_PERSISTENCE_EPO_PABJ_RUNTIME_STATE : kind;
 	case DRGQST_ROM_EPO_SSK2:
-		return kind == DRGQST_PERSISTENCE_RUNTIME_STATE ?
-			DRGQST_PERSISTENCE_EPO_SSK2_RUNTIME_STATE : kind;
+		return kind == DRGQST_PERSISTENCE_EEPROM ?
+			DRGQST_PERSISTENCE_EPO_SSK2_EEPROM :
+			DRGQST_PERSISTENCE_EPO_SSK2_RUNTIME_STATE;
 	case DRGQST_ROM_EPO_SSKJ:
-		return kind == DRGQST_PERSISTENCE_RUNTIME_STATE ?
-			DRGQST_PERSISTENCE_EPO_SSKJ_RUNTIME_STATE : kind;
+		return kind == DRGQST_PERSISTENCE_EEPROM ?
+			DRGQST_PERSISTENCE_EPO_SSKJ_EEPROM :
+			DRGQST_PERSISTENCE_EPO_SSKJ_RUNTIME_STATE;
 	case DRGQST_ROM_EPO_BOWL:
 		return kind == DRGQST_PERSISTENCE_EEPROM ?
 			DRGQST_PERSISTENCE_EPO_BOWL_EEPROM :
@@ -783,6 +786,9 @@ static enum drgqst_persistence_kind persistence_kind_for_rom(
 
 static size_t eeprom_size_for_rom(enum drgqst_rom_kind kind)
 {
+	if (kind == DRGQST_ROM_EPO_DTCJ || kind == DRGQST_ROM_EPO_SSK2 ||
+		kind == DRGQST_ROM_EPO_SSKJ)
+		return DRGQST_PERSISTENCE_EEPROM24C04_SIZE;
 	if (kind == DRGQST_ROM_EPO_HAMD || kind == DRGQST_ROM_EPO_ES2J ||
 		kind == DRGQST_ROM_EPO_HAMC ||
 		rom_uses_parallel_nvram(kind) ||
@@ -1565,6 +1571,34 @@ static void load_persistent_eeprom(HWND window, drgqst_core *core,
 	}
 }
 
+static void load_persistent_xavix2_eeprom(HWND window,
+	xavix2_machine_t *machine, enum drgqst_rom_kind rom_kind)
+{
+	const interface_strings *text = interface_text();
+	uint8_t image[DRGQST_PERSISTENCE_EEPROM24C04_SIZE];
+	wchar_t error[384];
+	size_t expected_size = eeprom_size_for_rom(rom_kind);
+	size_t size = 0;
+	int loaded_from_legacy = 0;
+
+	if (!machine || !expected_size)
+		return;
+	if (load_persistence_data(DRGQST_PERSISTENCE_EEPROM, rom_kind,
+		image, expected_size, &size, error,
+		sizeof(error) / sizeof(error[0]), &loaded_from_legacy) &&
+		size == expected_size)
+	{
+		xavix_eeprom_load_image(&machine->eeprom, image, size);
+		if (loaded_from_legacy &&
+			!drgqst_persistence_save(g_executable_directory,
+				persistence_kind_for_rom(DRGQST_PERSISTENCE_EEPROM, rom_kind),
+				rom_sha1_for_kind(rom_kind), image, size,
+				error, sizeof(error) / sizeof(error[0])))
+			MessageBoxW(window, text->eeprom_save_error,
+				text->eeprom_save_title, MB_OK | MB_ICONERROR);
+	}
+}
+
 static int save_persistent_eeprom(HWND window, int show_error)
 {
 	const interface_strings *text = interface_text();
@@ -1573,8 +1607,32 @@ static int save_persistent_eeprom(HWND window, int show_error)
 	wchar_t error[384];
 	size_t size;
 
-	if (!g_core)
+	if (!g_core && !g_xavix2)
 		return 1;
+	size = eeprom_size_for_rom(g_rom.kind);
+	if (g_xavix2)
+	{
+		if (!size)
+			return 1;
+		eeprom = &g_xavix2->eeprom;
+		if (!xavix_eeprom24c08_is_dirty(eeprom))
+			return 1;
+		xavix_eeprom_copy_image(eeprom, image, size);
+		if (!drgqst_persistence_save(g_executable_directory,
+			persistence_kind_for_rom(DRGQST_PERSISTENCE_EEPROM, g_rom.kind),
+			rom_sha1_for_kind(g_rom.kind), image, size, error,
+			sizeof(error) / sizeof(error[0])))
+		{
+			if (show_error || !g_eeprom_error_shown)
+				MessageBoxW(window, text->eeprom_save_error,
+					text->eeprom_save_title, MB_OK | MB_ICONWARNING);
+			g_eeprom_error_shown = 1;
+			return 0;
+		}
+		xavix_eeprom24c08_clear_dirty(eeprom);
+		g_eeprom_error_shown = 0;
+		return 1;
+	}
 	if (rom_uses_parallel_nvram(g_rom.kind))
 	{
 		if (!drgqst_persistence_save(g_executable_directory,
@@ -1597,7 +1655,6 @@ static int save_persistent_eeprom(HWND window, int show_error)
 		g_eeprom_error_shown = 0;
 		return 1;
 	}
-	size = eeprom_size_for_rom(g_rom.kind);
 	if (!size)
 		return 1;
 	eeprom = &g_core->machine.state.peripherals.eeprom;
@@ -1626,8 +1683,25 @@ static void poll_persistent_eeprom(HWND window)
 	xavix_eeprom24c08 *eeprom;
 	uint32_t generation;
 
-	if (!g_core)
+	if (!g_core && !g_xavix2)
 		return;
+	if (g_xavix2)
+	{
+		if (!eeprom_size_for_rom(g_rom.kind))
+			return;
+		eeprom = &g_xavix2->eeprom;
+		generation = eeprom->write_generation;
+		if (generation != g_eeprom_generation)
+		{
+			g_eeprom_generation = generation;
+			g_eeprom_settle_frames = 30;
+		}
+		else if (g_eeprom_settle_frames)
+			--g_eeprom_settle_frames;
+		if (xavix_eeprom24c08_is_dirty(eeprom) && !g_eeprom_settle_frames)
+			save_persistent_eeprom(window, 0);
+		return;
+	}
 	if (rom_uses_parallel_nvram(g_rom.kind))
 	{
 		generation = g_core->machine.nvram_write_generation;
@@ -1956,6 +2030,7 @@ static void run_due_frames(HWND window)
 			record_video_frame(window,
 				xavix2_machine_frame_audio(g_xavix2),
 				XAVIX2_AUDIO_FRAMES_PER_VIDEO_FRAME);
+			poll_persistent_eeprom(window);
 		}
 		else
 		{
@@ -2077,6 +2152,15 @@ static int load_runtime_state(HWND window)
 		unsigned height;
 		unsigned stride;
 
+		/* A runtime snapshot may contain an older copy of the serial EEPROM.
+		 * Keep the game's durable 24C04 image authoritative across F7. */
+		if (eeprom_size)
+		{
+			save_persistent_eeprom(window, 1);
+			eeprom = &g_xavix2->eeprom;
+			xavix_eeprom_copy_image(eeprom, eeprom_image, eeprom_size);
+			eeprom_generation = eeprom->write_generation;
+		}
 		success = xavix2_machine_state_load(g_xavix2, state, loaded);
 		if (!success)
 		{
@@ -2084,6 +2168,15 @@ static int load_runtime_state(HWND window)
 			MessageBoxW(window, text->state_incompatible_error,
 				text->state_load_title, MB_OK | MB_ICONERROR);
 			return 0;
+		}
+		if (eeprom_size)
+		{
+			eeprom = &g_xavix2->eeprom;
+			memcpy(eeprom->data, eeprom_image, eeprom_size);
+			eeprom->dirty = 0;
+			eeprom->write_generation = eeprom_generation;
+			g_eeprom_generation = eeprom_generation;
+			g_eeprom_settle_frames = 0;
 		}
 		if (loaded_from_legacy &&
 			!drgqst_persistence_save(g_executable_directory,
@@ -2218,6 +2311,7 @@ static int activate_xavix2_rom(HWND window, drgqst_rom_image *image,
 		xavix2_motion_packet_address(image->kind));
 	xavix2_machine_set_fixed_pio_input(machine,
 		xavix2_fixed_pio_input(image->kind));
+	load_persistent_xavix2_eeprom(window, machine, image->kind);
 
 	stop_video_recording(window, 1);
 	stop_frame_clock(window);
@@ -2232,6 +2326,8 @@ static int activate_xavix2_rom(HWND window, drgqst_rom_image *image,
 		g_xavix2_audio_mute_mask);
 	g_rom = *image;
 	memset(image, 0, sizeof(*image));
+	g_eeprom_generation = g_xavix2->eeprom.write_generation;
+	g_eeprom_settle_frames = 0;
 	g_ban_onep_menu_input = 0;
 	g_ban_onep_menu_input_frames = 0;
 	g_omt_backside = 0;

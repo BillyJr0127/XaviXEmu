@@ -768,3 +768,31 @@ EEPROM model documented for this EPOCH board family, but that board-level fix
 does not justify inventing controller packets or bypassing either firmware
 wait. Each title has a separate runtime-state identity so later fixes cannot
 cross-load state from another XaviX 2 image.
+
+The three boards with documented 24C04 devices (`epo_dtcj`, `epo_ssk2`, and
+`epo_sskj`) now also use separate 512-byte durable files. Runtime-state restore
+first saves and snapshots the live EEPROM, restores guest hardware, then
+overlays that image and its write generation. F7 therefore remains useful for
+diagnosis without rolling back settings or controller calibration. At 600
+natural frames, `epo_ssk2` and `epo_sskj` have issued 27 and 24 serial writes;
+`epo_dtcj` configures the same PIO16/P17 bus but has not written it at that
+checkpoint. `epo_dab2j` and `epo_pabj` do not configure the bus in the same
+probe and retain runtime-state-only storage.
+
+The first `epo_ssk2` failure is now bounded more tightly. At cycle 26,282,447
+the firmware enters `$000f6164`, reads an element count of zero from low RAM
+`$005d`, then executes its normal decrement-and-branch loop. The branch and
+zero-flag behaviour match the reference CPU implementation; changing them or
+skipping this PC would be a title-specific bypass. The missing prerequisite is
+the producer that should repopulate `$005d` after the IRQ task clears low RAM,
+so the title remains not working pending that hardware/data-flow result.
+
+`epo_pabj` confirms that its UI is not waiting on ordinary PIO buttons. Its
+firmware converts a hardware-produced record at `$1008-$100f` through
+`$00044400`, writes the resulting three coordinates to `$1010-$1012`, and
+consumes them at `$0003fe5f`; 600 natural frames contain 231 updates while PIO
+input reads remain zero. This is a useful controller integration seam, but the
+record's physical source and calibration are not yet proven, so no synthetic
+mouse mapping is enabled. `epo_sskj` likewise has no PIO input reads at the
+blank-screen checkpoint, despite active CPU/audio work and 24 serial EEPROM
+writes, pointing to a separate unmodelled controller/acquisition condition.

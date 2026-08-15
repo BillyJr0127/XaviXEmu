@@ -12,6 +12,10 @@ semantic versioning while experimental releases carry a pre-release suffix.
 - Route the EPOCH XaviX 2 board's PIO16/P16 SDA and PIO17/P17 SCL traffic to
   the existing 24C04-compatible serial EEPROM model. Bandai XaviX 2 titles
   retain their existing PIO20/PIO21 24C08 route.
+- Add separate 512-byte 24C04 save files for the documented `epo_dtcj`,
+  `epo_ssk2`, and `epo_sskj` boards. Deferred writes settle to disk during
+  play, and F7 preserves the current durable image instead of rewinding
+  settings or calibration from an older runtime snapshot.
 - Do not inject the Bandai wrist-reflector IRQ into newly recognized EPOCH
   titles. Their controller protocol remains unknown and is kept isolated from
   the already verified Bandai motion profiles.

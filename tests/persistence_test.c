@@ -1090,6 +1090,59 @@ static void test_xavix2_runtime_state_persistence(void)
 	RemoveDirectoryW(root);
 }
 
+static void test_epoch_xavix2_24c04_persistence(void)
+{
+	static const enum drgqst_persistence_kind kinds[] =
+	{
+		DRGQST_PERSISTENCE_EPO_DTCJ_EEPROM,
+		DRGQST_PERSISTENCE_EPO_SSK2_EEPROM,
+		DRGQST_PERSISTENCE_EPO_SSKJ_EEPROM
+	};
+	static const wchar_t *const filenames[] =
+	{
+		L"\\epo_dtcj-eeprom.sav",
+		L"\\epo_ssk2-eeprom.sav",
+		L"\\epo_sskj-eeprom.sav"
+	};
+	wchar_t root[MAX_PATH];
+	wchar_t paths[3][MAX_PATH] = { { 0 } };
+	wchar_t error[512];
+	uint8_t sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] = { 0 };
+	uint8_t image[DRGQST_PERSISTENCE_EEPROM24C04_SIZE];
+	uint8_t output[DRGQST_PERSISTENCE_EEPROM24C04_SIZE];
+	size_t output_size;
+	size_t index;
+
+	if (!create_test_root(root))
+	{
+		CHECK(0 && "create Epoch XaviX2 EEPROM persistence root");
+		return;
+	}
+	for (index = 0; index < sizeof(kinds) / sizeof(kinds[0]); ++index)
+	{
+		memset(image, (int)(0x20 + index), sizeof(image));
+		sha1[0] = (uint8_t)(0x80 + index);
+		CHECK(drgqst_persistence_get_path(root, kinds[index], paths[index],
+			MAX_PATH, error, sizeof(error) / sizeof(error[0])));
+		CHECK(wcsstr(paths[index], filenames[index]) != NULL);
+		CHECK(!drgqst_persistence_save(root, kinds[index], sha1, image,
+			sizeof(image) - 1, error, sizeof(error) / sizeof(error[0])));
+		CHECK(drgqst_persistence_save(root, kinds[index], sha1, image,
+			sizeof(image), error, sizeof(error) / sizeof(error[0])));
+		memset(output, 0, sizeof(output));
+		output_size = 0;
+		CHECK(drgqst_persistence_load(root, kinds[index], sha1, output,
+			sizeof(output), &output_size, error,
+			sizeof(error) / sizeof(error[0])));
+		CHECK(output_size == sizeof(image));
+		CHECK(!memcmp(output, image, sizeof(image)));
+	}
+	for (index = 0; index < sizeof(paths) / sizeof(paths[0]); ++index)
+		if (*paths[index])
+			DeleteFileW(paths[index]);
+	RemoveDirectoryW(root);
+}
+
 int main(void)
 {
 	test_default_directory();
@@ -1103,6 +1156,7 @@ int main(void)
 	test_tom_dpgm_persistence();
 	test_epo_mini_persistence();
 	test_xavix2_runtime_state_persistence();
+	test_epoch_xavix2_24c04_persistence();
 
 	if (failures)
 	{
