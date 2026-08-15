@@ -553,6 +553,30 @@ on the user's machine before any clock change is considered.
   nearest-neighbour; the observed ground requests filtering, so bilinear
   sampling and the other polygon modes remain follow-up accuracy work.
 
+## Indexed-palette alpha on the Blue Dragon result screen (2026-08-15)
+
+- A user F5 state resumed at frame 7349 and reached the same result panel after
+  180 video frames. The final GPU1 list still contained all eleven tiles for
+  each missing bar: the upper panel uses palette 96-103 and the lower panel
+  uses 104-111. This rules out a missing command, bad crop, or depth rejection.
+- The dominant nonzero texel is color 7. Its palette values are `$a8e0` for
+  the cyan-blue bar and `$80ea` for the orange bar; the repeated color-0 entry
+  is `$8421`. Treating every palette value with bit 15 set as fully transparent
+  therefore discards both intended fills along with the real transparent
+  texels.
+- SSD's RPU patent describes palette entries as premultiplied RGB plus
+  `(1-alpha)` and blends them as `destination * (1-alpha) + source`.
+  <https://patents.google.com/patent/CN101116112A/zh>. The observed one-bit
+  palette form is consistent with half transparency: texel zero is skipped,
+  while a nonzero high-bit entry adds its premultiplied RGB555 value to half
+  the existing framebuffer color.
+- Applying that model restores both colored panels and leaves the background
+  engraving visible through them, matching the supplied hardware capture and
+  the result sequence around 4:43 in
+  <https://www.youtube.com/watch?v=DycWroEDXI8&t=283s>. The same rule is shared
+  by sprite and textured-polygon palette lookups; no ROM, frame, or title
+  special case is used.
+
 ## Dragon Ball cursor and receiver path (2026-08-12)
 
 - DB2J and DBZ place their IRQ-10 producer packets at `$014d` and `$0149`

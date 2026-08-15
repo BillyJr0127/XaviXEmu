@@ -974,6 +974,30 @@ static uint32_t rgb555(uint16_t color)
 	return UINT32_C(0xff000000) | (r << 16) | (g << 8) | b;
 }
 
+static uint32_t blend_palette_color(uint16_t raw_color, uint32_t destination)
+{
+	uint32_t source = rgb555(raw_color);
+	uint32_t result = UINT32_C(0xff000000);
+	unsigned shift;
+
+	if (!(raw_color & 0x8000))
+		return source;
+
+	/* Palette bit 15 selects the SSD RPU's half-transparent form.  Its
+	 * RGB555 components are already premultiplied by alpha, so the color
+	 * blender adds them to one half of the previous framebuffer value rather
+	 * than averaging two full-strength colors. */
+	for (shift = 0; shift <= 16; shift += 8)
+	{
+		uint32_t component = ((destination >> shift) & 0xff) / 2 +
+			((source >> shift) & 0xff);
+		if (component > 0xff)
+			component = 0xff;
+		result |= component << shift;
+	}
+	return result;
+}
+
 static int compare_gpu_order(const void *left, const void *right)
 {
 	uint32_t a = *(const uint32_t *)left;
@@ -1014,6 +1038,7 @@ static int triangle_texture_color(xavix2_machine_t *machine,
 	uint32_t t = v;
 	uint32_t bit_address;
 	uint64_t packed;
+	uint32_t texel;
 	uint32_t palette_index;
 	uint16_t raw_color;
 	uint32_t mask_u_bits = (descriptor >> 16) & 0x0f;
@@ -1045,14 +1070,16 @@ static int triangle_texture_color(xavix2_machine_t *machine,
 		bit_address = ((v % bh) * bw + s % bw) * bpp;
 		packed = machine_read64(machine, source + word_address * 8);
 	}
-	palette_index = (((descriptor >> 27) & 0x1f) << bpp) |
-		((uint32_t)(packed >> bit_address) &
-		((UINT32_C(1) << bpp) - 1));
+	texel = (uint32_t)(packed >> bit_address) &
+		((UINT32_C(1) << bpp) - 1);
+	/* Texel zero is transparent.  Palette bit 15 is instead the RPU's
+	 * half-transparent blend flag and must not discard nonzero texels. */
+	if (!texel)
+		return 0;
+	palette_index = (((descriptor >> 27) & 0x1f) << bpp) | texel;
 	raw_color = palette_index < 0x200 ?
 		load16(machine->palette_ram + palette_index * 4) : UINT16_C(0x8000);
-	if (raw_color & 0x8000)
-		return 0;
-	*color = rgb555(raw_color);
+	*color = blend_palette_color(raw_color, *color);
 	return 1;
 }
 
@@ -1230,6 +1257,7 @@ static void render_triangle_gpu(xavix2_machine_t *machine, uint16_t count,
 				}
 				if (u > width) u = width;
 				if (v > height) v = height;
+				color = machine->screen_data[py * 0x800 + px];
 				if (triangle_texture_color(machine, descdata_address,
 					descsize, d2, d3, u, v, &color))
 				{
@@ -1308,6 +1336,7 @@ static void render_gpu_depth_range(xavix2_machine_t *machine, uint16_t count,
 			available = 64;
 			for (xx = 0; xx < sx; ++xx)
 			{
+				uint32_t texel;
 				uint32_t palette_index;
 				uint16_t raw_color;
 				uint32_t color;
@@ -1319,11 +1348,11 @@ static void render_gpu_depth_range(xavix2_machine_t *machine, uint16_t count,
 					source += 8;
 					available = 64;
 				}
-				palette_index = palette_base | ((uint32_t)packed & mask);
+				texel = (uint32_t)packed & mask;
+				palette_index = palette_base | texel;
 				raw_color = palette_index < 0x200 ?
 					load16(machine->palette_ram + palette_index * 4) : UINT16_C(0x8000);
-				color = rgb555(raw_color);
-				if (!(raw_color & 0x8000))
+				if (texel)
 				{
 					uint32_t draw_x_first = x +
 						(uint32_t)(((uint64_t)xx * scale_x) >> 4);
@@ -1342,6 +1371,8 @@ static void render_gpu_depth_range(xavix2_machine_t *machine, uint16_t count,
 						{
 							if (draw_x < 0x800)
 							{
+								color = blend_palette_color(raw_color,
+									machine->screen_data[draw_y_first * 0x800 + draw_x]);
 								machine->screen_data[draw_y_first * 0x800 + draw_x] = color;
 								machine->gpu_pixel_write_count++;
 							}

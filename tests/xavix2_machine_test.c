@@ -442,8 +442,8 @@ int main(void)
 	CHECK(machine->screen_data[9] != 0);
 	CHECK(machine->screen_data[10] == 0);
 
-	/* Palette bit 15, not RGB value zero, marks transparency.  Opaque black
-	 * sprites must cover an existing pixel just like polygon texels do. */
+	/* Texel zero is transparent; palette bit 15 selects premultiplied
+	 * half-transparency.  Opaque black sprites must cover an existing pixel. */
 	store16(machine->palette_ram + 4, 0);
 	machine->screen_data[0] = UINT32_C(0xffffffff);
 	store64(machine->low_ram + 0x0500, gpu_command(0x10, 0x10));
@@ -452,6 +452,23 @@ int main(void)
 	machine->cpu.pc = 4;
 	CHECK(xavix2_cpu_execute(&machine->cpu, 4) == 4);
 	CHECK(machine->screen_data[0] == UINT32_C(0xff000000));
+
+	store16(machine->palette_ram + 4, UINT16_C(0x800f));
+	machine->screen_data[0] = UINT32_C(0xff0000ff);
+	machine->cpu.r[0] = 0;
+	machine->cpu.r[1] = UINT32_C(0xffffe414);
+	machine->cpu.pc = 4;
+	CHECK(xavix2_cpu_execute(&machine->cpu, 4) == 4);
+	CHECK(machine->screen_data[0] == UINT32_C(0xff7b007f));
+
+	store64(machine->low_ram + 0x4000, 0);
+	machine->screen_data[0] = UINT32_C(0xffffffff);
+	machine->cpu.r[0] = 0;
+	machine->cpu.r[1] = UINT32_C(0xffffe414);
+	machine->cpu.pc = 4;
+	CHECK(xavix2_cpu_execute(&machine->cpu, 4) == 4);
+	CHECK(machine->screen_data[0] == UINT32_C(0xffffffff));
+	store64(machine->low_ram + 0x4000, UINT64_MAX);
 
 	/* The 16-byte GPU channel also carries Type-1 Gouraud triangles.  RGB555
 	 * vertex colors are interpolated independently and Nalpha stores inverse
@@ -478,14 +495,13 @@ int main(void)
 	CHECK(xavix2_cpu_execute(&machine->cpu, 4) == 4);
 	CHECK(machine->screen_data[1 * 0x800 + 1] == UINT32_C(0xff7f007f));
 
-	/* A transparent flag is separate from RGB555 value zero.  An opaque
-	 * black texel must therefore overwrite an existing framebuffer pixel. */
+	/* An opaque black nonzero texel must overwrite the framebuffer. */
 	store16(machine->mmio + 0x608, 0x0200);
 	store16(machine->mmio + 0x622, 0x0300);
 	store32(machine->low_ram + 0x0200, 0);
 	store16(machine->low_ram + 0x0300, 0);
-	rom[0] = 0;
-	store16(machine->palette_ram, 0);
+	machine->low_ram[0] = 1;
+	store16(machine->palette_ram + 4, 0);
 	store_triangle_record(machine->low_ram + 0x0600, 0,
 		0, 0, 4, 0, 0, 4, UINT32_C(0x00000040),
 		UINT32_C(0x00022000));
@@ -495,6 +511,23 @@ int main(void)
 	machine->cpu.pc = 4;
 	CHECK(xavix2_cpu_execute(&machine->cpu, 4) == 4);
 	CHECK(machine->screen_data[1 * 0x800 + 1] == UINT32_C(0xff000000));
+
+	store16(machine->palette_ram + 4, UINT16_C(0x800f));
+	machine->screen_data[1 * 0x800 + 1] = UINT32_C(0xff0000ff);
+	machine->cpu.r[0] = 0;
+	machine->cpu.r[1] = UINT32_C(0xffffe408);
+	machine->cpu.pc = 4;
+	CHECK(xavix2_cpu_execute(&machine->cpu, 4) == 4);
+	CHECK(machine->screen_data[1 * 0x800 + 1] == UINT32_C(0xff7b007f));
+
+	machine->low_ram[0] = 0;
+	machine->screen_data[1 * 0x800 + 1] = UINT32_C(0xffffffff);
+	machine->cpu.r[0] = 0;
+	machine->cpu.r[1] = UINT32_C(0xffffe408);
+	machine->cpu.pc = 4;
+	CHECK(xavix2_cpu_execute(&machine->cpu, 4) == 4);
+	CHECK(machine->screen_data[1 * 0x800 + 1] == UINT32_C(0xffffffff));
+	machine->low_ram[0] = 1;
 
 	/* The RPU merges the independently submitted streams by depth.  A
 	 * distant depth-FF sky sprite is drawn before a zero-depth polygon, while
@@ -510,8 +543,7 @@ int main(void)
 	 * green HUD at depth 09. */
 	store32(machine->low_ram + 0x0200, 0);
 	store16(machine->low_ram + 0x0300, 0);
-	rom[0] = 0;
-	store16(machine->palette_ram, UINT16_C(0x7c00));
+	store16(machine->palette_ram + 4, UINT16_C(0x7c00));
 	store64(machine->low_ram + 0x0700,
 		gpu_command(0x10, 0x10) | (UINT64_C(0xff) << 21));
 	store64(machine->low_ram + 0x0708,
@@ -523,7 +555,7 @@ int main(void)
 	machine->cpu.pc = 4;
 	CHECK(xavix2_cpu_execute(&machine->cpu, 4) == 4);
 	CHECK(machine->screen_data[0] == UINT32_C(0xffff0000));
-	store16(machine->palette_ram, UINT16_C(0x03e0));
+	store16(machine->palette_ram + 4, UINT16_C(0x03e0));
 	machine->cpu.r[0] = 0;
 	machine->cpu.r[1] = UINT32_C(0xffffe414);
 	machine->cpu.pc = 4;
@@ -534,7 +566,7 @@ int main(void)
 	 * E414 must supply that band once, while repeated submissions in the same
 	 * frame must not paint it again. */
 	store16(machine->mmio + 0x410, 1);
-	store16(machine->palette_ram, UINT16_C(0x7c00));
+	store16(machine->palette_ram + 4, UINT16_C(0x7c00));
 	machine->gpu_sprite_background_prepared = 0;
 	memset(machine->screen_data, 0, sizeof(machine->screen_data));
 	{

@@ -5,6 +5,9 @@ semantic versioning while experimental releases carry a pre-release suffix.
 
 ## Unreleased
 
+- Restore XaviX 2 indexed-palette transparency and premultiplied half-alpha
+  blending. Blue Dragon's result screen now retains its translucent blue and
+  orange record panels instead of discarding their high-bit palette colors.
 - Add F9/F10 native-resolution AVI recording with 60 FPS MJPEG video and
   synchronized 48 kHz stereo PCM audio. Runtime timing diagnostics move to F11.
 - Restore Naruto's title and menu hit testing by keeping XaviX 2 opcodes
