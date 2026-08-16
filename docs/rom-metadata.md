@@ -35,6 +35,11 @@ identify exact, user-supplied images.
 | `epo_ssk2` | 8,388,608 | `d5902e48` | `010bc2417814ded24a474d9165f6b9523af7d1ef` |
 | `epo_sskj` | 8,388,608 | `3344b2fc` | `cda27bd1c7d6ccdb6da06cd837aa9cde5a58e5e4` |
 
+The exact `ban_dbz` image above visibly identifies itself as `体験版` on its
+title screen and enters random battles directly. It is therefore treated as a
+store-demo image even though external machine lists use the retail product's
+generic title. No distinct retail dump is present in the supported ROM set.
+
 `epo_hamd` is stored as two verified chips in the ZIP. XaviXEmu places the
 1,048,576-byte image with CRC32 `6c2d9d98` and SHA-1
 `89a8e6d236ea3dadb882e3ecf12e41bd50222710` at offset `0x000000`, and the

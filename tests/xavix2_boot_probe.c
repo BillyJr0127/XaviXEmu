@@ -85,11 +85,22 @@ static uint64_t geometry_command_count[256];
 static uint64_t gpu_submit_descriptor_count[64];
 static uint64_t gpu_enemy_submit_count;
 static int gpu_submit_trace_enabled;
+static int geometry_detail_trace_enabled;
 static int audio_command_trace_enabled;
 static int audio_descriptor_trace_enabled;
 static int audio_channel_metrics_enabled;
 static unsigned probe_video_frame;
+static unsigned geometry_attribute_write_prints;
+static unsigned geometry_attribute_table_write_prints;
 static audio_channel_metrics audio_metrics[XAVIX2_AUDIO_VOICES];
+
+static uint32_t get_le32(const uint8_t *source);
+static void put_le32(uint8_t *target, uint32_t value);
+
+static int32_t probe_signed10(uint32_t value)
+{
+	return (int32_t)(value << 22) >> 22;
+}
 
 static void update_audio_metrics(unsigned channel, unsigned operation,
 	uint16_t control_flags, const xavix2_audio_voice *voice)
@@ -137,8 +148,358 @@ static void trace_probe_write8(void *opaque, uint32_t address, uint8_t data)
 	uint16_t control_flags = 0;
 	uint8_t control_left = 0;
 	uint8_t control_right = 0;
+	uint16_t geometry_source = 0;
+	uint16_t geometry_destination = 0;
+	uint16_t geometry_polygon = 0;
+	uint16_t geometry_input_count = 0;
+	if (geometry_detail_trace_enabled && geometry_attribute_table_write_prints < 128 &&
+		address >= 0xb740 && address < 0xb780)
+	{
+		printf("geometry_attribute_table_write frame=%u pc=%08" PRIX32
+			" address=%04" PRIX32 " old=%02X new=%02X\n",
+			probe_video_frame, machine->cpu.pc, address,
+			machine->low_ram[address], data);
+		geometry_attribute_table_write_prints++;
+	}
+	if (geometry_detail_trace_enabled && geometry_attribute_write_prints < 256 &&
+		((address >= 0x36bc && address < 0x4700 && ((address - 0x36bc) & 15) == 0) ||
+		 (address >= 0x55fc && address < 0x6600 && ((address - 0x55fc) & 15) == 0)) &&
+		(data & 0x3f) > 4)
+	{
+		printf("geometry_attribute_write frame=%u pc=%08" PRIX32
+			" address=%04" PRIX32 " old=%02X new=%02X\n",
+			probe_video_frame, machine->cpu.pc, address,
+			machine->low_ram[address], data);
+		geometry_attribute_write_prints++;
+	}
 	if (address == UINT32_C(0xffffe858))
+	{
 		geometry_command_count[data]++;
+		if (geometry_detail_trace_enabled && data == 0x4d)
+		{
+			geometry_source = (uint16_t)(machine->mmio[0x860] |
+				((uint16_t)machine->mmio[0x861] << 8));
+			geometry_destination = (uint16_t)(machine->mmio[0x862] |
+				((uint16_t)machine->mmio[0x863] << 8));
+			geometry_polygon = (uint16_t)(machine->mmio[0x864] |
+				((uint16_t)machine->mmio[0x865] << 8));
+			geometry_input_count = (uint16_t)(machine->mmio[0x85a] |
+				((uint16_t)machine->mmio[0x85b] << 8));
+			{
+				uint32_t attributes[64] = { 0 };
+				uint32_t item;
+				uint32_t type1 = 0;
+				for (item = 0; item <= geometry_input_count &&
+					(uint32_t)geometry_polygon + item * 16 + 16 <=
+						XAVIX2_LOW_RAM_SIZE; item++)
+				{
+					const uint8_t *record = machine->low_ram + geometry_polygon +
+						item * 16;
+					if (get_le32(record) & 1)
+						type1++;
+					else
+						attributes[get_le32(record + 12) & 0x3f]++;
+				}
+				printf("geometry_4d_attributes polygon=%04X type1=%u",
+					geometry_polygon, type1);
+				for (item = 0; item < 64; item++)
+					if (attributes[item])
+						printf(" %02X=%u", item, attributes[item]);
+				printf("\n");
+			}
+		}
+		if (geometry_detail_trace_enabled &&
+			(data == 0x01 || data == 0x07 || data == 0x0d))
+		{
+			printf("geometry_aux frame=%u pc=%08" PRIX32 " command=%02X"
+				" source=%04X destination=%04X polygon=%04X count=%u"
+				" matrix=%08" PRIX32 ",%08" PRIX32 ",%08" PRIX32
+				" source_data=%08" PRIX32 ",%08" PRIX32 ",%08" PRIX32
+				" polygon_data=%08" PRIX32 ",%08" PRIX32 ",%08" PRIX32
+				",%08" PRIX32 "\n",
+				probe_video_frame, machine->cpu.pc, data,
+				(unsigned)(machine->mmio[0x860] |
+					((uint16_t)machine->mmio[0x861] << 8)),
+				(unsigned)(machine->mmio[0x862] |
+					((uint16_t)machine->mmio[0x863] << 8)),
+				(unsigned)(machine->mmio[0x864] |
+					((uint16_t)machine->mmio[0x865] << 8)),
+				(unsigned)(machine->mmio[0x85a] |
+					((uint16_t)machine->mmio[0x85b] << 8)) + 1,
+				get_le32(machine->mmio + 0x800),
+				get_le32(machine->mmio + 0x804),
+				get_le32(machine->mmio + 0x808),
+				get_le32(machine->low_ram + (machine->mmio[0x860] |
+					((uint16_t)machine->mmio[0x861] << 8))),
+				get_le32(machine->low_ram + (machine->mmio[0x860] |
+					((uint16_t)machine->mmio[0x861] << 8)) + 4),
+				get_le32(machine->low_ram + (machine->mmio[0x860] |
+					((uint16_t)machine->mmio[0x861] << 8)) + 8),
+				get_le32(machine->low_ram + (machine->mmio[0x864] |
+					((uint16_t)machine->mmio[0x865] << 8))),
+				get_le32(machine->low_ram + (machine->mmio[0x864] |
+					((uint16_t)machine->mmio[0x865] << 8)) + 4),
+				get_le32(machine->low_ram + (machine->mmio[0x864] |
+					((uint16_t)machine->mmio[0x865] << 8)) + 8),
+				get_le32(machine->low_ram + (machine->mmio[0x864] |
+					((uint16_t)machine->mmio[0x865] << 8)) + 12));
+			if (data == 0x01)
+				printf("geometry_matrix_full %08" PRIX32 " %08" PRIX32
+					" %08" PRIX32 " %08" PRIX32 " %08" PRIX32
+					" %08" PRIX32 " %08" PRIX32 " %08" PRIX32
+					" %08" PRIX32 " %08" PRIX32 " %08" PRIX32
+					" %08" PRIX32 "\n",
+					get_le32(machine->mmio + 0x800),
+					get_le32(machine->mmio + 0x804),
+					get_le32(machine->mmio + 0x808),
+					get_le32(machine->mmio + 0x80c),
+					get_le32(machine->mmio + 0x810),
+					get_le32(machine->mmio + 0x814),
+					get_le32(machine->mmio + 0x818),
+					get_le32(machine->mmio + 0x81c),
+					get_le32(machine->mmio + 0x820),
+					get_le32(machine->mmio + 0x824),
+					get_le32(machine->mmio + 0x828),
+					get_le32(machine->mmio + 0x82c));
+			if (data == 0x0d)
+				printf("geometry_projector_regs %04X %04X %04X %04X %04X\n",
+					machine->mmio[0x840] | ((uint16_t)machine->mmio[0x841] << 8),
+					machine->mmio[0x846] | ((uint16_t)machine->mmio[0x847] << 8),
+					machine->mmio[0x848] | ((uint16_t)machine->mmio[0x849] << 8),
+					machine->mmio[0x84a] | ((uint16_t)machine->mmio[0x84b] << 8),
+					machine->mmio[0x84c] | ((uint16_t)machine->mmio[0x84d] << 8));
+		}
+		if (geometry_detail_trace_enabled && data == 0x0b)
+		{
+			uint16_t source = (uint16_t)(machine->mmio[0x860] |
+				((uint16_t)machine->mmio[0x861] << 8));
+			uint16_t polygon = (uint16_t)(machine->mmio[0x864] |
+				((uint16_t)machine->mmio[0x865] << 8));
+			uint32_t count = (uint32_t)(machine->mmio[0x85a] |
+				((uint16_t)machine->mmio[0x85b] << 8)) + 1;
+			int32_t minimum_z = INT32_MAX;
+			int32_t maximum_z = INT32_MIN;
+			int64_t total_z = 0;
+			uint32_t samples = 0;
+			uint32_t item;
+			printf("geometry_light_vector frame=%u value=%d,%d,%d\n",
+				probe_video_frame,
+				(int16_t)(machine->mmio[0x850] |
+					((uint16_t)machine->mmio[0x851] << 8)),
+				(int16_t)(machine->mmio[0x852] |
+					((uint16_t)machine->mmio[0x853] << 8)),
+				(int16_t)(machine->mmio[0x854] |
+					((uint16_t)machine->mmio[0x855] << 8)));
+			for (item = 0; item < count &&
+				(uint32_t)polygon + item * 16 + 16 <= XAVIX2_LOW_RAM_SIZE;
+				++item)
+			{
+				const uint8_t *record = machine->low_ram + polygon + item * 16;
+				uint32_t d0 = get_le32(record);
+				uint32_t d1 = get_le32(record + 4);
+				uint16_t vertices[3] = {
+					(uint16_t)(d0 >> 16), (uint16_t)d1, (uint16_t)(d1 >> 16)
+				};
+				unsigned vertex;
+				if (!(d0 & 1))
+					continue;
+				for (vertex = 0; vertex < 3; ++vertex)
+				{
+					uint32_t address = (uint32_t)source + vertices[vertex] * 3 + 2;
+					int32_t z;
+					if (address + 1 > XAVIX2_LOW_RAM_SIZE)
+						continue;
+					z = (int8_t)machine->low_ram[address];
+					if (z < minimum_z) minimum_z = z;
+					if (z > maximum_z) maximum_z = z;
+					total_z += z;
+					samples++;
+				}
+			}
+			printf("geometry_light_range frame=%u polygon=%04X count=%u"
+				" samples=%u z=%" PRId32 "..%" PRId32 " avg=%" PRId64 "\n",
+				probe_video_frame, polygon, count, samples,
+				minimum_z, maximum_z, samples ? total_z / samples : 0);
+			for (item = 0; item < 4 && item < count &&
+				(uint32_t)polygon + item * 16 + 16 <= XAVIX2_LOW_RAM_SIZE; ++item)
+			{
+				const uint8_t *record = machine->low_ram + polygon + item * 16;
+				uint32_t d0 = get_le32(record);
+				uint32_t d1 = get_le32(record + 4);
+				uint16_t vertices[3] = {
+					(uint16_t)(d0 >> 16), (uint16_t)d1, (uint16_t)(d1 >> 16)
+				};
+				if ((d0 & 1) &&
+					(uint32_t)source + vertices[0] * 3 + 3 <= XAVIX2_LOW_RAM_SIZE &&
+					(uint32_t)source + vertices[1] * 3 + 3 <= XAVIX2_LOW_RAM_SIZE &&
+					(uint32_t)source + vertices[2] * 3 + 3 <= XAVIX2_LOW_RAM_SIZE)
+					printf("geometry_0b_record %u v=%u/%u/%u z=%d/%d/%d"
+						" rgb=%04X/%04X/%04X\n", item,
+						vertices[0], vertices[1], vertices[2],
+						(int8_t)machine->low_ram[source + vertices[0] * 3 + 2],
+						(int8_t)machine->low_ram[source + vertices[1] * 3 + 2],
+						(int8_t)machine->low_ram[source + vertices[2] * 3 + 2],
+						(unsigned)(get_le32(record + 8) & 0x7fff),
+						(unsigned)((get_le32(record + 8) >> 16) & 0x7fff),
+						(unsigned)(get_le32(record + 12) & 0x7fff));
+			}
+		}
+		if (geometry_detail_trace_enabled && data == 0x0e)
+		{
+			uint16_t source = (uint16_t)(machine->mmio[0x860] |
+				((uint16_t)machine->mmio[0x861] << 8));
+			uint16_t destination = (uint16_t)(machine->mmio[0x862] |
+				((uint16_t)machine->mmio[0x863] << 8));
+			uint16_t polygon = (uint16_t)(machine->mmio[0x864] |
+				((uint16_t)machine->mmio[0x865] << 8));
+			uint32_t count = (uint32_t)(machine->mmio[0x85a] |
+				((uint16_t)machine->mmio[0x85b] << 8)) + 1;
+			printf("geometry_0e frame=%u pc=%08" PRIX32
+				" source=%04X destination=%04X polygon=%04X count=%u"
+				" matrix=%08" PRIX32 ",%08" PRIX32 ",%08" PRIX32
+				",%08" PRIX32 ",%08" PRIX32 ",%08" PRIX32
+				",%08" PRIX32 ",%08" PRIX32 ",%08" PRIX32
+				" source0=%08" PRIX32 " record0=%08" PRIX32
+				",%08" PRIX32 ",%08" PRIX32 ",%08" PRIX32 "\n",
+				probe_video_frame, machine->cpu.pc, source, destination,
+				polygon, count,
+				get_le32(machine->mmio + 0x800),
+				get_le32(machine->mmio + 0x804),
+				get_le32(machine->mmio + 0x808),
+				get_le32(machine->mmio + 0x80c),
+				get_le32(machine->mmio + 0x810),
+				get_le32(machine->mmio + 0x814),
+				get_le32(machine->mmio + 0x818),
+				get_le32(machine->mmio + 0x81c),
+				get_le32(machine->mmio + 0x820),
+				source + 4 <= XAVIX2_LOW_RAM_SIZE ?
+					get_le32(machine->low_ram + source) : 0,
+				polygon + 16 <= XAVIX2_LOW_RAM_SIZE ?
+					get_le32(machine->low_ram + polygon) : 0,
+				polygon + 16 <= XAVIX2_LOW_RAM_SIZE ?
+					get_le32(machine->low_ram + polygon + 4) : 0,
+				polygon + 16 <= XAVIX2_LOW_RAM_SIZE ?
+					get_le32(machine->low_ram + polygon + 8) : 0,
+				polygon + 16 <= XAVIX2_LOW_RAM_SIZE ?
+					get_le32(machine->low_ram + polygon + 12) : 0);
+			{
+				int32_t rotation[9];
+				int32_t minimum_z = INT32_MAX;
+				int32_t maximum_z = INT32_MIN;
+				int64_t total_z = 0;
+				uint32_t samples = 0;
+				uint32_t positive_lights = 0;
+				uint32_t zero_lights = 0;
+				uint32_t item;
+				unsigned matrix_index;
+				for (matrix_index = 0; matrix_index < 9; ++matrix_index)
+					rotation[matrix_index] = (int32_t)get_le32(
+						machine->mmio + 0x800 + matrix_index * 4);
+				for (item = 0; item < count &&
+					(uint32_t)source + item * 4 + 4 <= XAVIX2_LOW_RAM_SIZE;
+					++item)
+				{
+					uint32_t packed = get_le32(machine->low_ram + source + item * 4);
+					int32_t coordinate[3];
+					int64_t transformed_z;
+					coordinate[0] = probe_signed10(packed);
+					coordinate[1] = probe_signed10(packed >> 10);
+					coordinate[2] = probe_signed10(packed >> 20);
+					transformed_z = (int64_t)rotation[6] * coordinate[0] +
+						(int64_t)rotation[7] * coordinate[1] +
+						(int64_t)rotation[8] * coordinate[2];
+					transformed_z >>= 10;
+					if (transformed_z < minimum_z) minimum_z = (int32_t)transformed_z;
+					if (transformed_z > maximum_z) maximum_z = (int32_t)transformed_z;
+					total_z += transformed_z;
+					samples++;
+					if (transformed_z < 0) positive_lights++;
+					else zero_lights++;
+				}
+				printf("geometry_0e_normals samples=%u z=%" PRId32
+					"..%" PRId32 " avg=%" PRId64 " lit=%u dark=%u",
+					samples, minimum_z, maximum_z,
+					samples ? total_z / samples : 0,
+					positive_lights, zero_lights);
+				for (item = 0; item < 6 && item < count &&
+					(uint32_t)source + item * 4 + 4 <= XAVIX2_LOW_RAM_SIZE;
+					++item)
+				{
+					uint32_t packed = get_le32(machine->low_ram + source + item * 4);
+					printf(" n%u=%" PRId32 ",%" PRId32 ",%" PRId32,
+						item, probe_signed10(packed),
+						probe_signed10(packed >> 10),
+						probe_signed10(packed >> 20));
+				}
+				printf("\n");
+				for (item = 0; item < 4 && item < count &&
+					(uint32_t)polygon + item * 16 + 16 <= XAVIX2_LOW_RAM_SIZE;
+					++item)
+				{
+					const uint8_t *record = machine->low_ram + polygon + item * 16;
+					uint32_t d0 = get_le32(record);
+					uint32_t d1 = get_le32(record + 4);
+					uint16_t vertices[3] = {
+						(uint16_t)(d0 >> 16), (uint16_t)d1,
+						(uint16_t)(d1 >> 16)
+					};
+					printf("geometry_0e_record %u v=%u/%u/%u", item,
+						vertices[0], vertices[1], vertices[2]);
+					if (!(d0 & 1))
+					{
+						unsigned vertex;
+						for (vertex = 0; vertex < 3; ++vertex)
+						{
+							uint32_t address = (uint32_t)source +
+								vertices[vertex] * 4;
+							uint32_t packed;
+							if (address + 4 > XAVIX2_LOW_RAM_SIZE)
+								continue;
+							packed = get_le32(machine->low_ram + address);
+							int64_t z = (int64_t)rotation[6] * probe_signed10(packed) +
+								(int64_t)rotation[7] * probe_signed10(packed >> 10) +
+								(int64_t)rotation[8] * probe_signed10(packed >> 20);
+							printf(" n%u=%" PRId32 ",%" PRId32 ",%" PRId32
+								"->%" PRId64, vertex, probe_signed10(packed),
+								probe_signed10(packed >> 10),
+								probe_signed10(packed >> 20), z >> 10);
+						}
+					}
+					printf(" d2=%08" PRIX32 "\n", get_le32(record + 8));
+				}
+			}
+			{
+				uint32_t attributes[64] = { 0 };
+				uint32_t item;
+				uint32_t type1 = 0;
+				for (item = 0; item < count &&
+					(uint32_t)polygon + item * 16 + 16 <= XAVIX2_LOW_RAM_SIZE;
+					item++)
+				{
+					const uint8_t *record = machine->low_ram + polygon + item * 16;
+					if (get_le32(record) & 1)
+						type1++;
+					else
+						attributes[get_le32(record + 12) & 0x3f]++;
+				}
+				printf("geometry_0e_attributes type1=%u", type1);
+				for (item = 0; item < 64; item++)
+					if (attributes[item])
+						printf(" %02X=%u", item, attributes[item]);
+				printf("\n");
+			}
+		}
+		if (geometry_detail_trace_enabled && data == 0x0f)
+			printf("geometry_0f frame=%u pc=%08" PRIX32
+				" source=%04X destination=%04X count=%u\n",
+				probe_video_frame, machine->cpu.pc,
+				(unsigned)(machine->mmio[0x860] |
+					((uint16_t)machine->mmio[0x861] << 8)),
+				(unsigned)(machine->mmio[0x862] |
+					((uint16_t)machine->mmio[0x863] << 8)),
+				(unsigned)(machine->mmio[0x85a] |
+					((uint16_t)machine->mmio[0x85b] << 8)) + 1);
+	}
 	if (gpu_submit_trace_enabled && address == UINT32_C(0xffffe414))
 	{
 		uint16_t list = (uint16_t)(machine->mmio[0x40c] |
@@ -182,6 +543,31 @@ static void trace_probe_write8(void *opaque, uint32_t address, uint8_t data)
 		for (index = 0; index < 64; ++index)
 			gpu_submit_descriptor_count[index] += seen[index];
 	}
+	if (geometry_detail_trace_enabled && address == UINT32_C(0xffffe408))
+	{
+		uint16_t list = (uint16_t)(machine->mmio[0x400] |
+			((uint16_t)machine->mmio[0x401] << 8));
+		uint16_t count = (uint16_t)(machine->mmio[0x404] |
+			((uint16_t)machine->mmio[0x405] << 8));
+		uint32_t attributes[64] = { 0 };
+		uint32_t type1 = 0;
+		uint32_t index;
+		for (index = 0; index < count &&
+			(uint32_t)list + index * 16 + 16 <= XAVIX2_LOW_RAM_SIZE; index++)
+		{
+			const uint8_t *record = machine->low_ram + list + index * 16;
+			if (get_le32(record) & 1)
+				type1++;
+			else
+				attributes[get_le32(record + 12) & 0x3f]++;
+		}
+		printf("gpu0_submit frame=%u list=%04X/%u type1=%u", probe_video_frame,
+			list, count, type1);
+		for (index = 0; index < 64; index++)
+			if (attributes[index])
+				printf(" %02X=%u", index, attributes[index]);
+		printf("\n");
+	}
 	if ((audio_command_trace_enabled || audio_channel_metrics_enabled) &&
 		address == UINT32_C(0xffffea0b))
 	{
@@ -195,6 +581,135 @@ static void trace_probe_write8(void *opaque, uint32_t address, uint8_t data)
 		control_right = machine->mmio[0xa1d];
 	}
 	probe_original_write8(opaque, address, data);
+	if (geometry_polygon)
+	{
+		unsigned normal_positive = 0;
+		unsigned normal_negative = 0;
+		unsigned normal_zero = 0;
+		unsigned type0 = 0;
+		unsigned projected_visible = 0;
+		unsigned viewport_visible = 0;
+		unsigned item;
+		for (item = 0; item <= geometry_input_count &&
+			(uint32_t)geometry_polygon + item * 16 + 16 <=
+				XAVIX2_LOW_RAM_SIZE; ++item)
+		{
+			const uint8_t *record = machine->low_ram + geometry_polygon + item * 16;
+			uint32_t d0 = get_le32(record);
+			uint32_t d1 = get_le32(record + 4);
+			uint16_t vertices[3] = {
+				(uint16_t)(d0 >> 16), (uint16_t)d1, (uint16_t)(d1 >> 16)
+			};
+			int64_t normal_z = 0;
+			int32_t projected_x[3];
+			int32_t projected_y[3];
+			int projected_valid = 1;
+			unsigned vertex;
+			type0 += !(d0 & 1);
+			for (vertex = 0; vertex < 3; ++vertex)
+			{
+				uint32_t normal_address = (uint32_t)geometry_destination +
+					vertices[vertex] * 12 + 8;
+				if (normal_address + 4 <= XAVIX2_LOW_RAM_SIZE)
+					normal_z += (int32_t)get_le32(machine->low_ram +
+						normal_address);
+				{
+					uint32_t position_address = (uint32_t)geometry_source +
+						vertices[vertex] * 12;
+					int32_t focal = (int16_t)(machine->mmio[0x840] |
+						((uint16_t)machine->mmio[0x841] << 8));
+					int32_t near_z = (int16_t)(machine->mmio[0x846] |
+						((uint16_t)machine->mmio[0x847] << 8));
+					if (position_address + 12 > XAVIX2_LOW_RAM_SIZE)
+						projected_valid = 0;
+					else
+					{
+						int32_t x = (int32_t)get_le32(machine->low_ram +
+							position_address);
+						int32_t y = (int32_t)get_le32(machine->low_ram +
+							position_address + 4);
+						int32_t z = (int32_t)get_le32(machine->low_ram +
+							position_address + 8);
+						if (z <= 0 || z < near_z * INT32_C(65536))
+							projected_valid = 0;
+						else
+						{
+							projected_x[vertex] = (int32_t)(
+								(machine->mmio[0x848] |
+								((uint16_t)machine->mmio[0x849] << 8)) / 2 +
+								(int64_t)x * focal / z);
+							projected_y[vertex] = (int32_t)(
+								(machine->mmio[0x84a] |
+								((uint16_t)machine->mmio[0x84b] << 8)) / 2 +
+								(int64_t)y * focal / z);
+							if (projected_x[vertex] < 0 || projected_x[vertex] > 0x7ff ||
+								projected_y[vertex] < 0 || projected_y[vertex] > 0x3ff)
+								projected_valid = 0;
+						}
+					}
+				}
+			}
+			if (normal_z > 0) normal_positive++;
+			else if (normal_z < 0) normal_negative++;
+			else normal_zero++;
+			if (projected_valid)
+			{
+				int64_t area = (int64_t)(projected_x[1] - projected_x[0]) *
+					(projected_y[2] - projected_y[0]) -
+					(int64_t)(projected_y[1] - projected_y[0]) *
+					(projected_x[2] - projected_x[0]);
+				if (area > 0)
+				{
+					int32_t min_x = projected_x[0];
+					int32_t max_x = projected_x[0];
+					int32_t min_y = projected_y[0];
+					int32_t max_y = projected_y[0];
+					int32_t crop_x = machine->mmio[0x656] |
+						((uint16_t)machine->mmio[0x657] << 8);
+					int32_t crop_y = machine->mmio[0x658] |
+						((uint16_t)machine->mmio[0x659] << 8);
+					for (vertex = 1; vertex < 3; ++vertex)
+					{
+						if (projected_x[vertex] < min_x) min_x = projected_x[vertex];
+						if (projected_x[vertex] > max_x) max_x = projected_x[vertex];
+						if (projected_y[vertex] < min_y) min_y = projected_y[vertex];
+						if (projected_y[vertex] > max_y) max_y = projected_y[vertex];
+					}
+					projected_visible++;
+					if (max_x >= crop_x && min_x < crop_x + 320 &&
+						max_y >= crop_y && min_y < crop_y + 240)
+						viewport_visible++;
+				}
+			}
+		}
+		printf("geometry_4d frame=%u source=%04X normals=%04X polygon=%04X"
+			" input=%u output=%u type=%u/%u nz=%u/%u/%u projected=%u/%u\n",
+			probe_video_frame, geometry_source, geometry_destination,
+			geometry_polygon, (unsigned)geometry_input_count + 1,
+			(unsigned)(machine->mmio[0x85c] |
+				((uint16_t)machine->mmio[0x85d] << 8)), type0,
+			(unsigned)geometry_input_count + 1 - type0, normal_positive,
+			normal_negative, normal_zero, projected_visible, viewport_visible);
+		{
+			uint32_t attributes[64] = { 0 };
+			uint32_t output_count = (uint32_t)(machine->mmio[0x85c] |
+				((uint16_t)machine->mmio[0x85d] << 8));
+			for (item = 0; item < output_count &&
+				(uint32_t)geometry_polygon + item * 16 + 16 <=
+					XAVIX2_LOW_RAM_SIZE; item++)
+			{
+				const uint8_t *record = machine->low_ram + geometry_polygon +
+					item * 16;
+				if (!(get_le32(record) & 1))
+					attributes[get_le32(record + 12) & 0x3f]++;
+			}
+			printf("geometry_4d_output_attributes polygon=%04X", geometry_polygon);
+			for (item = 0; item < 64; item++)
+				if (attributes[item])
+					printf(" %02X=%u", item, attributes[item]);
+			printf("\n");
+		}
+	}
 	if (audio_command != 0x03f)
 	{
 		unsigned channel = audio_command & 0x3f;
@@ -793,6 +1308,43 @@ static int load_runtime_state(const char *path, xavix2_machine_t *machine)
 		xavix2_machine_state_load(machine, data + 40, payload_size);
 	free(data);
 	return loaded;
+}
+
+static int load_raw_machine_state(const char *path, xavix2_machine_t *machine)
+{
+	FILE *file;
+	uint8_t *data;
+	size_t size = xavix2_machine_state_size();
+	int loaded;
+
+	file = path ? fopen(path, "rb") : NULL;
+	if (!file)
+		return 0;
+	data = (uint8_t *)malloc(size);
+	if (!data)
+	{
+		fclose(file);
+		return 0;
+	}
+	loaded = fread(data, 1, size, file) == size && fgetc(file) == EOF &&
+		xavix2_machine_state_load(machine, data, size);
+	free(data);
+	return fclose(file) == 0 && loaded;
+}
+
+static int save_raw_machine_state(const char *path,
+	const xavix2_machine_t *machine)
+{
+	size_t size = xavix2_machine_state_size();
+	size_t written = 0;
+	uint8_t *data = (uint8_t *)malloc(size);
+	int saved;
+	if (!data)
+		return 0;
+	saved = xavix2_machine_state_save(machine, data, size, &written) &&
+		written == size && save_bytes(path, data, size);
+	free(data);
+	return saved;
 }
 
 static int save_wav(const char *path, const int16_t *samples, size_t frames)
@@ -1632,6 +2184,7 @@ int main(int argc, char **argv)
 		fixed_pio_input_for_rom(image.kind));
 	{
 		const char *state_path = getenv("XAVIX2_LOAD_STATE");
+		const char *raw_state_path = getenv("XAVIX2_LOAD_RAW_STATE");
 		if (state_path && !load_runtime_state(state_path, machine))
 		{
 			fprintf(stderr, "could not load XAVIX2_LOAD_STATE\n");
@@ -1643,6 +2196,13 @@ int main(int argc, char **argv)
 			printf("state_resume cycles=%" PRIu64 " next_vblank=%" PRIu64
 				" frame=%" PRIu64 "\n", machine->cpu.total_cycles,
 				machine->next_vblank_cycle, machine->frame_count);
+		if (raw_state_path && !load_raw_machine_state(raw_state_path, machine))
+		{
+			fprintf(stderr, "could not load XAVIX2_LOAD_RAW_STATE\n");
+			free(machine);
+			drgqst_rom_release(&image);
+			return 2;
+		}
 	}
 	{
 		const char *mute_mask = getenv("XAVIX2_AUDIO_MUTE_MASK");
@@ -1973,8 +2533,12 @@ int main(int argc, char **argv)
 				gpu_descriptor_filter = -1;
 		}
 		if (geometry_command_trace_text)
+		{
 			geometry_command_trace_enabled =
 				atoi(geometry_command_trace_text) != 0;
+			geometry_detail_trace_enabled =
+				atoi(geometry_command_trace_text) > 1;
+		}
 		if (gpu_submit_trace_text)
 			gpu_submit_trace_enabled = atoi(gpu_submit_trace_text);
 		if (audio_command_trace_text)
@@ -2075,7 +2639,10 @@ int main(int argc, char **argv)
 				video_motion_packet3_valid && frame >= video_motion_packet3_at ?
 				video_motion_packet3 :
 				video_motion_packet2_valid && frame >= video_motion_packet2_at ?
-				video_motion_packet2 : motion_packet;
+					video_motion_packet2 : motion_packet;
+			if (motion_sequence_count)
+				frame_packet = motion_sequence[(frame /
+					(unsigned)motion_sequence_period) % motion_sequence_count];
 			if (frame >= video_defense_at)
 			{
 				unsigned phase = (frame - video_defense_at) % 48;
@@ -2331,6 +2898,38 @@ int main(int argc, char **argv)
 		get_le16(machine->mmio + 0x40c), get_le16(machine->mmio + 0x410),
 		get_le16(machine->mmio + 0x608), get_le16(machine->mmio + 0x622),
 		get_le16(machine->mmio + 0x656), get_le16(machine->mmio + 0x658));
+	printf("gpu_tables=%04X/%04X auxiliary=%04X/%04X work=%04X/%04X mode=%04X\n",
+		get_le16(machine->mmio + 0x608), get_le16(machine->mmio + 0x622),
+		get_le16(machine->mmio + 0x624), get_le16(machine->mmio + 0x626),
+		get_le16(machine->mmio + 0x628), get_le16(machine->mmio + 0x62a),
+		get_le16(machine->mmio + 0x650));
+	if (geometry_detail_trace_enabled)
+	{
+		unsigned register_offset;
+		printf("gpu_registers_e600");
+		for (register_offset = 0x600; register_offset < 0x640;
+			register_offset += 2)
+			printf(" %03X=%04X", register_offset,
+				get_le16(machine->mmio + register_offset));
+		printf("\n");
+	}
+	{
+		size_t eeprom_non_ff = 0;
+		size_t eeprom_upper_non_ff = 0;
+		size_t eeprom_index;
+		for (eeprom_index = 0; eeprom_index < sizeof(machine->eeprom.data);
+			eeprom_index++)
+		{
+			if (machine->eeprom.data[eeprom_index] != 0xff)
+			{
+				eeprom_non_ff++;
+				if (eeprom_index >= 0x100)
+					eeprom_upper_non_ff++;
+			}
+		}
+		printf("eeprom_non_ff=%zu/%zu upper_0100=%zu\n", eeprom_non_ff,
+			sizeof(machine->eeprom.data), eeprom_upper_non_ff);
+	}
 	printf("irq_active=%08" PRIX32 " irq_enabled=%08" PRIX32
 		" irq_nmi=%08" PRIX32 " level_reads=%" PRIu64
 		" clear_writes=%" PRIu64 " last_clear=%04X@%08" PRIX32
@@ -2382,6 +2981,7 @@ int main(int argc, char **argv)
 	{
 		const char *ram_dump = getenv("XAVIX2_RAM_DUMP");
 		const char *palette_dump = getenv("XAVIX2_PALETTE_DUMP");
+		const char *raw_state_dump = getenv("XAVIX2_SAVE_RAW_STATE");
 		if (ram_dump)
 			printf("ram_dump=%s %s\n", ram_dump,
 				save_bytes(ram_dump, machine->low_ram, sizeof(machine->low_ram)) ?
@@ -2390,6 +2990,10 @@ int main(int argc, char **argv)
 			printf("palette_dump=%s %s\n", palette_dump,
 				save_bytes(palette_dump, machine->palette_ram,
 					sizeof(machine->palette_ram)) ? "saved" : "failed");
+		if (raw_state_dump)
+			printf("raw_state_dump=%s %s\n", raw_state_dump,
+				save_raw_machine_state(raw_state_dump, machine) ?
+				"saved" : "failed");
 	}
 	print_hot_pcs(samples);
 	printf("trace_points input=%u/%u callback=%u/%u dispatch=%u game=%u pio=%u/%u\n",

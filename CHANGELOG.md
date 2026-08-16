@@ -108,6 +108,20 @@ semantic versioning while experimental releases carry a pre-release suffix.
 
 ### Fixed
 
+- Implement the XaviX 2 command `$07` signed-vector transform so DBZ supplies
+  its firmware-rotated directional light instead of an all-zero vector. Keep
+  command `$0b` color modulation disabled: the two plausible signed-dot
+  interpretations each created different black terrain faces, so guest RGB555
+  colors are preserved until the hardware clamp and rounding are established.
+- Recompute Type-0 polygon `Bw/Cw` perspective weights from command `$4d`'s
+  transformed vertex depths, and honor the texture record's Filter bit with
+  four-tap bilinear sampling. Dragon Ball terrain textures now change with the
+  projected geometry instead of retaining stale staging weights.
+- Keep XaviX 2 command `$0f` normal results in the traced three-byte XYZ
+  allocation. Expanding each result to four or twelve bytes overwrote DBZ's
+  adjacent material-remap table, turning valid terrain attributes into random
+  texture indices; the Namek and canyon checkpoints now retain firmware-owned
+  materials while textured-polygon command `$0e` lighting remains incomplete.
 - Update XaviX 2 negative/zero flags when firmware moves a multiply/divide
   result back to a general register.  Naruto's second-stage angle normalizer
   no longer inherits an older comparison flag and adds a false half-turn, so
@@ -121,6 +135,23 @@ semantic versioning while experimental releases carry a pre-release suffix.
   Naruto for cursor/target distance checks.  A resumed second-stage checkpoint
   now renders its submitted enemy and rotating projectile sprites while attack
   hit testing receives the real distance instead of a stale register value.
+- Implement the XaviX 2 indexed large-object projection command used by DB2J.
+  Its Q16.16 distance now selects a normal sprite scale, so the firmware-owned
+  battle enemy remains visible, changes poses and distance, and receives
+  aligned hit effects instead of becoming an invisible collision target or a
+  maximum-size body fragment.
+- Sort equal-depth XaviX 2 sprite backings by their covered area before smaller
+  overlays, then retain firmware order for equal-sized objects. This restores
+  both DBZ's XaviX logo and DB2J's tiled dialogue panel instead of fixing one
+  by letting the other game's full-screen background cover it. Reopen the
+  depth-FF background pass for each empty-GPU0 submission pair without
+  covering a later polygon pass.
+- Clip XaviX 2's host polygon raster loop to the guest-selected visible
+  320x240 or 640x480 window. DB2J's polygon-heavy battle checkpoint keeps the
+  exact same output hash while the 300-frame probe improves from roughly 62
+  to 123 FPS, removing the avoidable off-screen work that caused GUI stalls.
+  The later traced command `$07` signed-vector form retains DBZ's green
+  decision target while supplying the battle light-vector registers.
 - Restart XaviX 2 looping notes at their primary waveform address. Treating the
   secondary descriptor boundary as a sustain target selected a tiny adjacent
   fragment and produced a timbre absent from the isolated hardware reference.

@@ -81,7 +81,11 @@ static void store16(uint8_t *data, uint16_t value)
 
 static int32_t geometry_matrix_product(int32_t left, int32_t right)
 {
-	return (int32_t)(((int64_t)left * right) >> 24);
+	/* Command 10 composes two signed Q16.16 affine matrices.  DB2J's first
+	 * post-state fixture supplies +/-0x00010000 identity axes on both sides;
+	 * shifting by 24 collapsed every unit axis to +/-0x00000100 and made the
+	 * following normal transform degenerate to 0/-1. */
+	return (int32_t)(((int64_t)left * right) >> 16);
 }
 
 static void geometry_matrix_multiply(xavix2_machine_t *machine,
@@ -123,6 +127,43 @@ static int32_t geometry_signed10(uint32_t value)
 	return (int32_t)(value << 22) >> 22;
 }
 
+static void geometry_transform_vectors16(xavix2_machine_t *machine,
+	uint16_t source, uint16_t destination, uint32_t count)
+{
+	int32_t rotation[9];
+	uint32_t index;
+	unsigned row;
+	unsigned column;
+
+	if ((uint32_t)source + count * 6 > XAVIX2_LOW_RAM_SIZE ||
+		(uint32_t)destination + count * 6 > XAVIX2_LOW_RAM_SIZE)
+		return;
+	/* Command 07 transforms signed XYZ16 vectors.  DBZ submits two six-byte
+	 * vectors at 201C and reads the first six-byte result at 2010 into the
+	 * E850/E852/E854 light-vector registers.  Its wrapper loads the same
+	 * contiguous Q8.8 3x3 matrix used by command 0F. */
+	for (row = 0; row < 3; ++row)
+		for (column = 0; column < 3; ++column)
+			rotation[row * 3 + column] = (int32_t)load32(
+				machine->mmio + 0x800 + (row * 3 + column) * 4);
+	for (index = 0; index < count; ++index)
+	{
+		int32_t coordinate[3];
+		for (column = 0; column < 3; ++column)
+			coordinate[column] = (int16_t)load16(machine->low_ram + source +
+				index * 6 + column * 2);
+		for (row = 0; row < 3; ++row)
+		{
+			int64_t result = 0;
+			for (column = 0; column < 3; ++column)
+				result += (int64_t)rotation[row * 3 + column] *
+					coordinate[column];
+			store16(machine->low_ram + destination + index * 6 + row * 2,
+				(uint16_t)(int16_t)(result >> 8));
+		}
+	}
+}
+
 static void geometry_transform_normals(xavix2_machine_t *machine,
 	uint16_t source, uint16_t destination, uint32_t count)
 {
@@ -132,14 +173,17 @@ static void geometry_transform_normals(xavix2_machine_t *machine,
 	unsigned column;
 
 	if ((uint32_t)source + count * 4 > XAVIX2_LOW_RAM_SIZE ||
-		(uint32_t)destination + count * 12 > XAVIX2_LOW_RAM_SIZE)
+		(uint32_t)destination + count * 3 > XAVIX2_LOW_RAM_SIZE)
 		return;
 	/* Command 0F transforms packed signed XYZ10 surface normals without the
 	 * affine translation used by command 0C.  Its firmware wrapper copies the
 	 * 3x3 rotation terms from a Q16.16 3x4 matrix, arithmetic-shifts every
 	 * coefficient right by eight, and writes the resulting signed Q8.8 matrix
-	 * contiguously at E800..E820.  The command expands each result to three
-	 * signed 32-bit components for the following 0B/0E lighting stages. */
+	 * contiguously at E800..E820.  Its three signed output components are
+	 * reduced to bytes: DBZ places as many as 131 results at B540 and the live
+	 * material-remap table at B740, only 0x200 bytes later.  Four- or twelve-byte
+	 * expansion overlaps that table; three bytes fit the traced allocation and
+	 * preserve the transformed XYZ vector used by the following lighting stages. */
 	for (row = 0; row < 3; ++row)
 		for (column = 0; column < 3; ++column)
 			rotation[row * 3 + column] = (int32_t)load32(
@@ -148,6 +192,7 @@ static void geometry_transform_normals(xavix2_machine_t *machine,
 	{
 		uint32_t packed = load32(machine->low_ram + source + index * 4);
 		int32_t coordinate[3];
+		int32_t transformed[3];
 		coordinate[0] = geometry_signed10(packed);
 		coordinate[1] = geometry_signed10(packed >> 10);
 		coordinate[2] = geometry_signed10(packed >> 20);
@@ -157,9 +202,11 @@ static void geometry_transform_normals(xavix2_machine_t *machine,
 			for (column = 0; column < 3; ++column)
 				result += (int64_t)rotation[row * 3 + column] *
 					coordinate[column];
-			store32(machine->low_ram + destination + index * 12 + row * 4,
-				(uint32_t)(int32_t)(result >> 8));
+			transformed[row] = (int32_t)(result >> 10);
 		}
+		machine->low_ram[destination + index * 3] = (uint8_t)transformed[0];
+		machine->low_ram[destination + index * 3 + 1] = (uint8_t)transformed[1];
+		machine->low_ram[destination + index * 3 + 2] = (uint8_t)transformed[2];
 	}
 }
 
@@ -206,6 +253,127 @@ static void geometry_transform_vertices(xavix2_machine_t *machine,
 	}
 }
 
+static void geometry_transform_points(xavix2_machine_t *machine,
+	uint16_t source, uint16_t destination, uint32_t count)
+{
+	int32_t rotation[9];
+	int32_t translation[3];
+	uint32_t index;
+	unsigned row;
+	unsigned column;
+
+	if ((uint32_t)source + count * 4 > XAVIX2_LOW_RAM_SIZE ||
+		(uint32_t)destination + count * 12 > XAVIX2_LOW_RAM_SIZE)
+		return;
+	/* Command 01 consumes the signed low words written by the common matrix
+	 * loader and returns Q16.16 coordinates.  DB2J uses their length as the
+	 * large-object distance: a translation (3,0,4) must become
+	 * (0x30000,0,0x40000), whose length is 0x50000.  Treating this as command
+	 * 0C returned length 5 and forced every enemy sprite to maximum scale. */
+	for (row = 0; row < 3; ++row)
+	{
+		for (column = 0; column < 3; ++column)
+			rotation[row * 3 + column] = (int16_t)load16(
+				machine->mmio + 0x800 + row * 0x10 + column * 4);
+		translation[row] = (int32_t)load32(
+			machine->mmio + 0x80c + row * 0x10);
+	}
+	for (index = 0; index < count; ++index)
+	{
+		uint32_t packed = load32(machine->low_ram + source + index * 4);
+		int32_t coordinate[3];
+		coordinate[0] = geometry_signed10(packed);
+		coordinate[1] = geometry_signed10(packed >> 10);
+		coordinate[2] = geometry_signed10(packed >> 20);
+		for (row = 0; row < 3; ++row)
+		{
+			int64_t result = (int64_t)translation[row] << 16;
+			for (column = 0; column < 3; ++column)
+				result += (int64_t)rotation[row * 3 + column] *
+					coordinate[column] * UINT32_C(0x10000);
+			store32(machine->low_ram + destination + index * 12 + row * 4,
+				(uint32_t)(int32_t)result);
+		}
+	}
+}
+
+static void geometry_project_points(xavix2_machine_t *machine,
+	uint16_t source, uint16_t polygon_address, uint32_t count)
+{
+	int32_t focal = (int16_t)load16(machine->mmio + PROJECTOR_FOCAL_REGISTER);
+	int32_t center_x2 = (int32_t)load16(machine->mmio + 0x848);
+	int32_t center_y2 = (int32_t)load16(machine->mmio + 0x84a);
+	uint32_t polygon_index;
+
+	if ((uint32_t)polygon_address + count * 16 > XAVIX2_LOW_RAM_SIZE)
+		return;
+	/* Command 0D projects the indexed integer points produced by command 0C.
+	 * Unlike command 4D it does not replace the polygon record: firmware uses
+	 * the projected coordinate pair in each source point to position a large
+	 * tiled object, and consumes the polygon depth field for its scale. */
+	for (polygon_index = 0; polygon_index < count; ++polygon_index)
+	{
+		uint8_t *polygon = machine->low_ram + polygon_address +
+			polygon_index * 16;
+		uint32_t d0 = load32(polygon);
+		uint32_t d1 = load32(polygon + 4);
+		uint32_t vertex_index[3] = {
+			d0 >> 16,
+			d1 & 0xffff,
+			d1 >> 16
+		};
+		int64_t depth_sum = 0;
+		unsigned vertex;
+		int valid = 1;
+
+		for (vertex = 0; vertex < 3; ++vertex)
+		{
+			uint32_t address = (uint32_t)source + vertex_index[vertex] * 12;
+			int32_t x;
+			int32_t y;
+			int32_t z;
+			int64_t projected_x2;
+			int64_t projected_y2;
+			if (address + 12 > XAVIX2_LOW_RAM_SIZE)
+			{
+				valid = 0;
+				break;
+			}
+			x = (int32_t)load32(machine->low_ram + address);
+			y = (int32_t)load32(machine->low_ram + address + 4);
+			z = (int32_t)load32(machine->low_ram + address + 8);
+			if (z <= 0)
+			{
+				valid = 0;
+				break;
+			}
+			/* Command 0D retains one wrap page above each packed GPU axis.
+			 * X is 11-bit (12-bit when doubled), Y is 10-bit (11-bit when
+			 * doubled).  DB2J averages these unwrapped values for large-object
+			 * culling, then masks them down when it emits the sprite tiles. */
+			projected_x2 = 0x1000 + center_x2 +
+				(int64_t)x * focal * 2 / z;
+			projected_y2 = 0x0800 + center_y2 +
+				(int64_t)y * focal * 2 / z;
+			store32(machine->low_ram + address + 4,
+				((uint32_t)projected_x2 & 0xffff) << 16 |
+				((uint32_t)projected_y2 & 0xffff));
+			depth_sum += z;
+		}
+		if (valid)
+		{
+			uint32_t d3 = load32(polygon + 12);
+			/* The indexed-list depth field is Q8 relative to the integer model
+			 * coordinate.  DB2J's (3,0,4) billboard anchor therefore becomes
+			 * depth 0x400, matching the scale selected by its firmware. */
+			uint32_t depth = (uint32_t)(depth_sum / 3) << 8;
+			d3 = (d3 & ~UINT32_C(0x07fc0000)) |
+				((depth << 15) & UINT32_C(0x07fc0000));
+			store32(polygon + 12, d3);
+		}
+	}
+}
+
 static void geometry_project_triangles(xavix2_machine_t *machine,
 	uint16_t source, uint16_t polygon_address, uint32_t count)
 {
@@ -234,10 +402,10 @@ static void geometry_project_triangles(xavix2_machine_t *machine,
 		};
 		int32_t projected_x[3];
 		int32_t projected_y[3];
+		int32_t vertex_depth[3];
 		unsigned vertex;
 		int valid = 1;
 		int64_t area;
-
 		for (vertex = 0; vertex < 3; ++vertex)
 		{
 			uint32_t vertex_address = (uint32_t)source + vertex_index[vertex] * 12;
@@ -277,7 +445,22 @@ static void geometry_project_triangles(xavix2_machine_t *machine,
 			}
 			projected_x[vertex] = (int32_t)screen_x;
 			projected_y[vertex] = (int32_t)screen_y;
+			vertex_depth[vertex] = z;
 		}
+		if (!valid)
+			continue;
+		/* Packed GPU coordinates are unsigned 11x10-bit values.  Wrapping a
+		 * projected point outside that range creates a screen-spanning polygon
+		 * on the opposite side (DB2J's large brown battle slabs).  Hardware
+		 * clips against the selected viewport before packing; conservatively
+		 * discard that primitive until clipped-edge generation is modeled. */
+		for (vertex = 0; vertex < 3; ++vertex)
+			if (projected_x[vertex] < 0 || projected_x[vertex] > 0x7ff ||
+				projected_y[vertex] < 0 || projected_y[vertex] > 0x3ff)
+			{
+				valid = 0;
+				break;
+			}
 		if (!valid)
 			continue;
 		area = (int64_t)(projected_x[1] - projected_x[0]) *
@@ -288,6 +471,29 @@ static void geometry_project_triangles(xavix2_machine_t *machine,
 		 * mathematical front face used by the firmware's indexed records. */
 		if (area <= 0)
 			continue;
+		{
+			int32_t min_x = projected_x[0];
+			int32_t max_x = projected_x[0];
+			int32_t min_y = projected_y[0];
+			int32_t max_y = projected_y[0];
+			int32_t crop_x = (int32_t)load16(machine->mmio + 0x656);
+			int32_t crop_y = (int32_t)load16(machine->mmio + 0x658);
+
+			for (vertex = 1; vertex < 3; ++vertex)
+			{
+				if (projected_x[vertex] < min_x) min_x = projected_x[vertex];
+				if (projected_x[vertex] > max_x) max_x = projected_x[vertex];
+				if (projected_y[vertex] < min_y) min_y = projected_y[vertex];
+				if (projected_y[vertex] > max_y) max_y = projected_y[vertex];
+			}
+			/* The polygon unit rejects primitives wholly outside the selected
+			 * 320x240 viewport before packing them into the shared GPU list.
+			 * DB2J reserves each following model's list slot on that basis; keeping
+			 * off-screen faces here lets one model overwrite the next one. */
+			if (max_x < crop_x || min_x >= crop_x + 320 ||
+				max_y < crop_y || min_y >= crop_y + 240)
+				continue;
+		}
 		{
 			int32_t packed_x[3] = {
 				projected_x[0] & 0x7ff,
@@ -313,6 +519,23 @@ static void geometry_project_triangles(xavix2_machine_t *machine,
 			 * DBZ battle's black slab) rather than a clipped edge. */
 			if (packed_area <= 0)
 				continue;
+			if (!(d0 & 1))
+			{
+				uint64_t weight_b = ((uint64_t)(uint32_t)vertex_depth[0] << 6) /
+					(uint32_t)vertex_depth[1];
+				uint64_t weight_c = ((uint64_t)(uint32_t)vertex_depth[0] << 6) /
+					(uint32_t)vertex_depth[2];
+
+				/* The texture record stores Aw as the implicit Q2.6 value 64,
+				 * then Bw=Az/Bz and Cw=Az/Cz.  Command 4D has the transformed
+				 * view-space depths, so replace only those perspective fields
+				 * while preserving the guest's texture, light, and layer state. */
+				if (weight_b > UINT8_MAX) weight_b = UINT8_MAX;
+				if (weight_c > UINT8_MAX) weight_c = UINT8_MAX;
+				d2 = (d2 & ~UINT32_C(0x000000ff)) | (uint32_t)weight_b;
+				d3 = (d3 & ~UINT32_C(0x00007f80)) |
+					((uint32_t)weight_c << 7);
+			}
 			uint32_t packed0 = (d0 & 1) |
 				((uint32_t)packed_y[0] << 1) |
 				((uint32_t)packed_x[0] << 11) |
@@ -374,6 +597,30 @@ static void projector_start(xavix2_machine_t *machine, uint8_t command)
 	if (command == 0x0c)
 	{
 		geometry_transform_vertices(machine,
+			load16(machine->mmio + PROJECTOR_SOURCE_REGISTER),
+			load16(machine->mmio + PROJECTOR_DESTINATION_REGISTER),
+			(uint32_t)load16(machine->mmio + PROJECTOR_COUNT_REGISTER) + 1);
+		return;
+	}
+	if (command == 0x01)
+	{
+		geometry_transform_points(machine,
+			load16(machine->mmio + PROJECTOR_SOURCE_REGISTER),
+			load16(machine->mmio + PROJECTOR_DESTINATION_REGISTER),
+			(uint32_t)load16(machine->mmio + PROJECTOR_COUNT_REGISTER) + 1);
+		return;
+	}
+	if (command == 0x0d)
+	{
+		geometry_project_points(machine,
+			load16(machine->mmio + PROJECTOR_SOURCE_REGISTER),
+			load16(machine->mmio + PROJECTOR_POLYGON_REGISTER),
+			(uint32_t)load16(machine->mmio + PROJECTOR_COUNT_REGISTER) + 1);
+		return;
+	}
+	if (command == 0x07)
+	{
+		geometry_transform_vectors16(machine,
 			load16(machine->mmio + PROJECTOR_SOURCE_REGISTER),
 			load16(machine->mmio + PROJECTOR_DESTINATION_REGISTER),
 			(uint32_t)load16(machine->mmio + PROJECTOR_COUNT_REGISTER) + 1);
@@ -1032,17 +1279,29 @@ static int palette_color(uint16_t raw_color, uint32_t destination,
 	return 1;
 }
 
+typedef struct gpu_order
+{
+	uint32_t priority;
+	uint32_t area;
+	uint32_t index;
+} gpu_order_t;
+
 static int compare_gpu_order(const void *left, const void *right)
 {
-	uint32_t a = *(const uint32_t *)left;
-	uint32_t b = *(const uint32_t *)right;
-	uint32_t a_priority = a & UINT32_C(0x1fe00000);
-	uint32_t b_priority = b & UINT32_C(0x1fe00000);
-	if (a_priority != b_priority)
-		return a_priority < b_priority ? 1 : -1;
-	/* Preserve command-list submission order when priorities are equal. */
-	return (a & UINT32_C(0xffff)) < (b & UINT32_C(0xffff)) ? -1 :
-		(a & UINT32_C(0xffff)) > (b & UINT32_C(0xffff)) ? 1 : 0;
+	const gpu_order_t *a = (const gpu_order_t *)left;
+	const gpu_order_t *b = (const gpu_order_t *)right;
+	if (a->priority != b->priority)
+		return a->priority < b->priority ? 1 : -1;
+	/* Same-depth sprite lists contain both large backing surfaces and smaller
+	 * overlays.  The DBZ startup emits its logo before a later 323x240 backing,
+	 * while DB2J emits its 320x240 Shenron backing before the later 32x32
+	 * dialogue-panel tiles.  A blanket forward or reverse list order therefore
+	 * loses one of them.  The RPU's scanline sorter encounters the spanning
+	 * backing first; model that geometry by drawing the larger covered area
+	 * first, then preserve firmware order among equal-sized objects. */
+	if (a->area != b->area)
+		return a->area < b->area ? 1 : -1;
+	return a->index < b->index ? -1 : a->index > b->index ? 1 : 0;
 }
 
 static int64_t triangle_edge(int32_t ax, int32_t ay, int32_t bx, int32_t by,
@@ -1052,9 +1311,42 @@ static int64_t triangle_edge(int32_t ax, int32_t ay, int32_t bx, int32_t by,
 		(int64_t)(py - ay) * (bx - ax);
 }
 
-static int triangle_texture_color(xavix2_machine_t *machine,
-	uint16_t segment_table, uint32_t descriptor, uint32_t d2,
-	uint32_t d3, uint32_t u, uint32_t v, uint32_t *color)
+static uint32_t triangle_texture_coordinate(uint32_t coordinate,
+	uint32_t maximum, uint32_t mask_bits)
+{
+	if (mask_bits >= 8)
+		coordinate = 0;
+	else if (mask_bits)
+		coordinate &= (UINT32_C(1) << (8 - mask_bits)) - 1;
+	if (coordinate > maximum)
+		coordinate = maximum;
+	return coordinate;
+}
+
+typedef struct triangle_texture_sampler
+{
+	xavix2_machine_t *machine;
+	uint32_t source;
+	uint32_t width;
+	uint32_t height;
+	uint32_t bit_code;
+	uint32_t bpp;
+	uint32_t block_width;
+	uint32_t block_height;
+	uint32_t blocks_per_row;
+	uint32_t mask_u_bits;
+	uint32_t mask_v_bits;
+	uint32_t map;
+	uint32_t palette_base;
+	uint32_t filter;
+	uint32_t cache_tag[16];
+	uint64_t cache_data[16];
+	uint16_t cache_valid;
+} triangle_texture_sampler_t;
+
+static int triangle_texture_sampler_init(triangle_texture_sampler_t *sampler,
+	xavix2_machine_t *machine, uint16_t segment_table, uint32_t descriptor,
+	uint32_t d2, uint32_t d3)
 {
 	static const uint8_t block_width[8] = { 8, 8, 7, 4, 4, 5, 3, 4 };
 	static const uint8_t block_height[8] = { 8, 4, 3, 4, 3, 2, 3, 2 };
@@ -1063,53 +1355,203 @@ static int triangle_texture_color(xavix2_machine_t *machine,
 	uint32_t segment_offset = (texture_segment & 0x3ff) << 5;
 	uint32_t segment_address = (uint32_t)segment_table + segment_index * 2;
 	uint16_t segment;
-	uint32_t source;
-	uint32_t width = descriptor & 0xff;
-	uint32_t height = (descriptor >> 8) & 0xff;
-	uint32_t bit_code = (descriptor >> 24) & 7;
-	uint32_t bpp = bit_code + 1;
+
+	if (!sampler || segment_address + 2 > XAVIX2_LOW_RAM_SIZE)
+		return 0;
+	segment = load16(machine->low_ram + segment_address);
+	sampler->machine = machine;
+	sampler->source = ((uint32_t)segment << 14) + segment_offset;
+	sampler->width = descriptor & 0xff;
+	sampler->height = (descriptor >> 8) & 0xff;
+	sampler->bit_code = (descriptor >> 24) & 7;
+	sampler->bpp = sampler->bit_code + 1;
+	sampler->block_width = block_width[sampler->bit_code];
+	sampler->block_height = block_height[sampler->bit_code];
+	sampler->blocks_per_row = sampler->width / sampler->block_width + 1;
+	sampler->mask_u_bits = (descriptor >> 16) & 0x0f;
+	sampler->mask_v_bits = (descriptor >> 20) & 0x0f;
+	sampler->map = (d3 >> 6) & 1;
+	sampler->palette_base = ((descriptor >> 27) & 0x1f) << sampler->bpp;
+	/* The firmware Type-0 packer maps flag bit 3 through (flags & 0x38) << 24,
+	 * so Filter is d3 bit 27; bits 28..29 select the viewport. */
+	sampler->filter = (d3 >> 27) & 1;
+	sampler->cache_valid = 0;
+	return 1;
+}
+
+static uint16_t triangle_texture_raw_color(triangle_texture_sampler_t *sampler,
+	uint32_t u, uint32_t v)
+{
 	uint32_t s = u;
 	uint32_t t = v;
 	uint32_t bit_address;
+	uint32_t word_address;
+	uint32_t cache_index;
+	uint16_t cache_mask;
 	uint64_t packed;
 	uint32_t texel;
 	uint32_t palette_index;
-	uint16_t raw_color;
-	uint32_t mask_u_bits = (descriptor >> 16) & 0x0f;
-	uint32_t mask_v_bits = (descriptor >> 20) & 0x0f;
-	uint32_t map = (d3 >> 6) & 1;
-
-	if (!color || segment_address + 2 > XAVIX2_LOW_RAM_SIZE)
-		return 0;
-	segment = load16(machine->low_ram + segment_address);
-	source = ((uint32_t)segment << 14) + segment_offset;
+	u = triangle_texture_coordinate(u, sampler->width, sampler->mask_u_bits);
+	v = triangle_texture_coordinate(v, sampler->height, sampler->mask_v_bits);
+	s = u;
+	t = v;
 
 	/* SSD's block-address equations (US20090278845) apply to both map
 	 * layouts.  Divided storage is selected only for an unmasked texture
 	 * taller than one hardware block; Map 0 and Map 1 fold the lower half
-	 * differently.  BAD deliberately keeps the original V row.  The observed
-	 * ground requests filtering; nearest-neighbour is the current baseline. */
+	 * differently.  BAD deliberately keeps the original V row.  The
+	 * sampler is shared by nearest and all four bilinear neighbours so folding
+	 * and edge handling cannot diverge between the two filter modes. */
+	if (!sampler->mask_u_bits && !sampler->mask_v_bits &&
+		sampler->height > sampler->block_height &&
+		v / sampler->block_height >
+			sampler->height / (2 * sampler->block_height))
 	{
-		uint32_t bw = block_width[bit_code];
-		uint32_t bh = block_height[bit_code];
-		uint32_t blocks_per_row = width / bw + 1;
-		uint32_t word_address;
-		if (!mask_u_bits && !mask_v_bits && height > bh &&
-			v / bh > height / (2 * bh))
-		{
-			s = blocks_per_row * bw - u - 1;
-			t = map ? (height / bh + 1) * bh - v - 1 : height - v;
-		}
-		word_address = blocks_per_row * (t / bh) + s / bw;
-		bit_address = ((v % bh) * bw + s % bw) * bpp;
-		packed = machine_read64(machine, source + word_address * 8);
+		s = sampler->blocks_per_row * sampler->block_width - u - 1;
+		t = sampler->map ?
+			(sampler->height / sampler->block_height + 1) *
+				sampler->block_height - v - 1 : sampler->height - v;
 	}
+	word_address = sampler->blocks_per_row * (t / sampler->block_height) +
+		s / sampler->block_width;
+	bit_address = ((v % sampler->block_height) * sampler->block_width +
+		s % sampler->block_width) * sampler->bpp;
+	/* Four adjacent texels normally share one 64-bit storage word.  Cache the
+	 * exact existing machine_read64 result per triangle so bilinear filtering
+	 * does not multiply eight-byte bus reads by four. */
+	cache_index = (word_address ^ (word_address >> 4)) & 15;
+	cache_mask = (uint16_t)(UINT16_C(1) << cache_index);
+	if (!(sampler->cache_valid & cache_mask) ||
+		sampler->cache_tag[cache_index] != word_address)
+	{
+		sampler->cache_tag[cache_index] = word_address;
+		sampler->cache_data[cache_index] = machine_read64(sampler->machine,
+			sampler->source + word_address * 8);
+		sampler->cache_valid |= cache_mask;
+	}
+	packed = sampler->cache_data[cache_index];
 	texel = (uint32_t)(packed >> bit_address) &
-		((UINT32_C(1) << bpp) - 1);
-	palette_index = (((descriptor >> 27) & 0x1f) << bpp) | texel;
-	raw_color = palette_index < 0x200 ?
-		load16(machine->palette_ram + palette_index * 4) : UINT16_C(0x8000);
-	return palette_color(raw_color, *color, color);
+		((UINT32_C(1) << sampler->bpp) - 1);
+	palette_index = sampler->palette_base | texel;
+	return palette_index < 0x200 ? load16(sampler->machine->palette_ram +
+		palette_index * 4) : UINT16_C(0x8000);
+}
+
+static void triangle_texture_premultiplied(uint16_t raw_color,
+	uint32_t component[3], uint32_t *alpha)
+{
+	uint32_t color;
+	if (raw_color == UINT16_C(0x8421))
+	{
+		component[0] = component[1] = component[2] = 0;
+		*alpha = 0;
+		return;
+	}
+	color = rgb555(raw_color);
+	component[0] = (color >> 16) & 0xff;
+	component[1] = (color >> 8) & 0xff;
+	component[2] = color & 0xff;
+	/* Bit-15 colors are stored premultiplied for the RPU's one-half alpha. */
+	*alpha = raw_color & UINT16_C(0x8000) ? 128 : 256;
+}
+
+static int triangle_texture_color(triangle_texture_sampler_t *sampler,
+	uint32_t u_fixed, uint32_t v_fixed, uint32_t *color)
+{
+	uint32_t u = u_fixed >> 16;
+	uint32_t v = v_fixed >> 16;
+	uint16_t raw_color[4];
+	uint32_t sample[4][3];
+	uint32_t alpha[4];
+	uint32_t fraction_u;
+	uint32_t fraction_v;
+	uint64_t weight[4];
+	uint32_t output = UINT32_C(0xff000000);
+	uint64_t alpha_sum = 0;
+	uint32_t output_alpha;
+	unsigned index;
+	unsigned component;
+
+	if (!color)
+		return 0;
+	if (sampler->filter)
+	{
+		raw_color[0] = triangle_texture_raw_color(sampler, u, v);
+		return palette_color(raw_color[0], *color, color);
+	}
+	/* CN101116112A, Fig. 21: Filter=0 uses the four texels surrounding the
+	 * fractional (U,V), weighted by (1-u)(1-v), u(1-v), (1-u)v and uv.
+	 * Keep 16 fractional bits through perspective division. */
+	raw_color[0] = triangle_texture_raw_color(sampler, u, v);
+	raw_color[1] = triangle_texture_raw_color(sampler, u + 1, v);
+	raw_color[2] = triangle_texture_raw_color(sampler, u, v + 1);
+	raw_color[3] = triangle_texture_raw_color(sampler, u + 1, v + 1);
+	/* Constant 2x2 regions are common in terrain textures and the bilinear
+	 * result is exactly the existing single-palette operation, including the
+	 * transparent key and half-alpha encoding. */
+	if (raw_color[0] == raw_color[1] && raw_color[0] == raw_color[2] &&
+		raw_color[0] == raw_color[3])
+		return palette_color(raw_color[0], *color, color);
+	fraction_u = u_fixed & 0xffff;
+	fraction_v = v_fixed & 0xffff;
+	weight[0] = (uint64_t)(UINT32_C(0x10000) - fraction_u) *
+		(UINT32_C(0x10000) - fraction_v);
+	weight[1] = (uint64_t)fraction_u *
+		(UINT32_C(0x10000) - fraction_v);
+	weight[2] = (uint64_t)(UINT32_C(0x10000) - fraction_u) * fraction_v;
+	weight[3] = (uint64_t)fraction_u * fraction_v;
+	/* With four opaque entries the output is also opaque, so interpolation can
+	 * bypass alpha accumulation and destination blending without changing a
+	 * bit of the Q16-weighted result. */
+	if (!((raw_color[0] | raw_color[1] | raw_color[2] | raw_color[3]) &
+		UINT16_C(0x8000)))
+	{
+		uint32_t palette_color_value[4];
+		uint32_t red;
+		uint32_t green;
+		uint32_t blue;
+		for (index = 0; index < 4; ++index)
+			palette_color_value[index] = rgb555(raw_color[index]);
+		red = (uint32_t)((weight[0] * ((palette_color_value[0] >> 16) & 0xff) +
+			weight[1] * ((palette_color_value[1] >> 16) & 0xff) +
+			weight[2] * ((palette_color_value[2] >> 16) & 0xff) +
+			weight[3] * ((palette_color_value[3] >> 16) & 0xff)) >> 32);
+		green = (uint32_t)((weight[0] * ((palette_color_value[0] >> 8) & 0xff) +
+			weight[1] * ((palette_color_value[1] >> 8) & 0xff) +
+			weight[2] * ((palette_color_value[2] >> 8) & 0xff) +
+			weight[3] * ((palette_color_value[3] >> 8) & 0xff)) >> 32);
+		blue = (uint32_t)((weight[0] * (palette_color_value[0] & 0xff) +
+			weight[1] * (palette_color_value[1] & 0xff) +
+			weight[2] * (palette_color_value[2] & 0xff) +
+			weight[3] * (palette_color_value[3] & 0xff)) >> 32);
+		*color = UINT32_C(0xff000000) | (red << 16) | (green << 8) | blue;
+		return 1;
+	}
+	for (index = 0; index < 4; ++index)
+	{
+		triangle_texture_premultiplied(raw_color[index], sample[index],
+			alpha + index);
+		alpha_sum += weight[index] * alpha[index];
+	}
+	output_alpha = (uint32_t)(alpha_sum >> 32);
+	for (component = 0; component < 3; ++component)
+	{
+		uint64_t source_sum = 0;
+		uint32_t source_component;
+		uint32_t destination_component;
+		uint32_t result;
+		for (index = 0; index < 4; ++index)
+			source_sum += weight[index] * sample[index][component];
+		source_component = (uint32_t)(source_sum >> 32);
+		destination_component = (*color >> (16 - component * 8)) & 0xff;
+		result = source_component +
+			(destination_component * (256 - output_alpha) >> 8);
+		if (result > 0xff)
+			result = 0xff;
+		output |= result << (16 - component * 8);
+	}
+	*color = output;
+	return output_alpha != 0;
 }
 
 static uint32_t blend_triangle_gouraud(uint32_t d2, uint32_t d3,
@@ -1172,12 +1614,17 @@ static void render_triangle_gpu(xavix2_machine_t *machine, uint16_t count,
 		uint32_t height;
 		uint32_t weight_b;
 		uint32_t weight_c;
+		triangle_texture_sampler_t texture_sampler;
 		int32_t x[3];
 		int32_t y[3];
 		int32_t min_x;
 		int32_t max_x;
 		int32_t min_y;
 		int32_t max_y;
+		uint32_t visible_width;
+		uint32_t visible_height;
+		uint32_t visible_x;
+		uint32_t visible_y;
 		int64_t area;
 		int32_t py;
 
@@ -1215,6 +1662,9 @@ static void render_triangle_gpu(xavix2_machine_t *machine, uint16_t count,
 			 * C=(0,H,Cw). */
 			weight_b = d2 & 0xff;
 			weight_c = (d3 >> 7) & 0xff;
+			if (!triangle_texture_sampler_init(&texture_sampler, machine,
+				descdata_address, descsize, d2, d3))
+				continue;
 		}
 		else
 		{
@@ -1235,6 +1685,31 @@ static void render_triangle_gpu(xavix2_machine_t *machine, uint16_t count,
 		if (max_x >= 0x800) max_x = 0x7ff;
 		if (max_y >= 0x400) max_y = 0x3ff;
 
+		/* screen_data is a presentation target and is never read by the guest.
+		 * Rasterizing every off-screen part of the 2048x1024 internal surface
+		 * made Dragon Ball's polygon-heavy battles hover around the real-time
+		 * limit and stutter in the GUI.  Clip the host raster loop to the same
+		 * guest-selected output window returned by visible_frame().  Keep the
+		 * full target for reset-time synthetic tests where no origin is set. */
+		visible_width = machine->mmio[0x650] == 0x08 ? 640 : 320;
+		visible_height = machine->mmio[0x650] == 0x08 ? 480 : 240;
+		visible_x = load16(machine->mmio + 0x656);
+		visible_y = load16(machine->mmio + 0x658);
+		if ((visible_x || visible_y) &&
+			visible_x + visible_width <= 0x800 &&
+			visible_y + visible_height <= 0x400)
+		{
+			int32_t clip_max_x = (int32_t)(visible_x + visible_width - 1);
+			int32_t clip_max_y = (int32_t)(visible_y + visible_height - 1);
+			if (max_x < (int32_t)visible_x || min_x > clip_max_x ||
+				max_y < (int32_t)visible_y || min_y > clip_max_y)
+				continue;
+			if (min_x < (int32_t)visible_x) min_x = (int32_t)visible_x;
+			if (max_x > clip_max_x) max_x = clip_max_x;
+			if (min_y < (int32_t)visible_y) min_y = (int32_t)visible_y;
+			if (max_y > clip_max_y) max_y = clip_max_y;
+		}
+
 		for (py = min_y; py <= max_y; ++py)
 		{
 			int32_t px;
@@ -1248,8 +1723,8 @@ static void render_triangle_gpu(xavix2_machine_t *machine, uint16_t count,
 					x[0] * 2, y[0] * 2, sample_x, sample_y);
 				int64_t w2 = triangle_edge(x[0] * 2, y[0] * 2,
 					x[1] * 2, y[1] * 2, sample_x, sample_y);
-				uint32_t u = 0;
-				uint32_t v = 0;
+				uint32_t u_fixed = 0;
+				uint32_t v_fixed = 0;
 				uint32_t color;
 				int64_t denominator;
 				int64_t numerator_u;
@@ -1270,25 +1745,30 @@ static void render_triangle_gpu(xavix2_machine_t *machine, uint16_t count,
 					continue;
 				numerator_u = w1 * (int64_t)width * weight_b;
 				numerator_v = w2 * (int64_t)height * weight_c;
-				u = (uint32_t)(numerator_u / denominator);
-				v = (uint32_t)(numerator_v / denominator);
+				if (denominator < 0)
 				{
-					uint32_t mask_u_bits = (descsize >> 16) & 0x0f;
-					uint32_t mask_v_bits = (descsize >> 20) & 0x0f;
-					if (mask_u_bits >= 8)
-						u = 0;
-					else if (mask_u_bits)
-						u &= (UINT32_C(1) << (8 - mask_u_bits)) - 1;
-					if (mask_v_bits >= 8)
-						v = 0;
-					else if (mask_v_bits)
-						v &= (UINT32_C(1) << (8 - mask_v_bits)) - 1;
+					denominator = -denominator;
+					numerator_u = -numerator_u;
+					numerator_v = -numerator_v;
 				}
-				if (u > width) u = width;
-				if (v > height) v = height;
+				/* Preserve the fractional perspective result for Filter=0.  The
+				 * raw sampler applies descriptor masks and endpoint clamps to each
+				 * of the four neighbours independently. */
+				if (numerator_u > 0)
+				{
+					uint64_t value = ((uint64_t)numerator_u << 16) /
+						(uint64_t)denominator;
+					u_fixed = value > UINT32_MAX ? UINT32_MAX : (uint32_t)value;
+				}
+				if (numerator_v > 0)
+				{
+					uint64_t value = ((uint64_t)numerator_v << 16) /
+						(uint64_t)denominator;
+					v_fixed = value > UINT32_MAX ? UINT32_MAX : (uint32_t)value;
+				}
 				color = machine->screen_data[py * 0x800 + px];
-				if (triangle_texture_color(machine, descdata_address,
-					descsize, d2, d3, u, v, &color))
+				if (triangle_texture_color(&texture_sampler, u_fixed, v_fixed,
+					&color))
 				{
 					machine->screen_data[py * 0x800 + px] = color;
 					machine->gpu_pixel_write_count++;
@@ -1301,7 +1781,7 @@ static void render_triangle_gpu(xavix2_machine_t *machine, uint16_t count,
 static void render_gpu_depth_range(xavix2_machine_t *machine, uint16_t count,
 	uint16_t address, uint8_t minimum_depth, uint8_t maximum_depth)
 {
-	uint32_t *order;
+	gpu_order_t *order;
 	uint16_t descsize_address = load16(machine->mmio + 0x608);
 	uint16_t descdata_address = load16(machine->mmio + 0x622);
 	uint32_t list_index;
@@ -1309,23 +1789,43 @@ static void render_gpu_depth_range(xavix2_machine_t *machine, uint16_t count,
 
 	if (!count)
 		return;
-	order = (uint32_t *)malloc((size_t)count * sizeof(*order));
+	order = (gpu_order_t *)malloc((size_t)count * sizeof(*order));
 	if (!order)
 		return;
 	for (list_index = 0; list_index < count; ++list_index)
 	{
 		uint64_t command = machine_read64(machine, (uint32_t)address + 8 * list_index);
 		uint32_t depth = (uint32_t)((command >> 21) & 0xff);
+		uint32_t descriptor_index;
+		uint32_t descriptor;
+		uint32_t width;
+		uint32_t height;
 		if (depth < minimum_depth || depth > maximum_depth)
 			continue;
-		order[selected_count++] =
-			(uint32_t)(command & UINT64_C(0x1fe00000)) | list_index;
+		descriptor_index = (uint32_t)((command >> 30) & 0x3f);
+		descriptor = (uint32_t)machine_read8(machine,
+			descsize_address + 4 * descriptor_index) |
+			((uint32_t)machine_read8(machine,
+				descsize_address + 4 * descriptor_index + 1) << 8) |
+			((uint32_t)machine_read8(machine,
+				descsize_address + 4 * descriptor_index + 2) << 16) |
+			((uint32_t)machine_read8(machine,
+				descsize_address + 4 * descriptor_index + 3) << 24);
+		width = (uint32_t)(((uint64_t)(1 + (descriptor & 0xff)) *
+			((command >> 36) & 0x3f)) >> 4);
+		height = (uint32_t)(((uint64_t)(1 + ((descriptor >> 8) & 0xff)) *
+			((command >> 42) & 0x3f)) >> 4);
+		order[selected_count].priority =
+			(uint32_t)(command & UINT64_C(0x1fe00000));
+		order[selected_count].area = width * height;
+		order[selected_count].index = list_index;
+		selected_count++;
 	}
 	qsort(order, selected_count, sizeof(*order), compare_gpu_order);
 
 	for (list_index = 0; list_index < selected_count; ++list_index)
 	{
-		uint32_t command_index = order[list_index] & UINT32_C(0xffff);
+		uint32_t command_index = order[list_index].index;
 		uint64_t command = machine_read64(machine, (uint32_t)address + 8 * command_index);
 		uint32_t depth = (uint32_t)((command >> 21) & 0xff);
 		if (depth < minimum_depth || depth > maximum_depth)
@@ -1442,10 +1942,18 @@ static void gpu_trigger(xavix2_machine_t *machine, uint32_t offset)
 		 * polygon depth zero, and depths 00..0A for their foreground/HUD.
 		 * Reproduce that observed split while the general per-scanline merger
 		 * remains future work.  The later E414 trigger draws the foreground. */
-		if (!machine->gpu_sprite_background_prepared)
+		/* During the startup logo the E408 submission precedes creation of the
+		 * current sprite list.  Do not mark an empty/stale background as drawn;
+		 * E414 must still be allowed to render its newly submitted depth-FF logo
+		 * sprites. */
+		if (sprite_count && !machine->gpu_sprite_background_prepared)
+		{
 			render_gpu_depth_range(machine, sprite_count, sprite_address,
 				0xff, 0xff);
-		machine->gpu_sprite_background_prepared = 1;
+			machine->gpu_sprite_background_prepared = 1;
+		}
+		else if (!sprite_count)
+			machine->gpu_sprite_background_prepared = 0;
 		render_triangle_gpu(machine, count, address);
 	}
 	else
@@ -1938,5 +2446,8 @@ int xavix2_machine_state_load(xavix2_machine_t *machine,
 	machine->cpu.interrupt_ack_opaque = interrupt_ack_opaque;
 	machine->cpu.trace = trace;
 	machine->cpu.trace_opaque = trace_opaque;
+	/* The background preparation flag is an in-flight compositor cache rather
+	 * than durable guest state. */
+	machine->gpu_sprite_background_prepared = 0;
 	return 1;
 }

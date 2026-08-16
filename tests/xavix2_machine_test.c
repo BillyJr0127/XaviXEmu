@@ -89,11 +89,6 @@ static uint32_t geometry_q16_16(int numerator, int denominator)
 	return (uint32_t)(((int64_t)numerator << 16) / denominator);
 }
 
-static uint32_t geometry_q8_24(int numerator, int denominator)
-{
-	return (uint32_t)(((int64_t)numerator << 24) / denominator);
-}
-
 static uint32_t packed_geometry_vertex(int x, int y, int z)
 {
 	return ((uint32_t)x & 0x3ff) | (((uint32_t)y & 0x3ff) << 10) |
@@ -186,9 +181,8 @@ int main(void)
 		}
 	}
 
-	/* Command 10 uses a Q8.24 left basis with a Q16.16 right affine matrix;
-	 * the composed matrix remains Q16.16. Translation comes from the left
-	 * matrix plus its basis applied to the right one. */
+	/* Command 10 composes two Q16.16 affine matrices. Translation comes from
+	 * the left matrix plus its basis applied to the right one. */
 	{
 		static const int left[12] = {
 			-1, 0, 0, 3,
@@ -209,8 +203,7 @@ int main(void)
 		for (element = 0; element < 12; ++element)
 		{
 			store32(machine->mmio + 0x800 + element * 4,
-				element % 4 == 3 ? geometry_q16_16(left[element], 1) :
-				geometry_q8_24(left[element], 1));
+				geometry_q16_16(left[element], 1));
 			store32(machine->low_ram + 0x1100 + element * 4,
 				geometry_q16_16(right[element], 1));
 		}
@@ -250,27 +243,125 @@ int main(void)
 			UINT32_C(0xffffe858), 0x0c);
 		CHECK((int32_t)load32(machine->low_ram + 0x1190) ==
 			(int32_t)UINT32_C(0x01f18000));
+		/* Command 0D projects an indexed point in place and fills the depth
+		 * field consumed by DB2J's large tiled-sprite path. */
+		store32(machine->low_ram + 0x1240, 3);
+		store32(machine->low_ram + 0x1244, 0);
+		store32(machine->low_ram + 0x1248, 4);
+		store32(machine->low_ram + 0x124c, 3);
+		store32(machine->low_ram + 0x1250, 0);
+		store32(machine->low_ram + 0x1254, 4);
+		store32(machine->low_ram + 0x1258, 3);
+		store32(machine->low_ram + 0x125c, 0);
+		store32(machine->low_ram + 0x1260, 4);
+		store32(machine->low_ram + 0x1280, UINT32_C(0x00000000));
+		store32(machine->low_ram + 0x1284, UINT32_C(0x00020001));
+		store32(machine->low_ram + 0x1288, UINT32_C(0x00507c00));
+		store32(machine->low_ram + 0x128c, UINT32_C(0x20000040));
+		store16(machine->mmio + 0x840, 0x00e8);
+		store16(machine->mmio + 0x848, 0x0800);
+		store16(machine->mmio + 0x84a, 0x0400);
+		store16(machine->mmio + 0x85a, 0);
+		store16(machine->mmio + 0x860, 0x1240);
+		store16(machine->mmio + 0x864, 0x1280);
+		machine->cpu.write8(machine->cpu.opaque,
+			UINT32_C(0xffffe858), 0x0d);
+		CHECK(load32(machine->low_ram + 0x1244) ==
+			UINT32_C(0x195c0c00));
+		CHECK(load32(machine->low_ram + 0x128c) ==
+			UINT32_C(0x22000040));
+	}
+
+	/* Command 01 returns Q16.16 points for DB2J's large-object distance query. */
+	{
+		unsigned point;
+		memset(machine->mmio + 0x800, 0, 0x30);
+		store32(machine->mmio + 0x80c, 3);
+		store32(machine->mmio + 0x82c, 4);
+		for (point = 0; point < 3; ++point)
+			store32(machine->low_ram + 0x11d0 + point * 4, 0);
+		store16(machine->mmio + 0x860, 0x11d0);
+		store16(machine->mmio + 0x862, 0x11f0);
+		store16(machine->mmio + 0x85a, 2);
+		machine->cpu.write8(machine->cpu.opaque,
+			UINT32_C(0xffffe858), 0x01);
+		for (point = 0; point < 3; ++point)
+		{
+			CHECK(load32(machine->low_ram + 0x11f0 + point * 12) ==
+				UINT32_C(0x00030000));
+			CHECK(load32(machine->low_ram + 0x11f4 + point * 12) == 0);
+			CHECK(load32(machine->low_ram + 0x11f8 + point * 12) ==
+				UINT32_C(0x00040000));
+		}
+	}
+
+	/* Command 07 establishes the rotated light vector. */
+	{
+		/* Command 07 uses the same matrix to rotate signed XYZ16 light
+		 * vectors and keeps their six-byte layout. */
+		memset(machine->mmio + 0x800, 0, 0x24);
+		store32(machine->mmio + 0x804, UINT32_C(0x00000100));
+		store32(machine->mmio + 0x80c, UINT32_C(0x00000080));
+		store32(machine->mmio + 0x820, UINT32_C(0xffffff00));
+		store16(machine->low_ram + 0x11c0, 1000);
+		store16(machine->low_ram + 0x11c2, (uint16_t)-2000);
+		store16(machine->low_ram + 0x11c4, 3000);
+		store16(machine->low_ram + 0x11c6, UINT16_C(0x8000));
+		store16(machine->low_ram + 0x11c8, UINT16_C(0x7fff));
+		store16(machine->low_ram + 0x11ca, UINT16_C(0xffff));
+		store16(machine->mmio + 0x860, 0x11c0);
+		store16(machine->mmio + 0x862, 0x11d0);
+		store16(machine->mmio + 0x85a, 1);
+		machine->cpu.write8(machine->cpu.opaque,
+			UINT32_C(0xffffe858), 0x07);
+		CHECK((int16_t)load16(machine->low_ram + 0x11d0) == -2000);
+		CHECK((int16_t)load16(machine->low_ram + 0x11d2) == 500);
+		CHECK((int16_t)load16(machine->low_ram + 0x11d4) == -3000);
+		CHECK((int16_t)load16(machine->low_ram + 0x11d6) == 32767);
+		CHECK((int16_t)load16(machine->low_ram + 0x11d8) == -16384);
+		CHECK((int16_t)load16(machine->low_ram + 0x11da) == 1);
 	}
 
 	/* Command 0F uses the firmware's contiguous signed Q8.8 3x3 normal
-	 * matrix.  It expands packed signed XYZ10 normals to signed XYZ32 without
-	 * applying the translation dwords that command 0C consumes. */
+	 * matrix and emits three signed component bytes.  Its three-byte stride
+	 * must not overwrite the following material table. */
 	{
 		uint32_t packed = packed_geometry_vertex(256, -128, 64);
 		memset(machine->mmio + 0x800, 0, 0x24);
-		/* [ Y, 0.5X, -Z ], in signed Q8.8. */
+		/* [ Y, 0.25X, -Z ], in signed Q8.8. */
 		store32(machine->mmio + 0x804, UINT32_C(0x00000100));
-		store32(machine->mmio + 0x80c, UINT32_C(0x00000080));
+		store32(machine->mmio + 0x80c, UINT32_C(0x00000040));
 		store32(machine->mmio + 0x820, UINT32_C(0xffffff00));
 		store32(machine->low_ram + 0x11a0, packed);
 		store16(machine->mmio + 0x860, 0x11a0);
 		store16(machine->mmio + 0x862, 0x11b0);
 		store16(machine->mmio + 0x85a, 0);
+		store32(machine->low_ram + 0x11b3, UINT32_C(0xdeadbeef));
 		machine->cpu.write8(machine->cpu.opaque,
 			UINT32_C(0xffffe858), 0x0f);
-		CHECK((int32_t)load32(machine->low_ram + 0x11b0) == -128);
-		CHECK((int32_t)load32(machine->low_ram + 0x11b4) == 128);
-		CHECK((int32_t)load32(machine->low_ram + 0x11b8) == -64);
+		CHECK(machine->low_ram[0x11b0] == 0xe0);
+		CHECK(machine->low_ram[0x11b1] == 0x10);
+		CHECK(machine->low_ram[0x11b2] == 0xf0);
+		CHECK(load32(machine->low_ram + 0x11b3) == UINT32_C(0xdeadbeef));
+
+		/* DBZ's largest traced batch contains 131 normals.  The complete
+		 * three-byte result must remain below its material table 0x200 bytes
+		 * after the destination. */
+		memset(machine->mmio + 0x800, 0, 0x24);
+		store32(machine->mmio + 0x800, UINT32_C(0x00000100));
+		for (unsigned normal = 0; normal < 131; ++normal)
+			store32(machine->low_ram + 0x2000 + normal * 4,
+				packed_geometry_vertex(256, 0, 0));
+		store32(machine->low_ram + 0x3200, UINT32_C(0xdeadbeef));
+		store16(machine->mmio + 0x860, 0x2000);
+		store16(machine->mmio + 0x862, 0x3000);
+		store16(machine->mmio + 0x85a, 130);
+		machine->cpu.write8(machine->cpu.opaque,
+			UINT32_C(0xffffe858), 0x0f);
+		CHECK(machine->low_ram[0x3000 + 130 * 3] == 0x40);
+		CHECK(machine->low_ram[0x3000 + 130 * 3 + 1] == 0);
+		CHECK(machine->low_ram[0x3000 + 130 * 3 + 2] == 0);
+		CHECK(load32(machine->low_ram + 0x3200) == UINT32_C(0xdeadbeef));
 	}
 
 	/* Command 4D replaces indexed Q16.16 vertices with packed screen
@@ -281,6 +372,8 @@ int main(void)
 		uint8_t *polygons = machine->low_ram + 0x1300;
 		uint32_t expected0;
 		uint32_t expected1;
+		uint32_t expected_texture0;
+		uint32_t expected_texture1;
 		/* Command 4D consumes conventional X, Y, Z triples. */
 		store32(vertices + 0, projector_input(-64));
 		store32(vertices + 4, projector_input(-64));
@@ -309,6 +402,29 @@ int main(void)
 		store32(vertices + 72, projector_input(1952));
 		store32(vertices + 76, projector_input(176));
 		store32(vertices + 80, projector_input(256));
+		/* A textured triangle uses three different positive depths.  Its
+		 * projected points remain (960,448), (1088,448), (1024,576), while
+		 * command 4D must truncate Bw=64*300/500 and Cw=64*300/700. */
+		store32(vertices + 84, projector_input(-150));
+		store32(vertices + 88, projector_input(-150));
+		store32(vertices + 92, projector_input(300));
+		store32(vertices + 96, projector_input(250));
+		store32(vertices + 100, projector_input(-250));
+		store32(vertices + 104, projector_input(500));
+		store32(vertices + 108, projector_input(0));
+		store32(vertices + 112, projector_input(350));
+		store32(vertices + 116, projector_input(700));
+		/* A second textured triangle projects to the same points, but its
+		 * two ratios exceed the eight-bit field and must saturate at 255. */
+		store32(vertices + 120, projector_input(-512));
+		store32(vertices + 124, projector_input(-512));
+		store32(vertices + 128, projector_input(1024));
+		store32(vertices + 132, projector_input(64));
+		store32(vertices + 136, projector_input(-64));
+		store32(vertices + 140, projector_input(128));
+		store32(vertices + 144, projector_input(0));
+		store32(vertices + 148, projector_input(128));
+		store32(vertices + 152, projector_input(256));
 		/* Front: A=0,B=1,C=2. Back: A=0,B=2,C=1. */
 		store32(polygons + 0, UINT32_C(0x00000001));
 		store32(polygons + 4, UINT32_C(0x00020001));
@@ -328,23 +444,50 @@ int main(void)
 		store32(polygons + 52, UINT32_C(0x00060005));
 		store32(polygons + 56, UINT32_C(0x55aa55aa));
 		store32(polygons + 60, UINT32_C(0xaa55aa55));
+		/* Textured front face: A=7,B=8,C=9. */
+		store32(polygons + 64, UINT32_C(0x00070000));
+		store32(polygons + 68, UINT32_C(0x00090008));
+		store32(polygons + 72, UINT32_C(0x123456aa));
+		store32(polygons + 76, UINT32_C(0x9abc55ef));
+		/* Saturating textured front face: A=10,B=11,C=12. */
+		store32(polygons + 80, UINT32_C(0x000a0000));
+		store32(polygons + 84, UINT32_C(0x000c000b));
+		store32(polygons + 88, UINT32_C(0xdeadbe11));
+		store32(polygons + 92, UINT32_C(0xc0011234));
 		store16(machine->mmio + 0x840, 0x0080);
 		store16(machine->mmio + 0x846, 0x0050);
 		store16(machine->mmio + 0x848, 0x0800);
 		store16(machine->mmio + 0x84a, 0x0400);
-		store16(machine->mmio + 0x85a, 3);
+		store16(machine->mmio + 0x656, 0x0360);
+		store16(machine->mmio + 0x658, 0x0188);
+		store16(machine->mmio + 0x85a, 5);
 		store16(machine->mmio + 0x860, 0x1200);
 		store16(machine->mmio + 0x864, 0x1300);
 		machine->cpu.write8(machine->cpu.opaque,
 			UINT32_C(0xffffe858), 0x4d);
 		CHECK((machine->mmio[0x85c] |
-			((uint16_t)machine->mmio[0x85d] << 8)) == 1);
+			((uint16_t)machine->mmio[0x85d] << 8)) == 3);
 		expected0 = 1 | (480u << 1) | (992u << 11) | (480u << 22);
 		expected1 = 1056u | (544u << 11) | (1024u << 21);
 		CHECK(load32(polygons) == expected0);
 		CHECK(load32(polygons + 4) == expected1);
+		/* Type 1 Gouraud colors and the remaining attributes are untouched. */
 		CHECK(load32(polygons + 8) == UINT32_C(0x12345678));
 		CHECK(load32(polygons + 12) == UINT32_C(0x9abcdef0));
+		expected_texture0 = (448u << 1) | (960u << 11) | (448u << 22);
+		expected_texture1 = 1088u | (576u << 11) | (1024u << 21);
+		CHECK(load32(polygons + 16) == expected_texture0);
+		CHECK(load32(polygons + 20) == expected_texture1);
+		CHECK(load32(polygons + 24) == UINT32_C(0x12345626));
+		CHECK(load32(polygons + 28) ==
+			((UINT32_C(0x9abc55ef) & ~UINT32_C(0x00007f80)) |
+				UINT32_C(27) << 7));
+		CHECK(load32(polygons + 32) == expected_texture0);
+		CHECK(load32(polygons + 36) == expected_texture1);
+		CHECK(load32(polygons + 40) == UINT32_C(0xdeadbeff));
+		CHECK(load32(polygons + 44) ==
+			((UINT32_C(0xc0011234) & ~UINT32_C(0x00007f80)) |
+				UINT32_C(0xff) << 7));
 	}
 
 	/* Different XaviX 2 firmware revisions place the IRQ-10 producer packet
@@ -531,6 +674,26 @@ int main(void)
 	CHECK(xavix2_cpu_execute(&machine->cpu, 4) == 4);
 	CHECK(machine->screen_data[1 * 0x800 + 1] == UINT32_C(0xff7f007f));
 
+	/* Triangle raster work is clipped to the guest-selected presentation
+	 * window.  The internal target remains 2048x1024, but pixels outside the
+	 * active 320x240 crop must neither be visited nor modified. */
+	store_triangle_record(machine->low_ram + 0x0600, 1,
+		0, 0, 8, 0, 0, 8,
+		UINT32_C(0x001f001f), UINT32_C(0x0000801f));
+	store16(machine->mmio + 0x410, 0);
+	store16(machine->mmio + 0x656, 2);
+	store16(machine->mmio + 0x658, 2);
+	machine->screen_data[1 * 0x800 + 1] = UINT32_C(0xff00ff00);
+	machine->screen_data[2 * 0x800 + 2] = UINT32_C(0xff0000ff);
+	machine->cpu.r[0] = 0;
+	machine->cpu.r[1] = UINT32_C(0xffffe408);
+	machine->cpu.pc = 4;
+	CHECK(xavix2_cpu_execute(&machine->cpu, 4) == 4);
+	CHECK(machine->screen_data[1 * 0x800 + 1] == UINT32_C(0xff00ff00));
+	CHECK(machine->screen_data[2 * 0x800 + 2] == UINT32_C(0xffff0000));
+	store16(machine->mmio + 0x656, 0);
+	store16(machine->mmio + 0x658, 0);
+
 	/* An opaque black texel must overwrite the framebuffer, including index
 	 * zero when its selected palette entry is not the transparent key. */
 	store16(machine->mmio + 0x608, 0x0200);
@@ -566,6 +729,89 @@ int main(void)
 	CHECK(machine->screen_data[1 * 0x800 + 1] == UINT32_C(0xffffffff));
 	machine->low_ram[0] = 1;
 
+	/* Type-0 flag bit 3 is packed into d3 bit 27.  Filter=0 bilinearly
+	 * combines the four surrounding texels; Filter=1 preserves the existing
+	 * nearest-neighbour sample.  A 9x9 screen triangle maps pixel (1,1) to the
+	 * exact centre of this four-color 8-bpp checker. */
+	store32(machine->low_ram + 0x0200, UINT32_C(0x07000303));
+	store16(machine->low_ram + 0x0300, 1);
+	memset(machine->low_ram + 0x4000, 0, 16);
+	machine->low_ram[0x4000] = 0;
+	machine->low_ram[0x4001] = 1;
+	machine->low_ram[0x4004] = 2;
+	machine->low_ram[0x4005] = 3;
+	store16(machine->palette_ram, UINT16_C(0x001f));
+	store16(machine->palette_ram + 4, UINT16_C(0x03e0));
+	store16(machine->palette_ram + 8, UINT16_C(0x7c00));
+	store16(machine->palette_ram + 12, UINT16_C(0x7fff));
+	store_triangle_record(machine->low_ram + 0x0600, 0,
+		0, 0, 9, 0, 0, 9, UINT32_C(0x00000040),
+		UINT32_C(0x00002000));
+	machine->screen_data[1 * 0x800 + 1] = 0;
+	machine->cpu.r[0] = 0;
+	machine->cpu.r[1] = UINT32_C(0xffffe408);
+	machine->cpu.pc = 4;
+	CHECK(xavix2_cpu_execute(&machine->cpu, 4) == 4);
+	CHECK(machine->screen_data[1 * 0x800 + 1] == UINT32_C(0xff7f7f7f));
+	store_triangle_record(machine->low_ram + 0x0600, 0,
+		0, 0, 9, 0, 0, 9, UINT32_C(0x00000040),
+		UINT32_C(0x08002000));
+	machine->screen_data[1 * 0x800 + 1] = 0;
+	machine->cpu.r[0] = 0;
+	machine->cpu.r[1] = UINT32_C(0xffffe408);
+	machine->cpu.pc = 4;
+	CHECK(xavix2_cpu_execute(&machine->cpu, 4) == 4);
+	CHECK(machine->screen_data[1 * 0x800 + 1] == UINT32_C(0xffff0000));
+
+	/* Transparent-key neighbours contribute zero premultiplied color and
+	 * alpha.  One quarter opaque red over blue therefore retains three
+	 * quarters of the destination instead of producing a dark halo. */
+	store16(machine->palette_ram + 4, UINT16_C(0x8421));
+	store16(machine->palette_ram + 8, UINT16_C(0x8421));
+	store16(machine->palette_ram + 12, UINT16_C(0x8421));
+	store_triangle_record(machine->low_ram + 0x0600, 0,
+		0, 0, 9, 0, 0, 9, UINT32_C(0x00000040),
+		UINT32_C(0x00002000));
+	machine->screen_data[1 * 0x800 + 1] = UINT32_C(0xff0000ff);
+	machine->cpu.r[0] = 0;
+	machine->cpu.r[1] = UINT32_C(0xffffe408);
+	machine->cpu.pc = 4;
+	CHECK(xavix2_cpu_execute(&machine->cpu, 4) == 4);
+	CHECK(machine->screen_data[1 * 0x800 + 1] == UINT32_C(0xff3f00bf));
+
+	/* Four-tap sampling reuses the exact storage sampler at the lower folded
+	 * edge.  The two Map layouts select different top neighbours while the
+	 * V=height neighbours are clamped and folded by the same address rules. */
+	store16(machine->palette_ram + 4, UINT16_C(0x03e0));
+	store16(machine->palette_ram + 8, UINT16_C(0x7c00));
+	store16(machine->palette_ram + 12, UINT16_C(0x7fff));
+	store32(machine->low_ram + 0x0200, UINT32_C(0x07000603));
+	memset(machine->low_ram + 0x4000, 0, 16);
+	machine->low_ram[0x4007] = 0;
+	machine->low_ram[0x4006] = 1;
+	machine->low_ram[0x4003] = 2;
+	machine->low_ram[0x4002] = 3;
+	machine->low_ram[0x400f] = 3;
+	machine->low_ram[0x400e] = 2;
+	store_triangle_record(machine->low_ram + 0x0600, 0,
+		0, 0, 6, 0, 0, 6, UINT32_C(0x00000040),
+		UINT32_C(0x00002000));
+	machine->screen_data[5 * 0x800] = 0;
+	machine->cpu.r[0] = 0;
+	machine->cpu.r[1] = UINT32_C(0xffffe408);
+	machine->cpu.pc = 4;
+	CHECK(xavix2_cpu_execute(&machine->cpu, 4) == 4);
+	CHECK(machine->screen_data[5 * 0x800] == UINT32_C(0xff7f3f7f));
+	store_triangle_record(machine->low_ram + 0x0600, 0,
+		0, 0, 6, 0, 0, 6, UINT32_C(0x00000040),
+		UINT32_C(0x00002040));
+	machine->screen_data[5 * 0x800] = 0;
+	machine->cpu.r[0] = 0;
+	machine->cpu.r[1] = UINT32_C(0xffffe408);
+	machine->cpu.pc = 4;
+	CHECK(xavix2_cpu_execute(&machine->cpu, 4) == 4);
+	CHECK(machine->screen_data[5 * 0x800] == UINT32_C(0xff7f7fff));
+
 	/* The RPU merges the independently submitted streams by depth.  A
 	 * distant depth-FF sky sprite is drawn before a zero-depth polygon, while
 	 * a depth-09 HUD sprite remains in front. */
@@ -599,6 +845,46 @@ int main(void)
 	CHECK(xavix2_cpu_execute(&machine->cpu, 4) == 4);
 	CHECK(machine->screen_data[0] == UINT32_C(0xff00ff00));
 
+	/* Same-depth backing surfaces are drawn before smaller overlays regardless
+	 * of their list order.  DBZ puts its logo before a later full-screen
+	 * backing, whereas DB2J puts its full-screen Shenron backing before later
+	 * dialogue-panel tiles. */
+	store32(machine->low_ram + 0x0204, UINT32_C(0x08000101));
+	store16(machine->palette_ram + 4, UINT16_C(0x001f));
+	store16(machine->palette_ram + 12, UINT16_C(0x7c00));
+	store64(machine->low_ram + 0x0700,
+		gpu_command(0x10, 0x10) | (UINT64_C(0xff) << 21));
+	store64(machine->low_ram + 0x0708,
+		gpu_command(0x10, 0x10) | (UINT64_C(0xff) << 21) |
+		(UINT64_C(1) << 30));
+	machine->gpu_sprite_background_prepared = 0;
+	memset(machine->screen_data, 0, sizeof(machine->screen_data));
+	machine->cpu.r[0] = 0;
+	machine->cpu.r[1] = UINT32_C(0xffffe414);
+	machine->cpu.pc = 4;
+	CHECK(xavix2_cpu_execute(&machine->cpu, 4) == 4);
+	CHECK(machine->screen_data[0] == UINT32_C(0xffff0000));
+	/* Reverse the two commands and use a green small overlay: the large blue
+	 * backing must still be painted first, leaving the panel tile visible. */
+	store16(machine->palette_ram + 4, UINT16_C(0x03e0));
+	store64(machine->low_ram + 0x0700,
+		gpu_command(0x10, 0x10) | (UINT64_C(0xff) << 21) |
+		(UINT64_C(1) << 30));
+	store64(machine->low_ram + 0x0708,
+		gpu_command(0x10, 0x10) | (UINT64_C(0xff) << 21));
+	machine->gpu_sprite_background_prepared = 0;
+	memset(machine->screen_data, 0, sizeof(machine->screen_data));
+	machine->cpu.r[0] = 0;
+	machine->cpu.r[1] = UINT32_C(0xffffe414);
+	machine->cpu.pc = 4;
+	CHECK(xavix2_cpu_execute(&machine->cpu, 4) == 4);
+	CHECK(machine->screen_data[0] == UINT32_C(0xff00ff00));
+	store16(machine->palette_ram + 4, UINT16_C(0x7c00));
+	store64(machine->low_ram + 0x0700,
+		gpu_command(0x10, 0x10) | (UINT64_C(0xff) << 21));
+	store64(machine->low_ram + 0x0708,
+		gpu_command(0x10, 0x10) | (UINT64_C(0x09) << 21));
+
 	/* A sprite-only frame has no E408 opportunity to prepaint depth FF.
 	 * E414 must supply that band once, while repeated submissions in the same
 	 * frame must not paint it again. */
@@ -621,9 +907,47 @@ int main(void)
 		CHECK(xavix2_cpu_execute(&machine->cpu, 4) == 4);
 		CHECK(machine->gpu_pixel_write_count == pixel_writes + 1);
 	}
+	/* Startup can trigger E408 while the new sprite list is still empty.  That
+	 * must not suppress the depth-FF logo submitted moments later by E414. */
+	store16(machine->mmio + 0x404, 0);
+	store16(machine->mmio + 0x410, 0);
+	machine->gpu_sprite_background_prepared = 0;
+	memset(machine->screen_data, 0, sizeof(machine->screen_data));
+	machine->cpu.r[0] = 0;
+	machine->cpu.r[1] = UINT32_C(0xffffe408);
+	machine->cpu.pc = 4;
+	CHECK(xavix2_cpu_execute(&machine->cpu, 4) == 4);
+	CHECK(!machine->gpu_sprite_background_prepared);
+	store16(machine->mmio + 0x410, 1);
+	machine->cpu.r[0] = 0;
+	machine->cpu.r[1] = UINT32_C(0xffffe414);
+	machine->cpu.pc = 4;
+	CHECK(xavix2_cpu_execute(&machine->cpu, 4) == 4);
+	CHECK(machine->screen_data[0] == UINT32_C(0xff0000ff));
+	CHECK(machine->gpu_sprite_background_prepared);
+	/* Startup submits another empty E408/list pair in the same video frame;
+	 * that opens a new opportunity for its second depth-FF logo buffer. */
+	store16(machine->mmio + 0x410, 0);
+	machine->cpu.r[0] = 0;
+	machine->cpu.r[1] = UINT32_C(0xffffe408);
+	machine->cpu.pc = 4;
+	CHECK(xavix2_cpu_execute(&machine->cpu, 4) == 4);
+	CHECK(!machine->gpu_sprite_background_prepared);
+	store64(machine->low_ram + 0x0710,
+		gpu_command(0x10, 0x10) | (UINT64_C(0xff) << 21));
+	store16(machine->mmio + 0x40c, 0x0710);
+	store16(machine->mmio + 0x410, 1);
+	store16(machine->palette_ram + 4, UINT16_C(0x03e0));
+	machine->cpu.r[0] = 0;
+	machine->cpu.r[1] = UINT32_C(0xffffe414);
+	machine->cpu.pc = 4;
+	CHECK(xavix2_cpu_execute(&machine->cpu, 4) == 4);
+	CHECK(machine->screen_data[0] == UINT32_C(0xff00ff00));
+	store16(machine->mmio + 0x40c, 0x0700);
 	/* Repeated GPU0 submissions likewise must not put the distant band back
 	 * over triangles already produced earlier in the frame. */
 	store16(machine->mmio + 0x404, 0);
+	store16(machine->palette_ram + 4, UINT16_C(0x7c00));
 	machine->gpu_sprite_background_prepared = 0;
 	memset(machine->screen_data, 0, sizeof(machine->screen_data));
 	{

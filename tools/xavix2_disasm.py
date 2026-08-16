@@ -119,6 +119,8 @@ def disassemble(data: bytes, offset: int, base: int) -> tuple[int, str, str]:
                 else f"(sp{off}).{kind} = {r1}")
     elif 0x80 <= op <= 0x81:
         text = f"{r1} = {r2} + {r3}"
+    elif 0x82 <= op <= 0x83:
+        text = f"{r1} = {r2} + {r3} + C"
     elif 0x84 <= op <= 0x85:
         text = f"{r1} = {r2} - {r3}"
     elif op == 0x88:

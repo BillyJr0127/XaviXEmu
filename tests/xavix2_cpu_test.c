@@ -111,6 +111,30 @@ int main(void)
 	CHECK(xavix2_cpu_execute(&cpu, 4) == 4);
 	CHECK(cpu.r[1] == UINT32_C(0xfffff380));
 
+	/* Dragon Ball uses 82/83 to propagate the carry from the low half of
+	 * 64-bit object coordinates into the high half.  83 21 is the observed
+	 * r4 = r4 + r1 + carry form. */
+	memset(&bus, 0, sizeof(bus));
+	bus.rom[0] = 0x83;
+	bus.rom[1] = 0x21;
+	xavix2_cpu_init(&cpu, test_read, test_write, &bus);
+	cpu.r[4] = UINT32_MAX;
+	cpu.r[1] = 0;
+	cpu.hr[4] = 4;
+	CHECK(xavix2_cpu_execute(&cpu, 2) == 2);
+	CHECK(cpu.r[4] == 0);
+	CHECK((cpu.hr[4] & 15) == (1 | 4));
+	CHECK(cpu.unimplemented_count == 0);
+
+	cpu.pc = UINT32_C(0x40000000);
+	cpu.r[4] = INT32_MAX;
+	cpu.r[1] = 0;
+	cpu.hr[4] = 4;
+	CHECK(xavix2_cpu_execute(&cpu, 2) == 2);
+	CHECK(cpu.r[4] == UINT32_C(0x80000000));
+	CHECK((cpu.hr[4] & 15) == (2 | 8));
+	CHECK(cpu.unimplemented_count == 0);
+
 	/* Moving a hardware arithmetic result to a general register updates N/Z.
 	 * Naruto's angle normalizer relies on C9 43 setting N from HR3 before a
 	 * branch; retaining the flags from an older compare adds a false half-turn. */

@@ -94,6 +94,21 @@ static uint32_t do_add(xavix2_cpu_t *cpu, uint32_t v1, uint32_t v2)
 	return r;
 }
 
+static uint32_t do_adc(xavix2_cpu_t *cpu, uint32_t v1, uint32_t v2)
+{
+	uint32_t carry = (cpu->hr[4] & F_C) ? 1U : 0U;
+	uint64_t sum = (uint64_t)v1 + v2 + carry;
+	int64_t signed_sum = (int64_t)(int32_t)v1 + (int32_t)v2 + carry;
+	uint32_t r = (uint32_t)sum;
+	uint32_t f = 0;
+	if (!r) f |= F_Z;
+	if (r & UINT32_C(0x80000000)) f |= F_N;
+	if (sum > UINT32_MAX) f |= F_C;
+	if (signed_sum > INT32_MAX || signed_sum < INT32_MIN) f |= F_V;
+	cpu->hr[4] = (cpu->hr[4] & ~F_MASK) | f;
+	return r;
+}
+
 static uint32_t do_sub(xavix2_cpu_t *cpu, uint32_t v1, uint32_t v2)
 {
 	uint32_t r = v1 - v2;
@@ -385,7 +400,7 @@ uint32_t xavix2_cpu_execute(xavix2_cpu_t *cpu, uint32_t cycle_budget)
 		case 0x7e: case 0x7f: write32(cpu, cpu->r[6] + val6s(opcode), cpu->r[r1(opcode)]); break;
 
 		case 0x80: case 0x81: cpu->r[r1(opcode)] = do_add(cpu, cpu->r[r2(opcode)], cpu->r[r3(opcode)]); break;
-		case 0x82: case 0x83: record_unimplemented(cpu, instruction_pc, first); break;
+		case 0x82: case 0x83: cpu->r[r1(opcode)] = do_adc(cpu, cpu->r[r2(opcode)], cpu->r[r3(opcode)]); break;
 		case 0x84: case 0x85: cpu->r[r1(opcode)] = do_sub(cpu, cpu->r[r2(opcode)], cpu->r[r3(opcode)]); break;
 		case 0x86: case 0x87: record_unimplemented(cpu, instruction_pc, first); break;
 		case 0x88: npc = cpu->r[r2(opcode)]; break;

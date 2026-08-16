@@ -549,9 +549,10 @@ on the user's machine before any clock change is considered.
 - Validation: the same 11,000-frame battle replay now retains the existing
   character/HUD layers and fills the formerly black lower half with the ROM's
   green/stone terrain and projected shadow. ROM-independent tests cover the
-  channel-ready bits and a traced projector fixture. Texture filtering remains
-  nearest-neighbour; the observed ground requests filtering, so bilinear
-  sampling and the other polygon modes remain follow-up accuracy work.
+  channel-ready bits and a traced projector fixture. Type-0 Filter bit 27 is
+  now honored: zero performs the documented four-tap bilinear interpolation,
+  while one retains nearest sampling. Map-0/Map-1 folding, transparent texels,
+  and premultiplied half-alpha are covered by synthetic fixtures.
 
 ## Indexed-palette alpha on the Blue Dragon result screen (2026-08-15)
 
@@ -600,8 +601,8 @@ on the user's machine before any clock change is considered.
 - DBZ samples PIO bit 23 as a receiver-present input during boot; neighbouring
   bits are firmware outputs, so the level is configured only for DBZ rather
   than injected as a generic button. A stable pair `$20,$19,$28` and
-  `$24,$1d,$28` completes calibration, highlights `決定`, and reaches the real
-  battle state without a PC, RAM, or ROM bypass.
+  `$24,$1d,$28` completes calibration, highlights `決定`, and reaches a random
+  demo battle without a PC, RAM, or ROM bypass.
 - In that battle state, keeping the first reflector visible, hiding the second
   for eight frames, then restoring it sets the firmware's `$155c` event and
   reaches the attack/projectile-spawn consumer at `$400264bc/$400265ea`.
@@ -614,6 +615,25 @@ on the user's machine before any clock change is considered.
   player-character model, so the absent on-screen Goku body is not by itself
   evidence of a missing layer. Enemy and later-effect states remain to be
   exercised.
+
+### DBZ store-demo identity
+
+- The exact `ban_dbz` image with CRC32 `$7e535ea2` and SHA-1
+  `6c746af763273bd9e47929c3ba857c7af563bf79` visibly labels its title screen
+  `体験版`. Selecting `決定` enters a random battle directly rather than the
+  retail story flow. The image is therefore documented as a store-demo build;
+  the generic product name used by the preliminary MAME entry is not evidence
+  that this particular dump is the retail program.
+- Firmware contains only one absolute PIO read, at `$400192ed`; it masks only
+  receiver-present bit 23. Neighbouring PIO bits are outputs, and no second
+  DIP/mode input is sampled. Independent cold boots with the complete serial
+  EEPROM filled with `$00`, `$55`, `$aa`, and `$ff` are frame-, CPU-, and RAM-
+  identical through the title. No hardware or EEPROM switch that unlocks a
+  retail route has been found.
+- The demo still contains multiple battle environments and character assets,
+  which explains why much retail-looking data is present. That does not
+  establish that the omitted story state machine is reachable from this ROM;
+  XaviXEmu does not patch a retail mode into the guest.
 
 ## Dragon Ball geometry command chain (2026-08-12)
 
@@ -636,12 +656,95 @@ on the user's machine before any clock change is considered.
   GPU0 terrain, then depth-`$00-$fe` HUD/foreground sprites. The compatibility
   renderer follows that evidenced split while retaining sprite-only title
   behavior; a complete scanline/depth merger remains future work.
-- Command `$0f` now expands the traced packed normal data. Commands `$0b` and
-  `$0e` remain unimplemented; firmware routes polygon lighting/material state
-  through them before `$4d`. Without a hardware output fixture, their exact
-  fixed-point normalization and light calculations are not guessed. Current
-  geometry is therefore a rendering milestone, not a claim of correct battle
-  terrain, model lighting, or complete later effects.
+- Command `$0f` rotates packed signed XYZ10 normals through the firmware-loaded
+  Q8.8 matrix and stores provisional signed XYZ8 results. The allocation is
+  constrained directly by DBZ: as many as 131 results start at `$b540`, while
+  the live material-remap table starts only `$200` bytes later at `$b740`.
+  Four-byte and twelve-byte expansions overwrite that table; the resulting
+  garbage attributes `$28/$2b/$34/$3e/$3f` select unrelated textures. Three
+  component bytes fit the allocation, preserve the transformed vector, and
+  restore final terrain attributes to the firmware-created `$00/$01` set at
+  both the canyon path and the maintainer's Namek F7 checkpoint.
+- Command `$07` transforms two signed XYZ16 vectors through the firmware-loaded
+  Q8.8 3x3 matrix. DBZ immediately copies the first six-byte result, in reversed
+  component order, to the `$e850/$e852/$e854` light registers. The maintainer's
+  Namek checkpoint now changes those registers from the former all-zero result
+  to the traced `(-7789, 8251, -20914)` directional-light vector.
+- Command `$4d` now replaces Type-0 `Bw/Cw` with the documented perspective
+  ratios `64*Az/Bz` and `64*Az/Cz`, clamped to their eight-bit fields, while
+  preserving the guest's texture, light, and layer attributes. At the Namek F7
+  checkpoint this changes only terrain texture sampling: polygon coordinates,
+  Type-1 records, list counts, and HUD/sprite layers remain bit-exact. The
+  updated weights follow the moving projected mesh without a title or material
+  special case.
+- Firmware routes Type-1 normal/light processing through command `$0b`, but the
+  exact signed dot-product clamp is not established by a hardware output
+  fixture. Opposite plausible signs each fixed one black face while creating
+  other black wedges. The emulator therefore leaves `$0b` unimplemented and
+  preserves the firmware-created RGB555 colors instead of committing a visual
+  heuristic.
+- Command `$0e` also remains unimplemented. Its Type-0 face normal is packed as
+  signed X11/Y11/Z10 (for example `$00201000` decodes to `(0,-1022,0)`), and its
+  only polygon destination field is Light at `d2[14:10]`. The traced matrix and
+  light vector narrow the output to adjacent five-bit candidates, but hardware
+  rounding and the RPU's Light-to-RGB transfer are still missing. Broad textured
+  surfaces consequently remain too flat/bright. This is a rendering milestone,
+  not a claim of exact battle terrain, model lighting, or complete effects.
+- The software rasterizer previously walked every triangle's bounding box on
+  the complete 2048x1024 internal surface even though the guest exposes only
+  a 320x240 gameplay window (or 640x480 during mode `$08` startup). The host
+  framebuffer is not guest-readable, so clipping this presentation loop to
+  `$e656/$e658` is behavior-preserving. At the DB2J battle checkpoint a
+  300-frame Release probe changes from 61.6 to 123.1 FPS while retaining frame
+  hash `$749008A6288782A7` exactly.
+- A bounded `$0e` trace confirms a Q8.8-like 3x3 normal/light matrix, packed
+  normal source, and in-place Type-0 polygon destination, but it does not
+  establish the hardware's signed dot-product clamp or five-bit brightness
+  rounding. Guessed Lambert conversions produced screen-sized black terrain
+  faces and were rejected; `$0e` remains explicit accuracy work rather than a
+  visually convenient game-specific correction.
+
+### DB2J large enemy projection
+
+- The DB2J battle also uses geometry command `$0d` for a separate large-object
+  path. Command `$0c` supplies indexed integer XYZ anchors; `$0d` writes their
+  doubled projected coordinates back to the anchor records and fills the
+  polygon depth used by firmware to choose the tiled-sprite scale.
+- A preceding command `$01` is not the same transform as `$0c`: it returns
+  Q16.16 points for the firmware's distance calculation. The traced `(3,0,4)`
+  translation therefore has length `$50000`, not `5` or `$500`; the latter
+  interpretations clamp both six-bit sprite scales to `$3f` and enlarge the
+  enemy until only parts of its body remain visible.
+- The doubled coordinate contains one retained wrap page above each packed GPU
+  axis (11-bit X and 10-bit Y). Firmware averages the unwrapped coordinates for
+  culling, then masks them when it builds the sprite list. Dropping those page
+  bits made hit detection continue while the enemy's 8-by-5 tile object was
+  rejected off-screen.
+- At the maintainer battle checkpoint the corrected hardware path grows GPU1
+  from 23 to roughly 50 records. Captures through 1,200 video frames show the
+  normally scaled enemy changing distance and pose, attacking, and receiving
+  aligned hit flashes. This is guest animation rather than a host-injected
+  sprite. Textured polygon materials remain limited by the unrelated `$0e`
+  work above.
+
+### Equal-depth sprite geometry and DBZ title recovery
+
+- DBZ's startup frame submits a full-screen backing sprite after its smaller
+  XaviX mark at the same depth, so plain list order hides the mark. A blanket
+  reverse order is also wrong: DB2J submits its two 160x240 Shenron backing
+  halves before a later 8x3 grid of 32x32 dialogue-panel tiles, and reversal
+  hides the panel. The current scanline-sort baseline therefore paints larger
+  covered areas before smaller same-depth overlays, retaining list order for
+  equal-sized objects. The maintainer's F7 dialogue checkpoint and DBZ frame
+  150 verify both orderings directly.
+- Startup issues two `E408(count=0) -> E414(count=2)` pairs in one video frame.
+  Each empty GPU0 submission opens a new depth-FF sprite pass. Battle frames,
+  by contrast, prepaint a nonempty sprite background before GPU0 polygons and
+  must not repaint that sky over the polygon result at E414.
+- An earlier provisional command `$07` transform was removed after it broke
+  DBZ's title target. A later trace established the signed XYZ16/Q8.8 form
+  documented above; that implementation retains the known green decision
+  target while supplying the battle light-vector registers.
 
 ## Naruto second-stage distance unit (2026-08-13)
 
