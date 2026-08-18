@@ -253,6 +253,15 @@ static unsigned ban_onep_punch_progress(uint8_t phase)
 static void ban_onep_hand_position(const drgqst_core *core, unsigned hand,
 	int *x, int *y, int *radius)
 {
+	if (core->ban_onep_dual_reflectors &&
+		core->ban_onep_reflector_visible[hand])
+	{
+		*x = 3 + (core->ban_onep_reflector_x[hand] * 26 + 127) / 255;
+		*y = 3 + (core->ban_onep_reflector_y[hand] * 15 + 127) / 255;
+		*radius = core->ban_onep_reflector_area[hand] >= 0x30 ? 3 :
+			core->ban_onep_reflector_area[hand] >= 0x18 ? 2 : 1;
+		return;
+	}
 	const int base_x = hand ? 23 : 8;
 	const int base_y = 27;
 	const uint8_t phase = hand ? core->ban_onep_right_punch :
@@ -557,6 +566,9 @@ void drgqst_core_reset(drgqst_core *core)
 	core->ban_onep_right_punch = 0;
 	core->ban_onep_aim_x = 0x80;
 	core->ban_onep_aim_y = 0x80;
+	core->ban_onep_dual_reflectors = 0;
+	memset(core->ban_onep_reflector_visible, 0,
+		sizeof(core->ban_onep_reflector_visible));
 	core->ban_onep_bazooka_phase = 0;
 	core->epo_hamd_packet = 0;
 	core->epo_hamd_packet_mask = 0;
@@ -786,6 +798,7 @@ void drgqst_core_set_mouse(drgqst_core *core, uint8_t x, uint8_t y,
 		return;
 	if (core->game_profile == DRGQST_CORE_BAN_ONEP)
 	{
+		core->ban_onep_dual_reflectors = 0;
 		const uint8_t buttons = (broadside ? 1 : 0) |
 			(step_forward ? 2 : 0);
 		const int drag_x = x > core->ban_onep_drag_origin_x ?
@@ -882,6 +895,23 @@ void drgqst_core_set_mouse(drgqst_core *core, uint8_t x, uint8_t y,
 	else if (broadside)
 		mode = XAVIX_SENSOR_BROADSIDE;
 	xavix_machine_set_sword_input(&core->machine, x, y, mode);
+}
+
+void drgqst_core_set_reflectors(drgqst_core *core,
+	uint8_t x0, uint8_t y0, uint8_t area0, int visible0,
+	uint8_t x1, uint8_t y1, uint8_t area1, int visible1)
+{
+	if (!core || core->game_profile != DRGQST_CORE_BAN_ONEP)
+		return;
+	core->ban_onep_dual_reflectors = visible0 || visible1;
+	core->ban_onep_reflector_x[0] = x0;
+	core->ban_onep_reflector_y[0] = y0;
+	core->ban_onep_reflector_area[0] = area0;
+	core->ban_onep_reflector_visible[0] = visible0 ? 1 : 0;
+	core->ban_onep_reflector_x[1] = x1;
+	core->ban_onep_reflector_y[1] = y1;
+	core->ban_onep_reflector_area[1] = area1;
+	core->ban_onep_reflector_visible[1] = visible1 ? 1 : 0;
 }
 
 void drgqst_core_set_sdb_input(drgqst_core *core, unsigned player,

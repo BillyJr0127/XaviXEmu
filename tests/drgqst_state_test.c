@@ -439,12 +439,17 @@ static int test_repeated_one_piece_load_resets_host_input(void)
 		core->ban_onep_left_punch = 10;
 		core->ban_onep_right_punch = 12;
 		core->ban_onep_aim_x = 0x93;
+		drgqst_core_set_reflectors(core,
+			0x20, 0x40, 0x18, 1, 0xc0, 0xa0, 0x30, 1);
 		core->ban_onep_bazooka_phase = 7;
 		if (!drgqst_state_load(core, state, state_size) ||
 			core->ban_onep_sync_divider || core->ban_onep_sync_phase ||
 			core->ban_onep_buttons || core->ban_onep_drag_active ||
 			core->ban_onep_drag_origin_x != core->ban_onep_aim_x ||
 			core->ban_onep_left_punch || core->ban_onep_right_punch ||
+			core->ban_onep_dual_reflectors ||
+			core->ban_onep_reflector_visible[0] ||
+			core->ban_onep_reflector_visible[1] ||
 			core->ban_onep_bazooka_phase)
 			goto done;
 	}

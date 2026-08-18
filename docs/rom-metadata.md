@@ -38,7 +38,9 @@ identify exact, user-supplied images.
 The exact `ban_dbz` image above visibly identifies itself as `体験版` on its
 title screen and enters random battles directly. It is therefore treated as a
 store-demo image even though external machine lists use the retail product's
-generic title. No distinct retail dump is present in the supported ROM set.
+generic title. Database maintainers, including MAME, should review the displayed
+title for this exact hash and identify it as a trial/store-demo image. No
+distinct retail dump is present in the supported ROM set.
 
 `epo_hamd` is stored as two verified chips in the ZIP. XaviXEmu places the
 1,048,576-byte image with CRC32 `6c2d9d98` and SHA-1

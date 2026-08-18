@@ -57,6 +57,11 @@ typedef struct drgqst_core
 	uint8_t ban_onep_right_punch;
 	uint8_t ban_onep_aim_x;
 	uint8_t ban_onep_aim_y;
+	uint8_t ban_onep_dual_reflectors;
+	uint8_t ban_onep_reflector_x[2];
+	uint8_t ban_onep_reflector_y[2];
+	uint8_t ban_onep_reflector_area[2];
+	uint8_t ban_onep_reflector_visible[2];
 	uint8_t ban_onep_bazooka_phase;
 	uint8_t ttv_exposure_pending;
 	uint8_t epo_hamd_packet;
@@ -96,6 +101,11 @@ int drgqst_core_sword_cursor_position(const drgqst_core *core, int *x, int *y);
 
 void drgqst_core_set_mouse(drgqst_core *core, uint8_t x, uint8_t y,
 	int broadside, int step_forward);
+
+/* Supply the two independently tracked wrist reflectors used by ban_onep. */
+void drgqst_core_set_reflectors(drgqst_core *core,
+	uint8_t x0, uint8_t y0, uint8_t area0, int visible0,
+	uint8_t x1, uint8_t y1, uint8_t area1, int visible1);
 
 /* Set one Super Dash Ball controller's raw MAME-style analog channels. */
 void drgqst_core_set_sdb_input(drgqst_core *core, unsigned player,

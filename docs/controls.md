@@ -10,16 +10,55 @@ original accessories used ordinary buttons.
 - F5: save the single runtime-state slot where supported.
 - F7: load the runtime-state slot where supported.
 - F8: save a local PNG screenshot.
-- F9: start a native-resolution, 60 FPS MJPEG AVI recording.
+- F9: start a fixed-size, 60 FPS MJPEG AVI recording. The default **View >
+  Record at current display size** option uses the current game viewport size
+  and records the presented host cursor. The AVI size remains fixed if the
+  window or guest video mode changes while recording.
 - F10: stop and finalize the AVI recording. Recordings include synchronized
-  48 kHz stereo sound and are saved beside the executable.
+  48 kHz stereo sound and are saved under the local `snap` directory.
 - F11: toggle runtime timing diagnostics.
 - Alt+Enter: toggle borderless fullscreen.
 - Escape: leave fullscreen.
 
+## PS / gamepad and Wii Remote
+
+Open **Controller > Controller settings** after loading a game. The selected
+input source, dead zone, single-reflector stick, Wii calibration, and each
+game's action-button bindings are stored in `XaviXEmu.ini` beside the
+executable.
+
+- PS and compatible Windows gamepads: the left analog stick supplies
+  reflector 1 and the right analog stick supplies reflector 2. The sticks move
+  their reflectors like a mouse: releasing a stick leaves its point at the last
+  position, and the next movement continues from there. A slight tilt moves
+  precisely while full deflection accelerates enough for quick two-hand
+  gestures such as Naruto's inward convergence. For games with only one
+  physical reflector, choose whether the left or right stick is used.
+- Click a game action in the settings window, release all buttons, and press
+  the gamepad or Wii Remote button that should perform it. Bindings are kept
+  separately for each recognized ROM profile.
+- Two Wii Remotes: pair both controllers with Windows and use a powered sensor
+  bar. Select the Wii source, aim Wii 1 and Wii 2 at the requested upper-left
+  and lower-right screen positions, and press the four calibration buttons.
+  Each remote then supplies one independent reflector position.
+- Wii IR supplies position but cannot measure the large reflective area of the
+  original accessories by itself. Defense, special, two-hand, and deflect
+  patterns therefore use the configurable action buttons. Accelerometer-based
+  gesture recognition remains future work.
+
+The Wii HID path supports the original Wii Remote and Wii Remote Plus product
+IDs through Windows' built-in HID stack. Actual Bluetooth adapters and drivers
+vary, so this first implementation remains hardware-validation work in
+progress. Mouse control remains the default until another source is selected.
+
 ## `drgqst`
 
 - Mouse movement: narrow sword-edge reflection.
+- On a gamepad, the selected analog stick starts slowly for precise aiming and
+  accelerates only while it remains pushed. A sustained full-tilt stroke can
+  therefore cross the original game's vertical-confirm and attack threshold,
+  while a quick tap does not throw the point to the screen edge. Releasing or
+  reversing the stick resets the acceleration and still holds the last point.
 - Hold left mouse while moving: broad sword-face reflection for magic and
   broad-area guarding.
 - Hold right mouse: step-forward/ultimate-technique posture.
@@ -92,13 +131,21 @@ control feel remain experimental.
 
 Naruto (`ban_naru`) places both samples at the same location for its documented
 joined-hands guard gesture; left mouse is its verified Execute/confirm input.
-Its game-owned marker disappears during some pre-battle transitions even though
-the optical hit position remains active, so XaviXEmu keeps a small blue host
-target visible at the actual mouse position throughout Naruto scenes.
+XaviXEmu no longer draws its old blue diagnostic target over Naruto; only the
+game-owned cursor is presented, while optical hit testing remains active during
+transitions where that cursor is temporarily hidden.
 Blue Dragon (`ban_bldj`) separates the second sample vertically by two sensor
 units because its firmware merges perfectly overlapping blobs. Holding right
 mouse or Space therefore operates its on-screen `決定` gesture without a
-separate left-click input.
+separate left-click input. Its gamepad profile now exposes the battle depth
+gestures that were previously missing from the settings:
+
+- Primary action / left mouse: close and reopen reflector 1 to attack.
+- Secondary action / right mouse: close and reopen reflector 2 to attack.
+- Special or two-hand action / Space: close and reopen both reflectors.
+
+The mouse buttons continue to provide their existing menu inputs, so the same
+profile can enter the game and fight without switching mappings.
 
 DB2J and DBZ receive packets at their verified firmware buffers and now use
 their game-owned optical cursors after the signed cursor-bound CPU instruction
@@ -123,8 +170,8 @@ The game firmware consumes all three actions. Enemy encounters and the full
 visible result of each action have not yet been exercised through a complete
 play-through, so these mappings remain experimental.
 
-Independent two-hand positions and the complete later gameplay gesture
-vocabulary are not yet implemented.
+PS/gamepad dual sticks and two Wii Remotes can provide independent two-hand
+positions. The complete later gameplay gesture vocabulary is not yet known.
 
 F5 and F7 save and restore an independent runtime-state file for each XaviX 2
 ROM. These files include the audio engine state and are suitable for privately
@@ -169,5 +216,5 @@ F5/F7 runtime states are available.
 
 The title, main menu, keyboard scan path, and take-copter input are verified.
 F5/F7 runtime states are available, and the game keeps a separate 24C16 EEPROM
-save beside the executable. Most text keys and complete program paths remain
+save under the local `save` directory. Most text keys and complete program paths remain
 unknown.

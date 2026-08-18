@@ -3,6 +3,7 @@
 
 #include "core/drgqst_core.h"
 #include "core/drgqst_state.h"
+#include "controller_input.h"
 #include "cursor_presentation.h"
 #include "persistence.h"
 #include "resource.h"
@@ -39,9 +40,14 @@ enum
 	ID_VIEW_SCALE_4,
 	ID_VIEW_MAXIMIZE,
 	ID_VIEW_STRETCH_4_3,
+	ID_VIEW_RECORD_WINDOW_SIZE,
 	ID_VIEW_FULLSCREEN,
+	ID_LANGUAGE_AUTO,
 	ID_LANGUAGE_ZH_TW,
+	ID_LANGUAGE_JAPANESE,
+	ID_LANGUAGE_FRENCH,
 	ID_LANGUAGE_ENGLISH,
+	ID_CONTROLLER_SETTINGS,
 	ID_HELP_ABOUT,
 	ID_XAVIX2_AUDIO_ENABLE_ALL = 900,
 	ID_XAVIX2_AUDIO_MUTE_ALL = 901,
@@ -53,7 +59,18 @@ enum
 enum interface_language
 {
 	LANGUAGE_ZH_TW,
-	LANGUAGE_ENGLISH
+	LANGUAGE_ENGLISH,
+	LANGUAGE_JAPANESE,
+	LANGUAGE_FRENCH
+};
+
+enum language_preference
+{
+	LANGUAGE_PREFERENCE_AUTO,
+	LANGUAGE_PREFERENCE_ZH_TW,
+	LANGUAGE_PREFERENCE_JAPANESE,
+	LANGUAGE_PREFERENCE_FRENCH,
+	LANGUAGE_PREFERENCE_ENGLISH
 };
 
 enum window_status
@@ -86,6 +103,7 @@ typedef struct interface_strings
 	const wchar_t *menu_scale_4;
 	const wchar_t *menu_maximize;
 	const wchar_t *menu_stretch_4_3;
+	const wchar_t *menu_record_window_size;
 	const wchar_t *menu_fullscreen;
 	const wchar_t *menu_language;
 	const wchar_t *menu_zh_tw;
@@ -127,6 +145,9 @@ typedef struct display_viewport
 	int scale;
 } display_viewport;
 
+static int render_display(HDC device, const RECT *client,
+	const display_viewport *viewport);
+
 static const wchar_t WINDOW_CLASS_NAME[] = L"XaviXEmuWindow";
 static const wchar_t FACEBOOK_URL[] =
 	L"https://www.facebook.com/61579382638861/";
@@ -154,6 +175,7 @@ static const interface_strings INTERFACE_TEXT[] =
 		L"4 倍視窗(&4)",
 		L"最大化視窗(&M)",
 		L"4:3 顯示比例(&A)",
+		L"依目前顯示大小錄影(&R)",
 		L"全螢幕(&F)\tAlt+Enter",
 		L"語言(&L)",
 		L"繁體中文(&T)",
@@ -224,6 +246,7 @@ static const interface_strings INTERFACE_TEXT[] =
 		L"&4x window",
 		L"&Maximize window",
 		L"&4:3 display aspect",
+		L"Record at current display &size",
 		L"&Fullscreen\tAlt+Enter",
 		L"&Language",
 		L"繁體中文 (&T)",
@@ -274,6 +297,118 @@ static const interface_strings INTERFACE_TEXT[] =
 		L"The folder containing XaviXEmu.exe could not be determined.",
 		L"Web page could not be opened",
 		L"The link could not be opened with the default web browser."
+	},
+	{
+		.window_title_idle = L"XaviXEmu",
+		.window_title_running = L"XaviXEmu - ゲーム実行中",
+		.window_title_state_saved = L"XaviXEmu - ステートを保存しました",
+		.window_title_state_loaded = L"XaviXEmu - ステートを読み込みました",
+		.window_title_screenshot_saved = L"XaviXEmu - スクリーンショットを保存しました",
+		.menu_file = L"ファイル(&F)",
+		.menu_open = L"ROM ZIPを開く(&O)...",
+		.menu_screenshot = L"スクリーンショットを保存(&P)\tF8",
+		.menu_exit = L"終了(&X)",
+		.menu_state = L"ステート(&S)",
+		.menu_save_state = L"ステートを保存(&S)\tF5",
+		.menu_load_state = L"ステートを読み込む(&L)\tF7",
+		.menu_view = L"表示(&V)",
+		.menu_scale_1 = L"1倍ウィンドウ(&1)",
+		.menu_scale_2 = L"2倍ウィンドウ(&2)",
+		.menu_scale_3 = L"3倍ウィンドウ(&3)",
+		.menu_scale_4 = L"4倍ウィンドウ(&4)",
+		.menu_maximize = L"ウィンドウを最大化(&M)",
+		.menu_stretch_4_3 = L"4:3表示(&A)",
+		.menu_record_window_size = L"現在の表示サイズで録画(&R)",
+		.menu_fullscreen = L"フルスクリーン(&F)\tAlt+Enter",
+		.menu_language = L"言語(&L)",
+		.menu_zh_tw = L"繁體中文 (&T)",
+		.menu_english = L"English (&E)",
+		.menu_help = L"ヘルプ(&H)",
+		.menu_about = L"XaviXEmuについて(&A)",
+		.about_title = L"XaviXEmuについて",
+		.about_text = L"XaviXEmuはXaviXエミュレーターです。\r\n"
+			L"現在、XaviXおよびXaviX 2タイトルを実験的にサポートしています。\r\n\r\n"
+			L"マウス、キーボード、ゲーム固有の体感操作については、\r\n"
+			L"同梱のcontrols.mdをご覧ください。\r\n\r\nBilly Jr",
+		.about_facebook_button = L"Billy Jr.のエミュレーター世界",
+		.about_support_text = L"開発を応援していただける場合は\r\nページの購読も歓迎します。",
+		.about_subscribe_button = L"ページを購読（いつでも解除できます）",
+		.about_close_button = L"OK",
+		.open_filter = L"対応ROM ZIP (*.zip)\0*.zip\0すべてのファイル (*.*)\0*.*\0\0",
+		.eeprom_save_title = L"ゲームデータを保存できませんでした",
+		.eeprom_save_error = L"ゲーム内セーブを書き込めません。空き容量とフォルダーの権限を確認してください。",
+		.state_save_title = L"ステート保存に失敗しました",
+		.state_save_memory_error = L"メモリ不足のためステートを作成できません。",
+		.state_save_error = L"ステートを書き込めません。空き容量とフォルダーの権限を確認してください。",
+		.state_load_title = L"ステート読み込みに失敗しました",
+		.state_load_memory_error = L"メモリ不足のためステートを読み込めません。",
+		.state_load_error = L"ステートが見つからないか、読み込めません。",
+		.state_incompatible_error = L"ステートに互換性がないか、破損しています。",
+		.rom_open_title = L"ROMを開けませんでした",
+		.rom_open_error = L"このROM ZIPを開けません。XaviXEmuが対応しているROMを選択してください。",
+		.core_initialize_error = L"エミュレーターコアを初期化できませんでした。",
+		.screenshot_save_title = L"スクリーンショットの保存に失敗しました",
+		.screenshot_save_error = L"PNG画像を実行ファイル横のsnapフォルダーに保存できません。",
+		.storage_directory_error = L"XaviXEmu.exeのあるフォルダーを取得または初期化できません。",
+		.link_open_title = L"Webページを開けませんでした",
+		.link_open_error = L"既定のブラウザーでリンクを開けませんでした。"
+	},
+	{
+		.window_title_idle = L"XaviXEmu",
+		.window_title_running = L"XaviXEmu - jeu en cours",
+		.window_title_state_saved = L"XaviXEmu - état sauvegardé",
+		.window_title_state_loaded = L"XaviXEmu - état chargé",
+		.window_title_screenshot_saved = L"XaviXEmu - capture enregistrée",
+		.menu_file = L"&Fichier",
+		.menu_open = L"&Ouvrir une archive ROM ZIP...",
+		.menu_screenshot = L"Enregistrer une &capture\tF8",
+		.menu_exit = L"&Quitter",
+		.menu_state = L"É&tat",
+		.menu_save_state = L"&Sauvegarder l'état\tF5",
+		.menu_load_state = L"&Charger l'état\tF7",
+		.menu_view = L"&Affichage",
+		.menu_scale_1 = L"Fenêtre &1x",
+		.menu_scale_2 = L"Fenêtre &2x",
+		.menu_scale_3 = L"Fenêtre &3x",
+		.menu_scale_4 = L"Fenêtre &4x",
+		.menu_maximize = L"&Agrandir la fenêtre",
+		.menu_stretch_4_3 = L"Format d'affichage &4:3",
+		.menu_record_window_size = L"Enregistrer à la taille d'affichage actuelle",
+		.menu_fullscreen = L"&Plein écran\tAlt+Entrée",
+		.menu_language = L"&Langue",
+		.menu_zh_tw = L"繁體中文 (&T)",
+		.menu_english = L"&English",
+		.menu_help = L"&Aide",
+		.menu_about = L"À &propos de XaviXEmu",
+		.about_title = L"À propos de XaviXEmu",
+		.about_text = L"XaviXEmu est un émulateur XaviX.\r\n"
+			L"Il prend en charge à titre expérimental des jeux XaviX, "
+			L"XaviX 2000 et XaviX 2.\r\n\r\n"
+			L"Consultez controls.md pour les commandes de mouvement propres "
+			L"à chaque jeu.\r\n\r\nBilly Jr",
+		.about_facebook_button = L"Le monde de l'émulation de Billy Jr.",
+		.about_support_text = L"Pour signaler un problème ou soutenir le projet,\r\n"
+			L"vous pouvez visiter notre page Facebook.",
+		.about_subscribe_button = L"S'abonner à la page (annulable à tout moment)",
+		.about_close_button = L"OK",
+		.open_filter = L"Archives ROM ZIP prises en charge (*.zip)\0*.zip\0Tous les fichiers (*.*)\0*.*\0\0",
+		.eeprom_save_title = L"Impossible d'enregistrer la progression",
+		.eeprom_save_error = L"Impossible d'écrire la sauvegarde du jeu. Vérifiez l'espace disponible et les autorisations du dossier.",
+		.state_save_title = L"Échec de la sauvegarde d'état",
+		.state_save_memory_error = L"Mémoire insuffisante pour créer l'état.",
+		.state_save_error = L"Impossible d'écrire l'état. Vérifiez l'espace disponible et les autorisations du dossier.",
+		.state_load_title = L"Échec du chargement de l'état",
+		.state_load_memory_error = L"Mémoire insuffisante pour charger l'état.",
+		.state_load_error = L"L'état est introuvable ou illisible.",
+		.state_incompatible_error = L"L'état est incompatible ou endommagé.",
+		.rom_open_title = L"Impossible d'ouvrir la ROM",
+		.rom_open_error = L"Impossible d'ouvrir cette archive ROM ZIP. Sélectionnez une image prise en charge par XaviXEmu.",
+		.core_initialize_error = L"Impossible d'initialiser le cœur de l'émulateur.",
+		.screenshot_save_title = L"Échec de la capture d'écran",
+		.screenshot_save_error = L"Impossible d'enregistrer l'image PNG dans le dossier snap près de l'exécutable.",
+		.storage_directory_error = L"Impossible d'initialiser le dossier contenant XaviXEmu.exe.",
+		.link_open_title = L"Impossible d'ouvrir la page Web",
+		.link_open_error = L"Impossible d'ouvrir ce lien avec le navigateur par défaut."
 	}
 };
 static const uint8_t DRGQST_ROM_SHA1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
@@ -427,6 +562,8 @@ static drgqst_core *g_core;
 static xavix2_machine_t *g_xavix2;
 static win_audio g_audio_output;
 static xavix_video_recorder g_video_recorder;
+static xavix_controller_input g_controller_input;
+static xavix_controller_reading g_controller_reading;
 static uint32_t g_idle_framebuffer[FRAME_WIDTH * FRAME_HEIGHT];
 static const uint32_t *g_framebuffer = g_idle_framebuffer;
 static unsigned g_frame_width = FRAME_WIDTH;
@@ -435,10 +572,13 @@ static unsigned g_frame_stride = FRAME_WIDTH;
 static HMENU g_menu;
 static HMENU g_xavix2_channel_menu;
 static uint64_t g_xavix2_audio_mute_mask;
-static enum interface_language g_language = LANGUAGE_ZH_TW;
+static enum interface_language g_language = LANGUAGE_ENGLISH;
+static enum language_preference g_language_preference =
+	LANGUAGE_PREFERENCE_AUTO;
 static enum window_status g_window_status = WINDOW_STATUS_IDLE;
 static int g_fullscreen;
 static int g_stretch_4_3 = 1;
+static int g_record_window_size = 1;
 static int g_window_scale = DEFAULT_SCALE;
 static WINDOWPLACEMENT g_windowed_placement;
 static LONG_PTR g_windowed_style;
@@ -447,6 +587,12 @@ static HBITMAP g_capture_bitmap;
 static HGDIOBJ g_capture_old_bitmap;
 static int g_capture_width;
 static int g_capture_height;
+static HDC g_recording_dc;
+static HBITMAP g_recording_bitmap;
+static HGDIOBJ g_recording_old_bitmap;
+static uint32_t *g_recording_pixels;
+static int g_recording_width;
+static int g_recording_height;
 static LARGE_INTEGER g_counter_frequency;
 static LONGLONG g_next_frame_counter;
 static LONGLONG g_frame_counter_step;
@@ -490,6 +636,21 @@ static unsigned g_parallel_nvram_settle_frames;
 static int g_parallel_nvram_save_pending;
 static int g_eeprom_error_shown;
 static wchar_t g_executable_directory[MAX_PATH];
+static wchar_t g_save_directory[MAX_PATH];
+static wchar_t g_snap_directory[MAX_PATH];
+static wchar_t g_ini_path[MAX_PATH];
+
+enum xavix2_host_gesture
+{
+	XAVIX2_GESTURE_NONE,
+	XAVIX2_GESTURE_DB2J_EDGE,
+	XAVIX2_GESTURE_DBZ_SINGLE_CLOSE,
+	XAVIX2_GESTURE_DBZ_BOTH_CLOSE,
+	XAVIX2_GESTURE_DBZ_DEFLECT,
+	XAVIX2_GESTURE_BLDJ_FIRST_ATTACK,
+	XAVIX2_GESTURE_BLDJ_SECOND_ATTACK,
+	XAVIX2_GESTURE_BLDJ_BOTH_ATTACK
+};
 
 static int emulator_loaded(void)
 {
@@ -499,6 +660,19 @@ static int emulator_loaded(void)
 static const interface_strings *interface_text(void)
 {
 	return &INTERFACE_TEXT[g_language];
+}
+
+static const wchar_t *localized_text(const wchar_t *zh_tw,
+	const wchar_t *japanese, const wchar_t *french, const wchar_t *english)
+{
+	switch (g_language)
+	{
+	case LANGUAGE_ZH_TW: return zh_tw;
+	case LANGUAGE_JAPANESE: return japanese;
+	case LANGUAGE_FRENCH: return french;
+	case LANGUAGE_ENGLISH:
+	default: return english;
+	}
 }
 
 static int rom_uses_camera(enum drgqst_rom_kind kind)
@@ -799,11 +973,73 @@ static size_t eeprom_size_for_rom(enum drgqst_rom_kind kind)
 	return DRGQST_PERSISTENCE_EEPROM_SIZE;
 }
 
+static enum interface_language detect_system_language(void)
+{
+	wchar_t locale_name[LOCALE_NAME_MAX_LENGTH];
+
+	if (!GetUserDefaultLocaleName(locale_name,
+		sizeof(locale_name) / sizeof(locale_name[0])))
+		return LANGUAGE_ENGLISH;
+	if (_wcsnicmp(locale_name, L"ja", 2) == 0)
+		return LANGUAGE_JAPANESE;
+	if (_wcsnicmp(locale_name, L"fr", 2) == 0)
+		return LANGUAGE_FRENCH;
+	if (_wcsnicmp(locale_name, L"zh-TW", 5) == 0 ||
+		_wcsnicmp(locale_name, L"zh-HK", 5) == 0 ||
+		_wcsnicmp(locale_name, L"zh-MO", 5) == 0 ||
+		wcsstr(locale_name, L"Hant") != NULL)
+		return LANGUAGE_ZH_TW;
+	return LANGUAGE_ENGLISH;
+}
+
+static enum interface_language resolved_language(
+	enum language_preference preference)
+{
+	switch (preference)
+	{
+	case LANGUAGE_PREFERENCE_ZH_TW:
+		return LANGUAGE_ZH_TW;
+	case LANGUAGE_PREFERENCE_JAPANESE:
+		return LANGUAGE_JAPANESE;
+	case LANGUAGE_PREFERENCE_FRENCH:
+		return LANGUAGE_FRENCH;
+	case LANGUAGE_PREFERENCE_ENGLISH:
+		return LANGUAGE_ENGLISH;
+	case LANGUAGE_PREFERENCE_AUTO:
+	default:
+		return detect_system_language();
+	}
+}
+
+static void write_ini_string(const wchar_t *section, const wchar_t *key,
+	const wchar_t *value)
+{
+	if (g_ini_path[0])
+		(void)WritePrivateProfileStringW(section, key, value, g_ini_path);
+}
+
+static void write_ini_integer(const wchar_t *section, const wchar_t *key,
+	int value)
+{
+	wchar_t text[24];
+	_snwprintf(text, sizeof(text) / sizeof(text[0]), L"%d", value);
+	text[sizeof(text) / sizeof(text[0]) - 1] = L'\0';
+	write_ini_string(section, key, text);
+}
+
 static void apply_system_ui_language(enum interface_language language)
 {
-	LANGID language_id = language == LANGUAGE_ENGLISH ?
-		MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US) :
-		MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_TRADITIONAL);
+	LANGID language_id;
+
+	if (language == LANGUAGE_JAPANESE)
+		language_id = MAKELANGID(LANG_JAPANESE, SUBLANG_DEFAULT);
+	else if (language == LANGUAGE_FRENCH)
+		language_id = MAKELANGID(LANG_FRENCH, SUBLANG_FRENCH);
+	else if (language == LANGUAGE_ZH_TW)
+		language_id = MAKELANGID(LANG_CHINESE,
+			SUBLANG_CHINESE_TRADITIONAL);
+	else
+		language_id = MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US);
 	SetThreadUILanguage(language_id);
 }
 
@@ -907,6 +1143,7 @@ static HMENU create_application_menu(void)
 	HMENU state_menu = CreatePopupMenu();
 	HMENU view_menu = CreatePopupMenu();
 	HMENU language_menu = CreatePopupMenu();
+	HMENU controller_menu = CreatePopupMenu();
 	HMENU audio_menu = CreatePopupMenu();
 	HMENU help_menu = CreatePopupMenu();
 	UINT state_flags = MF_STRING |
@@ -935,22 +1172,31 @@ static HMENU create_application_menu(void)
 	AppendMenuW(view_menu,
 		MF_STRING | (g_stretch_4_3 ? MF_CHECKED : MF_UNCHECKED),
 		ID_VIEW_STRETCH_4_3, text->menu_stretch_4_3);
+	AppendMenuW(view_menu,
+		MF_STRING | (g_record_window_size ? MF_CHECKED : MF_UNCHECKED),
+		ID_VIEW_RECORD_WINDOW_SIZE, text->menu_record_window_size);
 	AppendMenuW(view_menu, MF_SEPARATOR, 0, NULL);
 	AppendMenuW(view_menu, MF_STRING, ID_VIEW_FULLSCREEN,
 		text->menu_fullscreen);
 
-	AppendMenuW(language_menu,
-		MF_STRING | (g_language == LANGUAGE_ZH_TW ? MF_CHECKED : MF_UNCHECKED),
-		ID_LANGUAGE_ZH_TW, text->menu_zh_tw);
-	AppendMenuW(language_menu,
-		MF_STRING | (g_language == LANGUAGE_ENGLISH ? MF_CHECKED : MF_UNCHECKED),
-		ID_LANGUAGE_ENGLISH, text->menu_english);
-	CheckMenuRadioItem(language_menu, ID_LANGUAGE_ZH_TW,
+	AppendMenuW(language_menu, MF_STRING, ID_LANGUAGE_AUTO,
+		localized_text(L"自動", L"自動", L"Automatique", L"Auto"));
+	AppendMenuW(language_menu, MF_STRING, ID_LANGUAGE_ZH_TW,
+		text->menu_zh_tw);
+	AppendMenuW(language_menu, MF_STRING, ID_LANGUAGE_JAPANESE,
+		L"日本語 (&J)");
+	AppendMenuW(language_menu, MF_STRING, ID_LANGUAGE_FRENCH,
+		L"Français (&R)");
+	AppendMenuW(language_menu, MF_STRING, ID_LANGUAGE_ENGLISH,
+		text->menu_english);
+	CheckMenuRadioItem(language_menu, ID_LANGUAGE_AUTO,
 		ID_LANGUAGE_ENGLISH,
-		g_language == LANGUAGE_ZH_TW ? ID_LANGUAGE_ZH_TW :
-		ID_LANGUAGE_ENGLISH, MF_BYCOMMAND);
+		ID_LANGUAGE_AUTO + (UINT)g_language_preference, MF_BYCOMMAND);
 
 	AppendMenuW(help_menu, MF_STRING, ID_HELP_ABOUT, text->menu_about);
+	AppendMenuW(controller_menu, MF_STRING, ID_CONTROLLER_SETTINGS,
+		localized_text(L"控制器設定...", L"コントローラー設定...",
+			L"Paramètres de la manette...", L"Controller settings..."));
 	g_xavix2_channel_menu = audio_menu;
 	AppendMenuW(audio_menu, MF_STRING, ID_XAVIX2_AUDIO_ENABLE_ALL,
 		L"全部開啟 / Enable all");
@@ -980,6 +1226,9 @@ static HMENU create_application_menu(void)
 	AppendMenuW(menu, MF_POPUP, (UINT_PTR)view_menu, text->menu_view);
 	AppendMenuW(menu, MF_POPUP, (UINT_PTR)language_menu,
 		text->menu_language);
+	AppendMenuW(menu, MF_POPUP, (UINT_PTR)controller_menu,
+		localized_text(L"控制器(&C)", L"コントローラー(&C)",
+			L"&Manette", L"&Controller"));
 	AppendMenuW(menu, MF_POPUP, (UINT_PTR)help_menu, text->menu_help);
 	return menu;
 }
@@ -1001,11 +1250,25 @@ static void rebuild_application_menu(HWND window)
 		DestroyMenu(old_menu);
 }
 
-static void set_interface_language(HWND window,
-	enum interface_language language)
+static void set_language_preference(HWND window,
+	enum language_preference preference)
 {
-	if (g_language == language)
+	enum interface_language language = resolved_language(preference);
+	static const wchar_t *const setting_values[] =
+	{
+		L"auto", L"zh-TW", L"ja", L"fr", L"en"
+	};
+
+	if (preference < LANGUAGE_PREFERENCE_AUTO ||
+		preference > LANGUAGE_PREFERENCE_ENGLISH)
 		return;
+	g_language_preference = preference;
+	write_ini_string(L"Interface", L"Language", setting_values[preference]);
+	if (g_language == language)
+	{
+		rebuild_application_menu(window);
+		return;
+	}
 	g_language = language;
 	apply_system_ui_language(language);
 	rebuild_application_menu(window);
@@ -1078,6 +1341,301 @@ static void show_about(HWND window)
 			MB_OK | MB_ICONINFORMATION);
 }
 
+typedef struct controller_dialog_state
+{
+	unsigned bindings[XAVIX_CONTROLLER_ACTION_COUNT];
+	enum xavix_controller_action waiting_action;
+	int waiting_for_release;
+} controller_dialog_state;
+
+static const wchar_t *controller_action_name(unsigned action)
+{
+	static const wchar_t *const zh[XAVIX_CONTROLLER_ACTION_COUNT] =
+	{
+		L"主要動作", L"次要動作", L"防禦", L"必殺技", L"確認",
+		L"雙手動作", L"彈開／反擊"
+	};
+	static const wchar_t *const ja[XAVIX_CONTROLLER_ACTION_COUNT] =
+	{
+		L"メイン動作", L"サブ動作", L"防御", L"必殺技", L"決定",
+		L"両手動作", L"はじき／反撃"
+	};
+	static const wchar_t *const en[XAVIX_CONTROLLER_ACTION_COUNT] =
+	{
+		L"Primary action", L"Secondary action", L"Defense", L"Special",
+		L"Confirm", L"Two-hand action", L"Deflect / counter"
+	};
+	static const wchar_t *const fr[XAVIX_CONTROLLER_ACTION_COUNT] =
+	{
+		L"Action principale", L"Action secondaire", L"Défense",
+		L"Technique spéciale", L"Confirmer", L"Action à deux mains",
+		L"Dévier / contrer"
+	};
+	static const wchar_t *const bldj_zh[XAVIX_CONTROLLER_ACTION_COUNT] =
+	{
+		L"攻擊（反光點 1）", L"攻擊（反光點 2）", L"防禦",
+		L"雙手攻擊", L"確認", L"雙手攻擊", L"彈開／反擊"
+	};
+	static const wchar_t *const bldj_ja[XAVIX_CONTROLLER_ACTION_COUNT] =
+	{
+		L"攻撃（反射点 1）", L"攻撃（反射点 2）", L"防御",
+		L"両手攻撃", L"決定", L"両手攻撃", L"はじき／反撃"
+	};
+	static const wchar_t *const bldj_en[XAVIX_CONTROLLER_ACTION_COUNT] =
+	{
+		L"Attack (reflector 1)", L"Attack (reflector 2)", L"Defense",
+		L"Two-hand attack", L"Confirm", L"Two-hand attack",
+		L"Deflect / counter"
+	};
+	static const wchar_t *const bldj_fr[XAVIX_CONTROLLER_ACTION_COUNT] =
+	{
+		L"Attaque (réflecteur 1)", L"Attaque (réflecteur 2)", L"Défense",
+		L"Attaque à deux mains", L"Confirmer", L"Attaque à deux mains",
+		L"Dévier / contrer"
+	};
+	if (action >= XAVIX_CONTROLLER_ACTION_COUNT)
+		return L"";
+	if (g_rom.kind == DRGQST_ROM_BAN_BLDJ)
+		return g_language == LANGUAGE_ZH_TW ? bldj_zh[action] :
+			g_language == LANGUAGE_JAPANESE ? bldj_ja[action] :
+			g_language == LANGUAGE_FRENCH ? bldj_fr[action] :
+			bldj_en[action];
+	return g_language == LANGUAGE_ZH_TW ? zh[action] :
+		g_language == LANGUAGE_JAPANESE ? ja[action] :
+		g_language == LANGUAGE_FRENCH ? fr[action] : en[action];
+}
+
+static void update_controller_binding_buttons(HWND dialog,
+	const controller_dialog_state *state)
+{
+	unsigned action;
+	for (action = 0; action < XAVIX_CONTROLLER_ACTION_COUNT; ++action)
+	{
+		wchar_t label[96];
+		if (state->waiting_action == action)
+			_snwprintf(label, sizeof(label) / sizeof(label[0]), L"%ls: %ls",
+				controller_action_name(action),
+				localized_text(L"請按搖桿按鍵", L"ボタンを押してください",
+					L"appuyez sur un bouton", L"press a controller button"));
+		else if (state->bindings[action])
+			_snwprintf(label, sizeof(label) / sizeof(label[0]), L"%ls: B%u",
+				controller_action_name(action), state->bindings[action]);
+		else
+			_snwprintf(label, sizeof(label) / sizeof(label[0]), L"%ls: -",
+				controller_action_name(action));
+		label[sizeof(label) / sizeof(label[0]) - 1] = L'\0';
+		SetDlgItemTextW(dialog, IDC_CONTROLLER_ACTION_0 + action, label);
+	}
+}
+
+static void update_controller_status(HWND dialog)
+{
+	wchar_t status[224];
+	int gamepad = xavix_controller_input_gamepad_connected(&g_controller_input);
+	int wii1 = xavix_controller_input_wii_connected(&g_controller_input, 0);
+	int wii2 = xavix_controller_input_wii_connected(&g_controller_input, 1);
+	_snwprintf(status, sizeof(status) / sizeof(status[0]),
+		localized_text(L"PS／搖桿：%ls　Wii 1：%ls　Wii 2：%ls",
+			L"ゲームパッド: %ls    Wii 1: %ls    Wii 2: %ls",
+			L"Manette : %ls    Wii 1 : %ls    Wii 2 : %ls",
+			L"Gamepad: %ls    Wii 1: %ls    Wii 2: %ls"),
+		gamepad ? localized_text(L"OK", L"OK", L"connectée", L"connected") :
+			localized_text(L"未連接", L"未接続", L"non connectée", L"not connected"),
+		wii1 ? localized_text(L"OK", L"OK", L"connectée", L"connected") :
+			localized_text(L"未連接", L"未接続", L"non connectée", L"not connected"),
+		wii2 ? localized_text(L"OK", L"OK", L"connectée", L"connected") :
+			localized_text(L"未連接", L"未接続", L"non connectée", L"not connected"));
+	status[sizeof(status) / sizeof(status[0]) - 1] = L'\0';
+	SetDlgItemTextW(dialog, IDC_CONTROLLER_STATUS, status);
+}
+
+static INT_PTR CALLBACK controller_dialog_procedure(HWND dialog,
+	UINT message, WPARAM wparam, LPARAM lparam)
+{
+	controller_dialog_state *state = (controller_dialog_state *)
+		GetWindowLongPtrW(dialog, DWLP_USER);
+	if (message == WM_INITDIALOG)
+	{
+		unsigned action;
+		wchar_t profile[128];
+		state = (controller_dialog_state *)lparam;
+		SetWindowLongPtrW(dialog, DWLP_USER, (LONG_PTR)state);
+		state->waiting_action = XAVIX_CONTROLLER_ACTION_COUNT;
+		for (action = 0; action < XAVIX_CONTROLLER_ACTION_COUNT; ++action)
+			state->bindings[action] = xavix_controller_input_binding(
+				&g_controller_input, (enum xavix_controller_action)action);
+		SetWindowTextW(dialog, localized_text(L"控制器設定",
+			L"コントローラー設定", L"Paramètres de la manette",
+			L"Controller settings"));
+		SetDlgItemTextW(dialog, IDC_CONTROLLER_SOURCE_LABEL,
+			localized_text(L"輸入來源", L"入力方式", L"Source d'entrée",
+				L"Input source"));
+		SetDlgItemTextW(dialog, IDC_CONTROLLER_SINGLE_LABEL,
+			localized_text(L"單一反光點", L"単一反射板", L"Réflecteur unique",
+				L"Single reflector"));
+		SetDlgItemTextW(dialog, IDC_CONTROLLER_DEADZONE_LABEL,
+			localized_text(L"死區 (%)", L"デッドゾーン (%)", L"Zone morte (%)",
+				L"Dead zone (%)"));
+		SetDlgItemTextW(dialog, IDC_CONTROLLER_ACTIONS_GROUP,
+			localized_text(L"各遊戲動作", L"ゲーム別アクション",
+				L"Actions du jeu", L"Game actions"));
+		SetDlgItemTextW(dialog, IDC_CONTROLLER_WII_GROUP,
+			localized_text(L"Wii Remote 紅外線校正", L"Wii Remote IR補正",
+				L"Étalonnage IR des Wii Remote", L"Wii Remote IR calibration"));
+		SetDlgItemTextW(dialog, IDC_CONTROLLER_RESCAN,
+			localized_text(L"重新掃描", L"再検索", L"Rechercher", L"Rescan"));
+		SetDlgItemTextW(dialog, IDOK, L"OK");
+		SetDlgItemTextW(dialog, IDCANCEL,
+			localized_text(L"取消", L"キャンセル", L"Annuler", L"Cancel"));
+		_snwprintf(profile, sizeof(profile) / sizeof(profile[0]),
+			localized_text(L"目前遊戲設定：%ls", L"ゲーム設定: %ls",
+				L"Profil du jeu : %ls", L"Current game profile: %ls"),
+			g_controller_input.profile);
+		SetDlgItemTextW(dialog, IDC_CONTROLLER_PROFILE, profile);
+		SendDlgItemMessageW(dialog, IDC_CONTROLLER_SOURCE, CB_ADDSTRING, 0,
+			(LPARAM)localized_text(L"自動", L"自動", L"Automatique", L"Auto"));
+		SendDlgItemMessageW(dialog, IDC_CONTROLLER_SOURCE, CB_ADDSTRING, 0,
+			(LPARAM)localized_text(L"滑鼠", L"マウス", L"Souris", L"Mouse"));
+		SendDlgItemMessageW(dialog, IDC_CONTROLLER_SOURCE, CB_ADDSTRING, 0,
+			(LPARAM)localized_text(L"PS／搖桿類比桿",
+				L"PS／ゲームパッドのアナログスティック",
+				L"Sticks analogiques PS / manette",
+				L"PS / gamepad analog sticks"));
+		SendDlgItemMessageW(dialog, IDC_CONTROLLER_SOURCE, CB_ADDSTRING, 0,
+			(LPARAM)localized_text(L"雙 Wii Remote（紅外線）",
+				L"2台のWii Remote (IR)", L"Deux Wii Remote (IR)",
+				L"Two Wii Remotes (IR)"));
+		SendDlgItemMessageW(dialog, IDC_CONTROLLER_SOURCE, CB_SETCURSEL,
+			xavix_controller_input_source(&g_controller_input), 0);
+		SendDlgItemMessageW(dialog, IDC_CONTROLLER_SINGLE, CB_ADDSTRING, 0,
+			(LPARAM)localized_text(L"左類比桿", L"左スティック",
+				L"Stick gauche", L"Left stick"));
+		SendDlgItemMessageW(dialog, IDC_CONTROLLER_SINGLE, CB_ADDSTRING, 0,
+			(LPARAM)localized_text(L"右類比桿", L"右スティック",
+				L"Stick droit", L"Right stick"));
+		SendDlgItemMessageW(dialog, IDC_CONTROLLER_SINGLE, CB_SETCURSEL,
+			xavix_controller_input_single_reflector(&g_controller_input), 0);
+		SetDlgItemInt(dialog, IDC_CONTROLLER_DEADZONE,
+			xavix_controller_input_dead_zone(&g_controller_input), FALSE);
+		SetDlgItemTextW(dialog, IDC_CONTROLLER_WII1_TL,
+			localized_text(L"Wii 1 左上", L"Wii 1 左上", L"Wii 1 haut-gauche",
+				L"Wii 1 upper-left"));
+		SetDlgItemTextW(dialog, IDC_CONTROLLER_WII1_BR,
+			localized_text(L"Wii 1 右下", L"Wii 1 右下", L"Wii 1 bas-droite",
+				L"Wii 1 lower-right"));
+		SetDlgItemTextW(dialog, IDC_CONTROLLER_WII2_TL,
+			localized_text(L"Wii 2 左上", L"Wii 2 左上", L"Wii 2 haut-gauche",
+				L"Wii 2 upper-left"));
+		SetDlgItemTextW(dialog, IDC_CONTROLLER_WII2_BR,
+			localized_text(L"Wii 2 右下", L"Wii 2 右下", L"Wii 2 bas-droite",
+				L"Wii 2 lower-right"));
+		update_controller_binding_buttons(dialog, state);
+		update_controller_status(dialog);
+		SetTimer(dialog, 1, 30, NULL);
+		return TRUE;
+	}
+	if (!state)
+		return FALSE;
+	if (message == WM_TIMER && wparam == 1 &&
+		state->waiting_action < XAVIX_CONTROLLER_ACTION_COUNT)
+	{
+		unsigned button = xavix_controller_input_first_pressed_button(
+			&g_controller_input);
+		if (state->waiting_for_release)
+		{
+			if (!button)
+				state->waiting_for_release = 0;
+		}
+		else if (button)
+		{
+			state->bindings[state->waiting_action] = button;
+			state->waiting_action = XAVIX_CONTROLLER_ACTION_COUNT;
+			update_controller_binding_buttons(dialog, state);
+		}
+		return TRUE;
+	}
+	if (message == WM_COMMAND)
+	{
+		unsigned id = LOWORD(wparam);
+		if (id >= IDC_CONTROLLER_ACTION_0 &&
+			id < IDC_CONTROLLER_ACTION_0 + XAVIX_CONTROLLER_ACTION_COUNT)
+		{
+			state->waiting_action = (enum xavix_controller_action)
+				(id - IDC_CONTROLLER_ACTION_0);
+			state->waiting_for_release = 1;
+			update_controller_binding_buttons(dialog, state);
+			return TRUE;
+		}
+		if (id == IDC_CONTROLLER_RESCAN)
+		{
+			xavix_controller_input_rescan(&g_controller_input);
+			update_controller_status(dialog);
+			return TRUE;
+		}
+		if (id >= IDC_CONTROLLER_WII1_TL &&
+			id <= IDC_CONTROLLER_WII2_BR)
+		{
+			unsigned offset = id - IDC_CONTROLLER_WII1_TL;
+			unsigned index = offset / 2;
+			int upper_left = (offset & 1) == 0;
+			if (!xavix_controller_input_capture_wii_calibration(
+				&g_controller_input, index, upper_left))
+				MessageBoxW(dialog,
+					localized_text(
+						L"請先連接 Wii Remote，並讓它對準螢幕感應條。",
+						L"Wii Remoteを接続し、センサーバーを画面に向けてください。",
+						L"Connectez la Wii Remote et pointez-la vers la barre de capteurs.",
+						L"Connect the Wii Remote and point it at the screen sensor bar."),
+					L"XaviXEmu", MB_OK | MB_ICONWARNING);
+			return TRUE;
+		}
+		if (id == IDOK)
+		{
+			unsigned action;
+			BOOL translated;
+			UINT dead_zone = GetDlgItemInt(dialog, IDC_CONTROLLER_DEADZONE,
+				&translated, FALSE);
+			LRESULT source = SendDlgItemMessageW(dialog,
+				IDC_CONTROLLER_SOURCE, CB_GETCURSEL, 0, 0);
+			LRESULT single = SendDlgItemMessageW(dialog,
+				IDC_CONTROLLER_SINGLE, CB_GETCURSEL, 0, 0);
+			if (source >= XAVIX_CONTROLLER_SOURCE_AUTO &&
+				source <= XAVIX_CONTROLLER_SOURCE_WII_REMOTE)
+				xavix_controller_input_set_source(&g_controller_input,
+					(enum xavix_controller_source)source);
+			if (single == 0 || single == 1)
+				xavix_controller_input_set_single_reflector(
+					&g_controller_input, (int)single);
+			if (translated)
+				xavix_controller_input_set_dead_zone(&g_controller_input,
+					(int)dead_zone);
+			for (action = 0; action < XAVIX_CONTROLLER_ACTION_COUNT; ++action)
+				xavix_controller_input_set_binding(&g_controller_input,
+					(enum xavix_controller_action)action,
+					state->bindings[action]);
+			KillTimer(dialog, 1);
+			EndDialog(dialog, IDOK);
+			return TRUE;
+		}
+		if (id == IDCANCEL)
+		{
+			KillTimer(dialog, 1);
+			EndDialog(dialog, IDCANCEL);
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+static void show_controller_settings(HWND window)
+{
+	controller_dialog_state state;
+	memset(&state, 0, sizeof(state));
+	(void)DialogBoxParamW(GetModuleHandleW(NULL),
+		MAKEINTRESOURCEW(IDD_CONTROLLER_SETTINGS), window,
+		controller_dialog_procedure, (LPARAM)&state);
+}
+
 static display_viewport calculate_viewport(HWND window)
 {
 	display_viewport viewport;
@@ -1137,6 +1695,7 @@ static void resize_for_scale(HWND window, int scale)
 	if (g_fullscreen)
 		return;
 	g_window_scale = scale;
+	write_ini_integer(L"Video", L"WindowScale", scale);
 	if (IsZoomed(window))
 		ShowWindow(window, SW_RESTORE);
 	client_width = g_stretch_4_3 ?
@@ -1155,6 +1714,7 @@ static void resize_for_scale(HWND window, int scale)
 static void toggle_stretch_4_3(HWND window)
 {
 	g_stretch_4_3 = !g_stretch_4_3;
+	write_ini_integer(L"Video", L"Stretch4x3", g_stretch_4_3);
 	CheckMenuItem(g_menu, ID_VIEW_STRETCH_4_3,
 		MF_BYCOMMAND | (g_stretch_4_3 ? MF_CHECKED : MF_UNCHECKED));
 	if (!g_fullscreen && !IsZoomed(window))
@@ -1220,15 +1780,60 @@ static void stop_frame_clock(HWND window)
 	KillTimer(window, ID_EMULATION_TIMER);
 }
 
+static int controller_action_held(enum xavix_controller_action action)
+{
+	return (g_controller_reading.actions & (UINT32_C(1) << action)) != 0;
+}
+
+static int controller_action_pressed(enum xavix_controller_action action)
+{
+	return (g_controller_reading.pressed & (UINT32_C(1) << action)) != 0;
+}
+
+static int host_left_reflection(void)
+{
+	if (g_left_button || controller_action_held(XAVIX_CONTROLLER_PRIMARY) ||
+		controller_action_held(XAVIX_CONTROLLER_CONFIRM))
+		return 1;
+	if (g_rom.kind == DRGQST_ROM_DRAGON_QUEST &&
+		controller_action_held(XAVIX_CONTROLLER_DEFENSE))
+		return 1;
+	if ((g_rom.kind == DRGQST_ROM_TTV_SW ||
+		g_rom.kind == DRGQST_ROM_TTV_SWJ) &&
+		controller_action_held(XAVIX_CONTROLLER_DEFENSE))
+		return 1;
+	return 0;
+}
+
+static int host_right_reflection(void)
+{
+	if (g_right_button || controller_action_held(XAVIX_CONTROLLER_SECONDARY))
+		return 1;
+	if ((g_rom.kind == DRGQST_ROM_DRAGON_QUEST ||
+		g_rom.kind == DRGQST_ROM_TTV_LOTR) &&
+		(controller_action_held(XAVIX_CONTROLLER_SPECIAL) ||
+		 controller_action_held(XAVIX_CONTROLLER_DEFENSE)))
+		return 1;
+	return 0;
+}
+
 static void update_core_mouse(void)
 {
+	int left = host_left_reflection();
+	int right = host_right_reflection();
+	int reverse = g_omt_backside ||
+		controller_action_held(XAVIX_CONTROLLER_DEFENSE) ||
+		controller_action_held(XAVIX_CONTROLLER_TWO_HAND);
+	int spin = g_ttv_spin_held ||
+		controller_action_held(XAVIX_CONTROLLER_SPECIAL);
+
 	if (!g_core)
 		return;
 	if (g_rom.kind == DRGQST_ROM_TVPC_DOR)
 	{
 		g_core->machine.state.anport_regs[2] = g_tvpc_mouse_counter_x;
 		g_core->machine.state.anport_regs[3] = g_tvpc_mouse_counter_y;
-		if (g_left_button)
+		if (left)
 			g_core->machine.state.input0 |= 0x80;
 		else
 			g_core->machine.state.input0 &= (uint8_t)~0x80;
@@ -1242,12 +1847,22 @@ static void update_core_mouse(void)
 		g_rom.kind == DRGQST_ROM_EPO_MINI)
 		return;
 	drgqst_core_set_mouse(g_core, g_mouse_x, g_mouse_y,
-		g_left_button || (g_rom.kind == DRGQST_ROM_BAN_OMT &&
-			g_omt_backside),
-		g_right_button || (g_rom.kind == DRGQST_ROM_BAN_OMT &&
-			g_omt_backside));
-	if (g_rom.kind == DRGQST_ROM_TTV_SW && !g_left_button &&
-		!g_right_button && !g_ttv_spin_held)
+		left || (g_rom.kind == DRGQST_ROM_BAN_OMT && reverse),
+		right || (g_rom.kind == DRGQST_ROM_BAN_OMT && reverse));
+	if (g_rom.kind == DRGQST_ROM_BAN_ONEP &&
+		g_controller_reading.connected &&
+		(g_controller_reading.reflector[0].visible ||
+		 g_controller_reading.reflector[1].visible))
+	{
+		const xavix_virtual_reflector *first =
+			&g_controller_reading.reflector[0];
+		const xavix_virtual_reflector *second =
+			&g_controller_reading.reflector[1];
+		drgqst_core_set_reflectors(g_core,
+			first->x, first->y, first->area, first->visible,
+			second->x, second->y, second->area, second->visible);
+	}
+	if (g_rom.kind == DRGQST_ROM_TTV_SW && !left && !right && !spin)
 	{
 		/* The US program treats the 3-by-3 Japanese narrow image as a held
 		 * defensive pose.  A real moving edge is smaller and immediately
@@ -1256,7 +1871,7 @@ static void update_core_mouse(void)
 			g_ttv_sw_motion_frames ? XAVIX_SENSOR_POINT : XAVIX_SENSOR_NONE);
 	}
 	if ((g_rom.kind == DRGQST_ROM_TTV_SW ||
-		g_rom.kind == DRGQST_ROM_TTV_SWJ) && g_ttv_spin_held)
+		g_rom.kind == DRGQST_ROM_TTV_SWJ) && spin)
 	{
 		static const enum xavix_sensor_mode rotation[4] =
 		{
@@ -1395,9 +2010,9 @@ static void update_digital_direction_input(void)
 		input |= 0x40;
 	else if (right && !left)
 		input |= 0x80;
-	if (g_left_button || (GetAsyncKeyState(VK_SPACE) & 0x8000))
+	if (host_left_reflection() || (GetAsyncKeyState(VK_SPACE) & 0x8000))
 		input |= 0x01;
-	if (g_right_button || (GetAsyncKeyState(VK_CONTROL) & 0x8000))
+	if (host_right_reflection() || (GetAsyncKeyState(VK_CONTROL) & 0x8000))
 		input |= 0x02;
 	if (g_rom.kind != DRGQST_ROM_EPO_EBOX &&
 		((GetAsyncKeyState(VK_MBUTTON) & 0x8000) ||
@@ -1433,7 +2048,8 @@ static void release_held_host_inputs(HWND window)
 
 static void advance_ttv_special_gesture(void)
 {
-	if (g_ttv_spin_held)
+	if (g_ttv_spin_held ||
+		controller_action_held(XAVIX_CONTROLLER_SPECIAL))
 		g_ttv_spin_phase = (g_ttv_spin_phase + 1) & 7;
 	if (g_ttv_sw_motion_frames)
 		--g_ttv_sw_motion_frames;
@@ -1496,13 +2112,85 @@ static int initialize_executable_directory(void)
 	return g_executable_directory[0] != L'\0';
 }
 
-static int persistence_file_is_missing(enum drgqst_persistence_kind kind)
+static int join_application_path(const wchar_t *name, wchar_t *path,
+	size_t path_length)
+{
+	size_t base_length = wcslen(g_executable_directory);
+	size_t name_length = name ? wcslen(name) : 0;
+	int separator = base_length &&
+		g_executable_directory[base_length - 1] != L'\\' &&
+		g_executable_directory[base_length - 1] != L'/';
+
+	if (!name_length || base_length + (size_t)separator + name_length >=
+		path_length)
+		return 0;
+	memcpy(path, g_executable_directory, base_length * sizeof(*path));
+	if (separator)
+		path[base_length++] = L'\\';
+	memcpy(path + base_length, name, (name_length + 1) * sizeof(*path));
+	return 1;
+}
+
+static int ensure_application_directory(const wchar_t *path)
+{
+	DWORD attributes;
+
+	if (CreateDirectoryW(path, NULL))
+		return 1;
+	if (GetLastError() != ERROR_ALREADY_EXISTS)
+		return 0;
+	attributes = GetFileAttributesW(path);
+	return attributes != INVALID_FILE_ATTRIBUTES &&
+		(attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+}
+
+static int initialize_application_paths(void)
+{
+	return join_application_path(L"XaviXEmu.ini", g_ini_path,
+			sizeof(g_ini_path) / sizeof(g_ini_path[0])) &&
+		join_application_path(L"save", g_save_directory,
+			sizeof(g_save_directory) / sizeof(g_save_directory[0])) &&
+		join_application_path(L"snap", g_snap_directory,
+			sizeof(g_snap_directory) / sizeof(g_snap_directory[0])) &&
+		ensure_application_directory(g_save_directory) &&
+		ensure_application_directory(g_snap_directory);
+}
+
+static void load_application_settings(void)
+{
+	wchar_t language[32];
+	int scale;
+
+	GetPrivateProfileStringW(L"Interface", L"Language", L"auto",
+		language, sizeof(language) / sizeof(language[0]), g_ini_path);
+	if (_wcsicmp(language, L"zh-TW") == 0)
+		g_language_preference = LANGUAGE_PREFERENCE_ZH_TW;
+	else if (_wcsicmp(language, L"ja") == 0)
+		g_language_preference = LANGUAGE_PREFERENCE_JAPANESE;
+	else if (_wcsicmp(language, L"fr") == 0)
+		g_language_preference = LANGUAGE_PREFERENCE_FRENCH;
+	else if (_wcsicmp(language, L"en") == 0)
+		g_language_preference = LANGUAGE_PREFERENCE_ENGLISH;
+	else
+		g_language_preference = LANGUAGE_PREFERENCE_AUTO;
+	g_language = resolved_language(g_language_preference);
+	g_stretch_4_3 = GetPrivateProfileIntW(L"Video", L"Stretch4x3", 1,
+		g_ini_path) != 0;
+	g_record_window_size = GetPrivateProfileIntW(L"Video",
+		L"RecordWindowSize", 1, g_ini_path) != 0;
+	scale = GetPrivateProfileIntW(L"Video", L"WindowScale", DEFAULT_SCALE,
+		g_ini_path);
+	g_window_scale = scale >= 1 && scale <= 4 ? scale : DEFAULT_SCALE;
+}
+
+static int persistence_file_is_missing(const wchar_t *directory,
+	enum drgqst_persistence_kind kind)
 {
 	wchar_t path[MAX_PATH];
 	wchar_t error[256];
 	DWORD windows_error;
 
-	if (!drgqst_persistence_get_path(g_executable_directory, kind, path,
+	if (!drgqst_persistence_get_path(directory, kind, path,
 		sizeof(path) / sizeof(path[0]), error,
 		sizeof(error) / sizeof(error[0])))
 		return 0;
@@ -1524,10 +2212,19 @@ static int load_persistence_data(enum drgqst_persistence_kind kind,
 	if (loaded_from_legacy)
 		*loaded_from_legacy = 0;
 
-	if (drgqst_persistence_load(g_executable_directory, stored_kind, rom_sha1,
+	if (drgqst_persistence_load(g_save_directory, stored_kind, rom_sha1,
 		payload, payload_capacity, payload_size, error, error_length))
 		return 1;
-	if (!persistence_file_is_missing(stored_kind) ||
+	if (!persistence_file_is_missing(g_save_directory, stored_kind))
+		return 0;
+	if (drgqst_persistence_load(g_executable_directory, stored_kind, rom_sha1,
+		payload, payload_capacity, payload_size, error, error_length))
+	{
+		if (loaded_from_legacy)
+			*loaded_from_legacy = 1;
+		return 1;
+	}
+	if (!persistence_file_is_missing(g_executable_directory, stored_kind) ||
 		!drgqst_persistence_load(NULL, stored_kind, rom_sha1, payload,
 			payload_capacity, payload_size, error, error_length))
 		return 0;
@@ -1562,7 +2259,7 @@ static void load_persistent_eeprom(HWND window, drgqst_core *core,
 			xavix_eeprom_load_image(
 				&core->machine.state.peripherals.eeprom, image, size);
 		if (loaded_from_legacy &&
-			!drgqst_persistence_save(g_executable_directory,
+			!drgqst_persistence_save(g_save_directory,
 				persistence_kind_for_rom(DRGQST_PERSISTENCE_EEPROM, rom_kind),
 				rom_sha1_for_kind(rom_kind), image, size,
 				error, sizeof(error) / sizeof(error[0])))
@@ -1590,7 +2287,7 @@ static void load_persistent_xavix2_eeprom(HWND window,
 	{
 		xavix_eeprom_load_image(&machine->eeprom, image, size);
 		if (loaded_from_legacy &&
-			!drgqst_persistence_save(g_executable_directory,
+			!drgqst_persistence_save(g_save_directory,
 				persistence_kind_for_rom(DRGQST_PERSISTENCE_EEPROM, rom_kind),
 				rom_sha1_for_kind(rom_kind), image, size,
 				error, sizeof(error) / sizeof(error[0])))
@@ -1618,7 +2315,7 @@ static int save_persistent_eeprom(HWND window, int show_error)
 		if (!xavix_eeprom24c08_is_dirty(eeprom))
 			return 1;
 		xavix_eeprom_copy_image(eeprom, image, size);
-		if (!drgqst_persistence_save(g_executable_directory,
+		if (!drgqst_persistence_save(g_save_directory,
 			persistence_kind_for_rom(DRGQST_PERSISTENCE_EEPROM, g_rom.kind),
 			rom_sha1_for_kind(g_rom.kind), image, size, error,
 			sizeof(error) / sizeof(error[0])))
@@ -1635,7 +2332,7 @@ static int save_persistent_eeprom(HWND window, int show_error)
 	}
 	if (rom_uses_parallel_nvram(g_rom.kind))
 	{
-		if (!drgqst_persistence_save(g_executable_directory,
+		if (!drgqst_persistence_save(g_save_directory,
 			persistence_kind_for_rom(DRGQST_PERSISTENCE_EEPROM, g_rom.kind),
 			rom_sha1_for_kind(g_rom.kind),
 			g_core->machine.state.main_ram + XAVIX_PARALLEL_NVRAM_BASE,
@@ -1661,7 +2358,7 @@ static int save_persistent_eeprom(HWND window, int show_error)
 	if (!xavix_eeprom24c08_is_dirty(eeprom))
 		return 1;
 	xavix_eeprom_copy_image(eeprom, image, size);
-	if (!drgqst_persistence_save(g_executable_directory,
+	if (!drgqst_persistence_save(g_save_directory,
 		persistence_kind_for_rom(DRGQST_PERSISTENCE_EEPROM, g_rom.kind),
 		rom_sha1_for_kind(g_rom.kind), image, size, error,
 		sizeof(error) / sizeof(error[0])))
@@ -1788,19 +2485,137 @@ static void set_mouse_position(HWND window, int client_x, int client_y)
 	update_core_mouse();
 }
 
+static void update_controller_host_input(void)
+{
+	unsigned reflector;
+	uint8_t old_x = g_mouse_x;
+	uint8_t old_y = g_mouse_y;
+
+	xavix_controller_input_update(&g_controller_input,
+		&g_controller_reading);
+	if (g_controller_reading.connected)
+	{
+		reflector = g_core ? (unsigned)xavix_controller_input_single_reflector(
+			&g_controller_input) : 0;
+		if (reflector < 2 &&
+			g_controller_reading.reflector[reflector].visible)
+		{
+			g_mouse_x = g_controller_reading.reflector[reflector].x;
+			g_mouse_y = g_controller_reading.reflector[reflector].y;
+		}
+	}
+	if (g_core && g_rom.kind == DRGQST_ROM_TTV_SW &&
+		(old_x != g_mouse_x || old_y != g_mouse_y))
+		g_ttv_sw_motion_frames = 1;
+
+	if (controller_action_pressed(XAVIX_CONTROLLER_PRIMARY) ||
+		controller_action_pressed(XAVIX_CONTROLLER_CONFIRM))
+	{
+		if (g_xavix2)
+		{
+			if (g_rom.kind == DRGQST_ROM_BAN_BLDJ &&
+				controller_action_pressed(XAVIX_CONTROLLER_PRIMARY))
+			{
+				g_xavix2_area_gesture_frame = 0;
+				g_xavix2_area_gesture_frames = 8;
+				g_xavix2_gesture_kind = XAVIX2_GESTURE_BLDJ_FIRST_ATTACK;
+			}
+			else if (g_rom.kind == DRGQST_ROM_BAN_DB2J ||
+				g_rom.kind == DRGQST_ROM_BAN_DBZ)
+			{
+				g_xavix2_area_gesture_frame = 0;
+				g_xavix2_area_gesture_frames = 8;
+				g_xavix2_gesture_kind =
+					g_rom.kind == DRGQST_ROM_BAN_DBZ ?
+					XAVIX2_GESTURE_DBZ_SINGLE_CLOSE :
+					XAVIX2_GESTURE_DB2J_EDGE;
+			}
+			else
+			{
+				g_naruto_execute_delay = 2;
+				g_naruto_execute_frames = 4;
+			}
+		}
+		if (g_core && g_rom.kind == DRGQST_ROM_EPO_HAMD)
+			g_hamd_left_pulse_frames = 4;
+	}
+	if (controller_action_pressed(XAVIX_CONTROLLER_SECONDARY))
+	{
+		if (g_xavix2 && g_rom.kind == DRGQST_ROM_BAN_BLDJ)
+		{
+			g_xavix2_area_gesture_frame = 0;
+			g_xavix2_area_gesture_frames = 8;
+			g_xavix2_gesture_kind = XAVIX2_GESTURE_BLDJ_SECOND_ATTACK;
+		}
+		if (g_core && g_rom.kind == DRGQST_ROM_EPO_HAMD)
+			g_hamd_right_pulse_frames = 4;
+	}
+	if ((controller_action_pressed(XAVIX_CONTROLLER_SPECIAL) ||
+		controller_action_pressed(XAVIX_CONTROLLER_TWO_HAND)) && g_xavix2)
+	{
+		if (g_rom.kind == DRGQST_ROM_BAN_DBZ ||
+			g_rom.kind == DRGQST_ROM_BAN_BLDJ)
+		{
+			g_xavix2_area_gesture_frame = 0;
+			g_xavix2_area_gesture_frames = 8;
+			g_xavix2_gesture_kind =
+				g_rom.kind == DRGQST_ROM_BAN_DBZ ?
+				XAVIX2_GESTURE_DBZ_BOTH_CLOSE :
+				XAVIX2_GESTURE_BLDJ_BOTH_ATTACK;
+		}
+	}
+	if ((controller_action_pressed(XAVIX_CONTROLLER_DEFLECT) ||
+		controller_action_pressed(XAVIX_CONTROLLER_DEFENSE)) && g_xavix2 &&
+		g_rom.kind == DRGQST_ROM_BAN_DBZ)
+	{
+		g_xavix2_area_gesture_frame = 0;
+		g_xavix2_area_gesture_frames = 4;
+		g_xavix2_gesture_kind = XAVIX2_GESTURE_DBZ_DEFLECT;
+	}
+	if (controller_action_pressed(XAVIX_CONTROLLER_SPECIAL) && g_core &&
+		g_rom.kind == DRGQST_ROM_BAN_ONEP)
+		drgqst_core_trigger_bazooka(g_core);
+	if (controller_action_pressed(XAVIX_CONTROLLER_CONFIRM) && g_core &&
+		g_rom.kind == DRGQST_ROM_EPO_HAMD)
+		g_hamd_confirm_frames = 4;
+	update_core_mouse();
+}
+
+static uint8_t xavix2_reflector_x(uint8_t x)
+{
+	return (uint8_t)(1 + ((unsigned)x * 54 + 127) / 255);
+}
+
+static uint8_t xavix2_reflector_y(uint8_t y)
+{
+	return (uint8_t)(55 - ((unsigned)y * 54 + 127) / 255);
+}
+
 static void run_xavix2_frame(void)
 {
 	uint8_t packet[XAVIX2_MOTION_PACKET_SIZE] = { 0 };
 	uint32_t pio_input = 0;
 	int dragon_ball_motion = g_rom.kind == DRGQST_ROM_BAN_DB2J ||
 		g_rom.kind == DRGQST_ROM_BAN_DBZ;
+	int controller_second = g_controller_reading.connected &&
+		g_controller_reading.reflector[1].visible;
+	int joined_hands = g_naruto_joined_hands ||
+		controller_action_held(XAVIX_CONTROLLER_DEFENSE) ||
+		controller_action_held(XAVIX_CONTROLLER_TWO_HAND);
+	int bldj_gesture_active = g_rom.kind == DRGQST_ROM_BAN_BLDJ &&
+		g_xavix2_area_gesture_frame < g_xavix2_area_gesture_frames;
+	int bldj_needs_second = bldj_gesture_active &&
+		(g_xavix2_gesture_kind == XAVIX2_GESTURE_BLDJ_SECOND_ATTACK ||
+		 g_xavix2_gesture_kind == XAVIX2_GESTURE_BLDJ_BOTH_ATTACK);
 	unsigned width;
 	unsigned height;
 	unsigned stride;
-	uint8_t sample_x = (uint8_t)(1 +
-		((unsigned)g_mouse_x * 54 + 127) / 255);
-	uint8_t sample_y = (uint8_t)(55 -
-		((unsigned)g_mouse_y * 54 + 127) / 255);
+	uint8_t sample_x = xavix2_reflector_x(g_mouse_x);
+	uint8_t sample_y = xavix2_reflector_y(g_mouse_y);
+	uint8_t sample2_x = controller_second ? xavix2_reflector_x(
+		g_controller_reading.reflector[1].x) : sample_x;
+	uint8_t sample2_y = controller_second ? xavix2_reflector_y(
+		g_controller_reading.reflector[1].y) : sample_y;
 	if (g_rom.kind == DRGQST_ROM_BAN_DBZ)
 	{
 		/* Its tracker accepts only the calibrated camera rectangle.  Leave four
@@ -1809,12 +2624,19 @@ static void run_xavix2_frame(void)
 		if (sample_x > 0x30) sample_x = 0x30;
 		if (sample_y < 0x12) sample_y = 0x12;
 		if (sample_y > 0x2a) sample_y = 0x2a;
+		if (sample2_x < 0x0c) sample2_x = 0x0c;
+		if (sample2_x > 0x34) sample2_x = 0x34;
+		if (sample2_y < 0x12) sample2_y = 0x12;
+		if (sample2_y > 0x2e) sample2_y = 0x2e;
 	}
 
 	if (g_naruto_execute_delay && !dragon_ball_motion)
 		--g_naruto_execute_delay;
 	else if (!dragon_ball_motion &&
-		(g_left_button || g_naruto_execute_frames))
+		(g_left_button ||
+		 controller_action_held(XAVIX_CONTROLLER_PRIMARY) ||
+		 controller_action_held(XAVIX_CONTROLLER_CONFIRM) ||
+		 g_naruto_execute_frames))
 	{
 		pio_input = UINT32_C(1) << 16;
 		if (g_naruto_execute_frames)
@@ -1824,20 +2646,42 @@ static void run_xavix2_frame(void)
 	packet[0] = sample_x;
 	packet[1] = sample_y;
 	packet[2] = dragon_ball_motion ? 0x28 : 0x20;
-	if (g_right_button || g_naruto_joined_hands || dragon_ball_motion)
+	if (g_right_button || joined_hands || dragon_ball_motion ||
+		controller_second || bldj_needs_second ||
+		controller_action_held(XAVIX_CONTROLLER_CONFIRM) ||
+		controller_action_held(XAVIX_CONTROLLER_SPECIAL))
 	{
-		packet[3] = dragon_ball_motion ?
+		packet[3] = controller_second ? sample2_x : dragon_ball_motion ?
 			(uint8_t)(sample_x <= 0x33 ? sample_x + 4 : sample_x - 4) :
 			sample_x;
 		/* Blue Dragon rejects two perfectly overlapping reflectors as one
 		 * blob.  Its confirm gesture needs a small, still-visible separation.
 		 * Naruto deliberately uses coincident hands for its guard gesture. */
-		packet[4] = g_rom.kind == DRGQST_ROM_BAN_BLDJ ?
+		packet[4] = controller_second ? sample2_y :
+			g_rom.kind == DRGQST_ROM_BAN_BLDJ ?
 			(uint8_t)(sample_y <= 0x35 ? sample_y + 2 : sample_y - 2) :
 			g_rom.kind == DRGQST_ROM_BAN_DBZ ?
 			(uint8_t)(sample_y <= 0x33 ? sample_y + 4 : sample_y - 4) :
 			sample_y;
 		packet[5] = dragon_ball_motion ? 0x28 : 0x20;
+	}
+	if (bldj_gesture_active)
+	{
+		unsigned phase = g_xavix2_area_gesture_frame++;
+		/* Blue Dragon exposes independent close/reopen events for its two
+		 * reflectors (RAM $1130 bits 0 and 8).  Four absent samples followed
+		 * by four restored samples reliably cross the firmware's history
+		 * filter and are consumed by the battle action routines. */
+		if (phase < 4 &&
+			(g_xavix2_gesture_kind == XAVIX2_GESTURE_BLDJ_FIRST_ATTACK ||
+			 g_xavix2_gesture_kind == XAVIX2_GESTURE_BLDJ_BOTH_ATTACK))
+			packet[2] = 0;
+		if (phase < 4 &&
+			(g_xavix2_gesture_kind == XAVIX2_GESTURE_BLDJ_SECOND_ATTACK ||
+			 g_xavix2_gesture_kind == XAVIX2_GESTURE_BLDJ_BOTH_ATTACK))
+			packet[5] = 0;
+		if (g_xavix2_area_gesture_frame == g_xavix2_area_gesture_frames)
+			g_xavix2_gesture_kind = XAVIX2_GESTURE_NONE;
 	}
 	if (dragon_ball_motion && g_xavix2_area_gesture_frame <
 		g_xavix2_area_gesture_frames)
@@ -1848,13 +2692,13 @@ static void run_xavix2_frame(void)
 		 * same packet: basic attack hides one hand, the two-hand primitive hides
 		 * both, and the keyboard sweep advances both blobs eight raw units on
 		 * each 30 Hz classifier update. */
-		if (g_xavix2_gesture_kind == 2)
+		if (g_xavix2_gesture_kind == XAVIX2_GESTURE_DBZ_SINGLE_CLOSE)
 		{
 			packet[3] = packet[4] = packet[5] = 0;
 		}
-		else if (g_xavix2_gesture_kind == 3)
+		else if (g_xavix2_gesture_kind == XAVIX2_GESTURE_DBZ_BOTH_CLOSE)
 			memset(packet, 0, 6);
-		else if (g_xavix2_gesture_kind == 4)
+		else if (g_xavix2_gesture_kind == XAVIX2_GESTURE_DBZ_DEFLECT)
 		{
 			int delta = (int)(phase + 1) * 4;
 			if (sample_x > 0x20)
@@ -1878,11 +2722,15 @@ static void run_xavix2_frame(void)
 				packet[2] = packet[5] = 0x08;
 		}
 		if (g_xavix2_area_gesture_frame == g_xavix2_area_gesture_frames)
-			g_xavix2_gesture_kind = 0;
+			g_xavix2_gesture_kind = XAVIX2_GESTURE_NONE;
 	}
-	if (g_rom.kind == DRGQST_ROM_BAN_DB2J && g_left_button)
+	if (g_rom.kind == DRGQST_ROM_BAN_DB2J &&
+		(g_left_button || controller_action_held(XAVIX_CONTROLLER_PRIMARY) ||
+		 controller_action_held(XAVIX_CONTROLLER_CONFIRM)))
 		pio_input |= UINT32_C(1) << 16;
-	if (g_rom.kind == DRGQST_ROM_BAN_DB2J && g_right_button)
+	if (g_rom.kind == DRGQST_ROM_BAN_DB2J &&
+		(g_right_button ||
+		 controller_action_held(XAVIX_CONTROLLER_SECONDARY)))
 		pio_input |= UINT32_C(1) << 19;
 	(void)xavix2_machine_run_video_frame(g_xavix2,
 		xavix2_uses_motion_packet(g_rom.kind) ? packet : NULL, pio_input);
@@ -1942,6 +2790,112 @@ static void update_timing_diagnostics(HWND window, LONGLONG now)
 	g_timing_interrupts = interrupts;
 }
 
+static void release_recording_surface(void)
+{
+	if (g_recording_dc && g_recording_old_bitmap)
+		SelectObject(g_recording_dc, g_recording_old_bitmap);
+	if (g_recording_bitmap)
+		DeleteObject(g_recording_bitmap);
+	if (g_recording_dc)
+		DeleteDC(g_recording_dc);
+	g_recording_dc = NULL;
+	g_recording_bitmap = NULL;
+	g_recording_old_bitmap = NULL;
+	g_recording_pixels = NULL;
+	g_recording_width = 0;
+	g_recording_height = 0;
+}
+
+static int create_recording_surface(HWND window, unsigned width,
+	unsigned height, wchar_t *error, size_t error_length)
+{
+	BITMAPINFO bitmap_info;
+	HDC device;
+	HDC memory;
+	HBITMAP bitmap;
+	HGDIOBJ old_bitmap;
+	void *pixels = NULL;
+
+	if (!width || !height || width > INT_MAX || height > INT_MAX ||
+		(uint64_t)width * height * 4 > SIZE_MAX)
+	{
+		_snwprintf(error, error_length,
+			L"The recording display dimensions are invalid.");
+		return 0;
+	}
+	device = GetDC(window);
+	if (!device)
+	{
+		_snwprintf(error, error_length,
+			L"The recording display is not available.");
+		return 0;
+	}
+	memory = CreateCompatibleDC(device);
+	memset(&bitmap_info, 0, sizeof(bitmap_info));
+	bitmap_info.bmiHeader.biSize = sizeof(bitmap_info.bmiHeader);
+	bitmap_info.bmiHeader.biWidth = (LONG)width;
+	bitmap_info.bmiHeader.biHeight = -(LONG)height;
+	bitmap_info.bmiHeader.biPlanes = 1;
+	bitmap_info.bmiHeader.biBitCount = 32;
+	bitmap_info.bmiHeader.biCompression = BI_RGB;
+	bitmap = memory ? CreateDIBSection(device, &bitmap_info,
+		DIB_RGB_COLORS, &pixels, NULL, 0) : NULL;
+	ReleaseDC(window, device);
+	if (!memory || !bitmap || !pixels)
+	{
+		if (bitmap) DeleteObject(bitmap);
+		if (memory) DeleteDC(memory);
+		_snwprintf(error, error_length,
+			L"The recording display surface could not be created.");
+		return 0;
+	}
+	old_bitmap = SelectObject(memory, bitmap);
+	if (!old_bitmap || old_bitmap == HGDI_ERROR)
+	{
+		DeleteObject(bitmap);
+		DeleteDC(memory);
+		_snwprintf(error, error_length,
+			L"The recording display surface could not be selected.");
+		return 0;
+	}
+	release_recording_surface();
+	g_recording_dc = memory;
+	g_recording_bitmap = bitmap;
+	g_recording_old_bitmap = old_bitmap;
+	g_recording_pixels = (uint32_t *)pixels;
+	g_recording_width = (int)width;
+	g_recording_height = (int)height;
+	return 1;
+}
+
+static int render_recording_frame(void)
+{
+	display_viewport viewport;
+	RECT client;
+	int scale_x;
+	int scale_y;
+
+	if (!g_recording_dc || !g_recording_pixels ||
+		g_recording_width <= 0 || g_recording_height <= 0 ||
+		!g_frame_width || !g_frame_height)
+		return 0;
+	SetRect(&client, 0, 0, g_recording_width, g_recording_height);
+	viewport.x = 0;
+	viewport.y = 0;
+	viewport.width = g_recording_width;
+	viewport.height = g_recording_height;
+	scale_x = g_recording_width / (int)g_frame_width;
+	scale_y = g_recording_height / (int)g_frame_height;
+	viewport.scale = g_stretch_4_3 ? scale_y :
+		(scale_x < scale_y ? scale_x : scale_y);
+	if (viewport.scale < 1)
+		viewport.scale = 1;
+	if (!render_display(g_recording_dc, &client, &viewport))
+		return 0;
+	GdiFlush();
+	return 1;
+}
+
 static void stop_video_recording(HWND window, int show_result)
 {
 	wchar_t path[MAX_PATH];
@@ -1949,16 +2903,21 @@ static void stop_video_recording(HWND window, int show_result)
 	wchar_t message[MAX_PATH + 96];
 
 	if (!xavix_video_recorder_active(&g_video_recorder))
+	{
+		release_recording_surface();
 		return;
+	}
 	if (!xavix_video_recorder_stop(&g_video_recorder, path,
 		sizeof(path) / sizeof(path[0]), error,
 		sizeof(error) / sizeof(error[0])))
 	{
+		release_recording_surface();
 		if (show_result)
 			MessageBoxW(window, error, L"Recording failed",
 				MB_OK | MB_ICONERROR);
 		return;
 	}
+	release_recording_surface();
 	g_window_status = WINDOW_STATUS_RUNNING;
 	update_window_title(window);
 	if (show_result)
@@ -1973,17 +2932,30 @@ static void stop_video_recording(HWND window, int show_result)
 
 static void start_video_recording(HWND window)
 {
+	display_viewport viewport;
+	unsigned width;
+	unsigned height;
 	wchar_t path[MAX_PATH];
 	wchar_t error[384];
 
 	if (!emulator_loaded() ||
 		xavix_video_recorder_active(&g_video_recorder))
 		return;
+	viewport = calculate_viewport(window);
+	width = g_record_window_size ? (unsigned)viewport.width : g_frame_width;
+	height = g_record_window_size ? (unsigned)viewport.height : g_frame_height;
+	if (!create_recording_surface(window, width, height, error,
+		sizeof(error) / sizeof(error[0])))
+	{
+		MessageBoxW(window, error, L"Recording failed", MB_OK | MB_ICONERROR);
+		return;
+	}
 	if (!xavix_video_recorder_start(&g_video_recorder,
-		g_executable_directory, g_frame_width, g_frame_height,
+		g_snap_directory, width, height,
 		path, sizeof(path) / sizeof(path[0]), error,
 		sizeof(error) / sizeof(error[0])))
 	{
+		release_recording_surface();
 		MessageBoxW(window, error, L"Recording failed", MB_OK | MB_ICONERROR);
 		return;
 	}
@@ -1999,13 +2971,22 @@ static void record_video_frame(HWND window, const int16_t *audio,
 
 	if (!xavix_video_recorder_active(&g_video_recorder))
 		return;
+	if (!render_recording_frame())
+	{
+		_snwprintf(error, sizeof(error) / sizeof(error[0]),
+			L"The current display could not be rendered for recording.");
+		goto failure;
+	}
 	if (xavix_video_recorder_write_frame(&g_video_recorder,
-		g_framebuffer, g_frame_stride, audio, audio_frames,
+		g_recording_pixels, (unsigned)g_recording_width, audio, audio_frames,
 		error, sizeof(error) / sizeof(error[0])))
 		return;
+
+failure:
 	(void)xavix_video_recorder_stop(&g_video_recorder, path,
 		sizeof(path) / sizeof(path[0]), stop_error,
 		sizeof(stop_error) / sizeof(stop_error[0]));
+	release_recording_surface();
 	g_window_status = WINDOW_STATUS_RUNNING;
 	update_window_title(window);
 	MessageBoxW(window, error, L"Recording stopped", MB_OK | MB_ICONERROR);
@@ -2024,6 +3005,7 @@ static void run_due_frames(HWND window)
 	while (now.QuadPart >= g_next_frame_counter && frames < 3)
 	{
 		QueryPerformanceCounter(&frame_start);
+		update_controller_host_input();
 		if (g_xavix2)
 		{
 			run_xavix2_frame();
@@ -2095,7 +3077,7 @@ static int save_runtime_state(HWND window)
 		drgqst_state_save(g_core, state, state_size, &written)) &&
 		written == state_size;
 	success = encoded && drgqst_persistence_save(
-			g_executable_directory,
+			g_save_directory,
 			persistence_kind_for_rom(DRGQST_PERSISTENCE_RUNTIME_STATE, g_rom.kind),
 			rom_sha1_for_kind(g_rom.kind), state, written, error,
 			sizeof(error) / sizeof(error[0]));
@@ -2179,7 +3161,7 @@ static int load_runtime_state(HWND window)
 			g_eeprom_settle_frames = 0;
 		}
 		if (loaded_from_legacy &&
-			!drgqst_persistence_save(g_executable_directory,
+			!drgqst_persistence_save(g_save_directory,
 				persistence_kind_for_rom(DRGQST_PERSISTENCE_RUNTIME_STATE,
 					g_rom.kind),
 				rom_sha1_for_kind(g_rom.kind), state, loaded,
@@ -2229,7 +3211,7 @@ static int load_runtime_state(HWND window)
 		return 0;
 	}
 	if (loaded_from_legacy &&
-		!drgqst_persistence_save(g_executable_directory,
+		!drgqst_persistence_save(g_save_directory,
 			persistence_kind_for_rom(DRGQST_PERSISTENCE_RUNTIME_STATE, g_rom.kind),
 			rom_sha1_for_kind(g_rom.kind), state, loaded,
 			error, sizeof(error) / sizeof(error[0])))
@@ -2326,6 +3308,9 @@ static int activate_xavix2_rom(HWND window, drgqst_rom_image *image,
 		g_xavix2_audio_mute_mask);
 	g_rom = *image;
 	memset(image, 0, sizeof(*image));
+	xavix_controller_input_set_profile(&g_controller_input,
+		drgqst_rom_short_name(g_rom.kind));
+	xavix_controller_input_set_maximum_step(&g_controller_input, 12);
 	g_eeprom_generation = g_xavix2->eeprom.write_generation;
 	g_eeprom_settle_frames = 0;
 	g_ban_onep_menu_input = 0;
@@ -2413,6 +3398,13 @@ static int load_rom(HWND window, const wchar_t *path, int show_error)
 	g_core = core;
 	g_xavix2 = NULL;
 	g_rom = image;
+	xavix_controller_input_set_profile(&g_controller_input,
+		drgqst_rom_short_name(g_rom.kind));
+	/* Dragon Quest rejects slow optical paths before they reach its direction
+	 * classifier.  Its verified 12-frame calibration stroke advances about
+	 * 17 host units per frame, beyond the ordinary virtual-cursor limit. */
+	xavix_controller_input_set_maximum_step(&g_controller_input,
+		g_rom.kind == DRGQST_ROM_DRAGON_QUEST ? 24 : 12);
 	g_ban_onep_menu_input = 0;
 	g_ban_onep_menu_input_frames = 0;
 	g_omt_backside = 0;
@@ -2502,14 +3494,13 @@ static void draw_mouse_target(HDC device, const display_viewport *viewport)
 	HPEN pen;
 	HGDIOBJ old_pen;
 	HGDIOBJ old_brush;
-	int xavix2_naruto_target = g_xavix2 &&
-		g_rom.kind == DRGQST_ROM_BAN_NARU;
 	int center_x;
 	int center_y;
 	int radius;
 
-	if ((!g_core && !xavix2_naruto_target) ||
-		(!xavix2_naruto_target && rom_has_internal_cursor(g_rom.kind)) ||
+	/* XaviX2 titles provide their own in-game cursors.  In particular,
+	 * Naruto no longer needs the host's blue diagnostic marker. */
+	if (!g_core || rom_has_internal_cursor(g_rom.kind) ||
 		g_rom.kind == DRGQST_ROM_EPO_HAMD ||
 		g_rom.kind == DRGQST_ROM_TVPC_DOR ||
 		g_rom.kind == DRGQST_ROM_TAK_CHQ ||
@@ -2518,10 +3509,10 @@ static void draw_mouse_target(HDC device, const display_viewport *viewport)
 		g_rom.kind == DRGQST_ROM_TOM_DPGM ||
 		g_rom.kind == DRGQST_ROM_EPO_MINI ||
 		rom_uses_digital_direction_input(g_rom.kind) ||
-		(!xavix2_naruto_target && !rom_uses_camera(g_rom.kind) &&
+		(!rom_uses_camera(g_rom.kind) &&
 		drgqst_core_feather_visible(g_core)))
 		return;
-	if (xavix2_naruto_target || rom_uses_camera(g_rom.kind))
+	if (rom_uses_camera(g_rom.kind))
 	{
 		center_x = viewport->x +
 			(g_mouse_x * (viewport->width - 1) + 127) / 255;
@@ -2791,14 +3782,34 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT message,
 		case ID_VIEW_STRETCH_4_3:
 			toggle_stretch_4_3(window);
 			return 0;
+		case ID_VIEW_RECORD_WINDOW_SIZE:
+			g_record_window_size = !g_record_window_size;
+			write_ini_integer(L"Video", L"RecordWindowSize",
+				g_record_window_size);
+			CheckMenuItem(g_menu, ID_VIEW_RECORD_WINDOW_SIZE,
+				MF_BYCOMMAND | (g_record_window_size ?
+					MF_CHECKED : MF_UNCHECKED));
+			return 0;
 		case ID_VIEW_FULLSCREEN:
 			toggle_fullscreen(window);
 			return 0;
+		case ID_LANGUAGE_AUTO:
+			set_language_preference(window, LANGUAGE_PREFERENCE_AUTO);
+			return 0;
 		case ID_LANGUAGE_ZH_TW:
-			set_interface_language(window, LANGUAGE_ZH_TW);
+			set_language_preference(window, LANGUAGE_PREFERENCE_ZH_TW);
+			return 0;
+		case ID_LANGUAGE_JAPANESE:
+			set_language_preference(window, LANGUAGE_PREFERENCE_JAPANESE);
+			return 0;
+		case ID_LANGUAGE_FRENCH:
+			set_language_preference(window, LANGUAGE_PREFERENCE_FRENCH);
 			return 0;
 		case ID_LANGUAGE_ENGLISH:
-			set_interface_language(window, LANGUAGE_ENGLISH);
+			set_language_preference(window, LANGUAGE_PREFERENCE_ENGLISH);
+			return 0;
+		case ID_CONTROLLER_SETTINGS:
+			show_controller_settings(window);
 			return 0;
 		case ID_HELP_ABOUT:
 			show_about(window);
@@ -2839,13 +3850,21 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT message,
 			g_hamd_left_pulse_frames = 4;
 		if (g_xavix2)
 		{
-			if (g_rom.kind == DRGQST_ROM_BAN_DB2J ||
+			if (g_rom.kind == DRGQST_ROM_BAN_BLDJ)
+			{
+				g_xavix2_area_gesture_frame = 0;
+				g_xavix2_area_gesture_frames = 8;
+				g_xavix2_gesture_kind = XAVIX2_GESTURE_BLDJ_FIRST_ATTACK;
+			}
+			else if (g_rom.kind == DRGQST_ROM_BAN_DB2J ||
 				g_rom.kind == DRGQST_ROM_BAN_DBZ)
 			{
 				g_xavix2_area_gesture_frame = 0;
 				g_xavix2_area_gesture_frames = 8;
 				g_xavix2_gesture_kind =
-					g_rom.kind == DRGQST_ROM_BAN_DBZ ? 2 : 1;
+					g_rom.kind == DRGQST_ROM_BAN_DBZ ?
+					XAVIX2_GESTURE_DBZ_SINGLE_CLOSE :
+					XAVIX2_GESTURE_DB2J_EDGE;
 			}
 			else
 			{
@@ -2867,13 +3886,16 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT message,
 		SetFocus(window);
 		SetCapture(window);
 		g_right_button = 1;
-		if (g_xavix2 && (g_rom.kind == DRGQST_ROM_BAN_DB2J ||
+		if (g_xavix2 && (g_rom.kind == DRGQST_ROM_BAN_BLDJ ||
+			g_rom.kind == DRGQST_ROM_BAN_DB2J ||
 			g_rom.kind == DRGQST_ROM_BAN_DBZ))
 		{
 			g_xavix2_area_gesture_frame = 0;
 			g_xavix2_area_gesture_frames = 8;
-			g_xavix2_gesture_kind =
-				g_rom.kind == DRGQST_ROM_BAN_DBZ ? 3 : 1;
+			g_xavix2_gesture_kind = g_rom.kind == DRGQST_ROM_BAN_BLDJ ?
+				XAVIX2_GESTURE_BLDJ_SECOND_ATTACK :
+				g_rom.kind == DRGQST_ROM_BAN_DBZ ?
+				XAVIX2_GESTURE_DBZ_BOTH_CLOSE : XAVIX2_GESTURE_DB2J_EDGE;
 		}
 		if (g_core && g_rom.kind == DRGQST_ROM_EPO_HAMD)
 			g_hamd_right_pulse_frames = 4;
@@ -2950,7 +3972,18 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT message,
 		}
 		if (wparam == VK_SPACE && g_xavix2)
 		{
-			if (g_rom.kind == DRGQST_ROM_BAN_DB2J ||
+			if (g_rom.kind == DRGQST_ROM_BAN_BLDJ)
+			{
+				g_naruto_joined_hands = 1;
+				if (!(lparam & ((LPARAM)1 << 30)))
+				{
+					g_xavix2_area_gesture_frame = 0;
+					g_xavix2_area_gesture_frames = 8;
+					g_xavix2_gesture_kind =
+						XAVIX2_GESTURE_BLDJ_BOTH_ATTACK;
+				}
+			}
+			else if (g_rom.kind == DRGQST_ROM_BAN_DB2J ||
 				g_rom.kind == DRGQST_ROM_BAN_DBZ)
 			{
 				if (!(lparam & ((LPARAM)1 << 30)))
@@ -2959,7 +3992,9 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT message,
 					g_xavix2_area_gesture_frames =
 						g_rom.kind == DRGQST_ROM_BAN_DBZ ? 4 : 8;
 					g_xavix2_gesture_kind =
-						g_rom.kind == DRGQST_ROM_BAN_DBZ ? 4 : 1;
+						g_rom.kind == DRGQST_ROM_BAN_DBZ ?
+						XAVIX2_GESTURE_DBZ_DEFLECT :
+						XAVIX2_GESTURE_DB2J_EDGE;
 				}
 			}
 			else
@@ -3131,6 +4166,7 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT message,
 		save_persistent_eeprom(window, 1);
 		win_audio_shutdown(&g_audio_output);
 		release_capture_surface();
+		xavix_controller_input_shutdown(&g_controller_input);
 		timeEndPeriod(1);
 		free(g_core);
 		g_core = NULL;
@@ -3191,7 +4227,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous_instance,
 		LocalFree(arguments);
 		return result ? 0 : 2;
 	}
-	if (!initialize_executable_directory())
+	if (!initialize_executable_directory() || !initialize_application_paths())
 	{
 		MessageBoxW(NULL, interface_text()->storage_directory_error,
 			interface_text()->window_title_idle, MB_OK | MB_ICONERROR);
@@ -3199,6 +4235,8 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous_instance,
 			LocalFree(arguments);
 		return 1;
 	}
+	load_application_settings();
+	xavix_controller_input_init(&g_controller_input, g_ini_path);
 	SetProcessDPIAware();
 	apply_system_ui_language(g_language);
 	timeBeginPeriod(1);
@@ -3241,7 +4279,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous_instance,
 	}
 
 	DragAcceptFiles(window, TRUE);
-	resize_for_scale(window, DEFAULT_SCALE);
+	resize_for_scale(window, g_window_scale);
 	ShowWindow(window, show_command);
 	UpdateWindow(window);
 	if (initial_rom)

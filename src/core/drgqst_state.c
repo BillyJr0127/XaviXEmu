@@ -681,6 +681,9 @@ int drgqst_state_load(drgqst_core *core, const uint8_t *input,
 		core->ban_onep_drag_origin_x = core->ban_onep_aim_x;
 		core->ban_onep_left_punch = 0;
 		core->ban_onep_right_punch = 0;
+		core->ban_onep_dual_reflectors = 0;
+		memset(core->ban_onep_reflector_visible, 0,
+			sizeof(core->ban_onep_reflector_visible));
 		core->ban_onep_bazooka_phase = 0;
 	}
 	core->epo_hamd_packet = 0;

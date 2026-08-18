@@ -20,7 +20,9 @@ bios/
 
 # EEPROM, NVRAM, save states, and memory dumps
 saves/
+save/
 states/
+XaviXEmu.ini
 *.sav
 *.state
 *.sta

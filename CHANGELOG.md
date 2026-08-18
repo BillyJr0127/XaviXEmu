@@ -5,6 +5,36 @@ semantic versioning while experimental releases carry a pre-release suffix.
 
 ## Unreleased
 
+## 0.3.1 - 2026-08-17
+
+- Fix Kenshin Dragon Quest analog-stick strokes being too slow for the game's
+  vertical-confirm and sword-attack motion classifier. Its higher top speed is
+  reached through a gradual hold acceleration so brief taps remain precise.
+- Add Blue Dragon battle actions to the controller profile. Primary and
+  secondary actions close/reopen reflector 1 or 2, while special/two-hand
+  closes and reopens both; these now drive the firmware's verified per-hand
+  battle events instead of the unrelated Naruto Execute input.
+- Add controller settings for PS and compatible Windows gamepads. The left and
+  right analog sticks become two independent reflectors, single-reflector
+  games can select either stick, and game actions can be rebound per ROM and
+  retained in `XaviXEmu.ini`. Analog input is relative like dragging a mouse:
+  each reflector stays at its last position when its stick returns to centre.
+- Add an initial native Windows HID path for two Wii Remotes. Each remote
+  supplies an independently calibrated IR reflector position, while
+  configurable buttons provide large-area, defense, special, two-hand, and
+  deflect actions that IR position alone cannot identify. This path requires a
+  sensor bar. The maintainer does not own Wii Remote hardware, so this path
+  remains unverified on physical controllers and awaits user reports.
+- Add the 0.3.1 front end: `XaviXEmu.ini` beside the executable stores
+  language, display, and controller preferences; Japanese and French join
+  Traditional Chinese and English. Automatic selection follows Traditional
+  Chinese, Japanese, and French Windows locales, with English as the fallback.
+- Correct the internal Japanese/English language-table ordering so manual and
+  automatic language selection always load the intended translation.
+- Store EEPROM and F5/F7 runtime states in the local `save` directory and
+  store both PNG screenshots and MJPEG AVI recordings in `snap`. Existing
+  state files beside the executable and the older user-data location remain
+  readable and are migrated on the next successful load.
 - Add exact image recognition and isolated runtime-state files for five EPOCH
   XaviX 2 titles: `epo_dab2j`, `epo_dtcj`, `epo_pabj`, `epo_ssk2`, and
   `epo_sskj`. The first three reach verified startup/tutorial/name-entry
@@ -35,8 +65,8 @@ semantic versioning while experimental releases carry a pre-release suffix.
   separating the 120 Hz timer interrupt from 60 Hz vblank.  The CPU and PCM
   clocks remain unchanged, preserving sample pitch; version-1 F5 states migrate
   their timer phase when loaded.
-- Keep a host target visible for Naruto when its pre-battle game-owned cursor
-  layer disappears while optical hit testing remains active.
+- Remove Naruto's blue host diagnostic target. The game-owned cursor now
+  remains the only visible pointer while optical hit testing stays active.
 - Decode the XaviX 2 note-release form of the live voice command. Released
   voices now decay cleanly before their active bit clears instead of retaining
   a sustain loop until channel reuse; the channel menu identifies voices in
@@ -108,6 +138,11 @@ semantic versioning while experimental releases carry a pre-release suffix.
 
 ### Fixed
 
+- Record F9/F10 MJPEG AVI output through a fixed presentation surface selected
+  when recording starts. Fullscreen and enlarged windows can now record at the
+  displayed viewport size, guest 640x480-to-320x240 mode changes are rescaled
+  instead of leaving a quarter-size image over black, and the presented host
+  cursor is included. A View-menu checkbox retains native-size recording.
 - Implement the XaviX 2 command `$07` signed-vector transform so DBZ supplies
   its firmware-rotated directional light instead of an all-zero vector. Keep
   command `$0b` color modulation disabled: the two plausible signed-dot

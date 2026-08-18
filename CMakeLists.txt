@@ -1,12 +1,13 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(XaviXEmu VERSION 0.3.0 LANGUAGES C RC)
+project(XaviXEmu VERSION 0.3.1 LANGUAGES C RC)
 
 set(MINIZ_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/third_party/miniz")
 
 add_executable(xavixemu WIN32
 	src/xavixemu.rc
 	src/main.c
+	src/controller_input.c
 	src/cursor_presentation.c
 	src/core/drgqst_core.c
 	src/core/drgqst_state.c
@@ -69,7 +70,9 @@ endif()
 target_link_libraries(xavixemu PRIVATE
 	comdlg32
 	gdi32
+	hid
 	shell32
+	setupapi
 	user32
 	winmm
 	vfw32
@@ -82,6 +85,17 @@ install(FILES README.md LICENSE THIRD_PARTY_NOTICES.md DESTINATION .)
 
 include(CTest)
 if(BUILD_TESTING)
+	add_executable(controller-input-test
+		tests/controller_input_test.c
+		src/controller_input.c
+	)
+	target_include_directories(controller-input-test PRIVATE
+		${CMAKE_CURRENT_SOURCE_DIR}/src)
+	target_compile_definitions(controller-input-test PRIVATE
+		UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+	target_link_libraries(controller-input-test PRIVATE hid setupapi winmm)
+	add_test(NAME controller-input-test COMMAND controller-input-test)
+
 	add_executable(sha1-test
 		tests/sha1_test.c
 		src/sha1.c
