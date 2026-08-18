@@ -580,6 +580,32 @@ on the user's machine before any clock change is considered.
   by sprite and textured-polygon palette lookups; no ROM, frame, or title
   special case is used.
 
+## Type-1 premultiplied alpha on the Blue Dragon boss shadow (2026-08-17)
+
+- A maintainer F7 state at frame 49,357 submits 18 Type-1 triangles whose
+  bounding boxes form a tapered strip from screen `(149,100)-(171,119)` down
+  to `(160,195)-(160,196)`. This is the same deforming translucent connector
+  visible below the dragon in the hardware video around 14:38; no command or
+  geometry is missing.
+- The strip's flat RGB555 colors fall from `$3a45` through `$2de4`, `$2563`,
+  `$1902`, `$0ca1`, `$0860`, and `$0420` while Nalpha rises from zero to four.
+  The source color is therefore already premultiplied in step with alpha.
+- Type-1 blending now follows the same SSD premultiplied convention as the
+  indexed-palette path: `output = source + destination * Nalpha / 8`, with
+  component saturation. The former extra `source * (8-Nalpha) / 8` term
+  attenuated the connector twice and made its lower segments appear absent.
+  A ROM-independent half-alpha fixture covers the corrected transfer without
+  a title, frame, or descriptor special case.
+- The connector also proves that the RPU streams must be merged by depth rather
+  than rendered channel-by-channel. Its Type-1 triangles use depth `$2ff`;
+  the dragon-body sprites use depths `$d0/$e0` (equivalent to `$d00/$e00`),
+  while the foreground character uses depth `$10`. Drawing the complete sprite
+  list after GPU0 hid the connector behind the dragon. The compositor now
+  interleaves nonzero polygon depth groups with sprite depth bands, producing
+  the required far dragon body -> translucent connector -> near character
+  order. The established zero-depth Dragon Ball compatibility path is retained
+  until those games expose final polygon depths.
+
 ## Dragon Ball cursor and receiver path (2026-08-12)
 
 - DB2J and DBZ place their IRQ-10 producer packets at `$014d` and `$0149`

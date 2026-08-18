@@ -1585,17 +1585,23 @@ static uint32_t blend_triangle_gouraud(uint32_t d2, uint32_t d3,
 	destination_component[1] = (destination >> 8) & 0xff;
 	destination_component[2] = destination & 0xff;
 	/* Nalpha stores 1-alpha: zero is opaque and seven retains 7/8 of the
-	 * destination.  Components above are ordered R,G,B in RGB555. */
+	 * destination.  Like the indexed-palette path, Type-1 vertex RGB is
+	 * already premultiplied by alpha.  Blue Dragon's boss-shadow strip makes
+	 * this explicit: its RGB555 values decrease in lockstep with increasing
+	 * Nalpha.  Multiplying the source by alpha again makes the deforming strip
+	 * fade twice and visually disconnect from the dragon. */
 	for (component = 0; component < 3; ++component)
-		output_component[component] =
-			(source_component[component] * (8 - inverse_alpha) +
-			destination_component[component] * inverse_alpha) >> 3;
+	{
+		uint32_t value = source_component[component] +
+			(destination_component[component] * inverse_alpha >> 3);
+		output_component[component] = value > 0xff ? 0xff : value;
+	}
 	return UINT32_C(0xff000000) | (output_component[0] << 16) |
 		(output_component[1] << 8) | output_component[2];
 }
 
 static void render_triangle_gpu(xavix2_machine_t *machine, uint16_t count,
-	uint16_t address)
+	uint16_t address, uint16_t minimum_depth, uint16_t maximum_depth)
 {
 	uint16_t descsize_address = load16(machine->mmio + 0x608);
 	uint16_t descdata_address = load16(machine->mmio + 0x622);
@@ -1609,6 +1615,7 @@ static void render_triangle_gpu(xavix2_machine_t *machine, uint16_t count,
 		uint32_t d2;
 		uint32_t d3;
 		uint32_t descriptor_index;
+		uint32_t depth;
 		uint32_t descsize;
 		uint32_t width;
 		uint32_t height;
@@ -1634,6 +1641,9 @@ static void render_triangle_gpu(xavix2_machine_t *machine, uint16_t count,
 		d1 = load32(machine->low_ram + record + 4);
 		d2 = load32(machine->low_ram + record + 8);
 		d3 = load32(machine->low_ram + record + 12);
+		depth = (d3 >> 15) & 0xfff;
+		if (depth < minimum_depth || depth > maximum_depth)
+			continue;
 		x[0] = (int32_t)((d0 >> 11) & 0x7ff);
 		y[0] = (int32_t)((d0 >> 1) & 0x3ff);
 		x[1] = (int32_t)(d1 & 0x7ff);
@@ -1776,6 +1786,54 @@ static void render_triangle_gpu(xavix2_machine_t *machine, uint16_t count,
 			}
 		}
 	}
+}
+
+static uint16_t triangle_minimum_depth(const xavix2_machine_t *machine,
+	uint16_t count, uint16_t address)
+{
+	uint16_t minimum = UINT16_C(0x0fff);
+	uint32_t index;
+	int found = 0;
+
+	for (index = 0; index < count; ++index)
+	{
+		uint32_t record = (uint32_t)address + index * 16;
+		uint16_t depth;
+		if (record + 16 > XAVIX2_LOW_RAM_SIZE)
+			break;
+		depth = (uint16_t)((load32(machine->low_ram + record + 12) >> 15) &
+			0x0fff);
+		if (!found || depth < minimum)
+			minimum = depth;
+		found = 1;
+	}
+	return found ? minimum : 0;
+}
+
+static int triangle_next_depth(const xavix2_machine_t *machine,
+	uint16_t count, uint16_t address, uint16_t maximum, uint16_t *result)
+{
+	uint16_t best = 0;
+	uint32_t index;
+	int found = 0;
+
+	for (index = 0; index < count; ++index)
+	{
+		uint32_t record = (uint32_t)address + index * 16;
+		uint16_t depth;
+		if (record + 16 > XAVIX2_LOW_RAM_SIZE)
+			break;
+		depth = (uint16_t)((load32(machine->low_ram + record + 12) >> 15) &
+			0x0fff);
+		if (depth <= maximum && (!found || depth > best))
+		{
+			best = depth;
+			found = 1;
+		}
+	}
+	if (found && result)
+		*result = best;
+	return found;
 }
 
 static void render_gpu_depth_range(xavix2_machine_t *machine, uint16_t count,
@@ -1946,15 +2004,44 @@ static void gpu_trigger(xavix2_machine_t *machine, uint32_t offset)
 		 * current sprite list.  Do not mark an empty/stale background as drawn;
 		 * E414 must still be allowed to render its newly submitted depth-FF logo
 		 * sprites. */
-		if (sprite_count && !machine->gpu_sprite_background_prepared)
+		if (count && triangle_minimum_depth(machine, count, address) != 0)
 		{
-			render_gpu_depth_range(machine, sprite_count, sprite_address,
-				0xff, 0xff);
-			machine->gpu_sprite_background_prepared = 1;
+			uint16_t search_maximum = 0x0fff;
+			uint8_t sprite_maximum = 0xff;
+			uint16_t polygon_depth;
+			while (triangle_next_depth(machine, count, address, search_maximum,
+				&polygon_depth))
+			{
+				uint32_t farther_sprite = ((uint32_t)polygon_depth >> 4) + 1;
+				if (farther_sprite <= sprite_maximum && sprite_count &&
+					!machine->gpu_sprite_background_prepared)
+					render_gpu_depth_range(machine, sprite_count, sprite_address,
+						(uint8_t)farther_sprite, sprite_maximum);
+				render_triangle_gpu(machine, count, address, polygon_depth,
+					polygon_depth);
+				if (farther_sprite <= sprite_maximum)
+					sprite_maximum = farther_sprite ?
+						(uint8_t)(farther_sprite - 1) : 0;
+				if (!polygon_depth)
+					break;
+				search_maximum = (uint16_t)(polygon_depth - 1);
+			}
+			if (sprite_count && !machine->gpu_sprite_background_prepared)
+				machine->gpu_sprite_background_prepared =
+					(uint8_t)(sprite_maximum + 1);
 		}
-		else if (!sprite_count)
-			machine->gpu_sprite_background_prepared = 0;
-		render_triangle_gpu(machine, count, address);
+		else
+		{
+			if (sprite_count && !machine->gpu_sprite_background_prepared)
+			{
+				render_gpu_depth_range(machine, sprite_count, sprite_address,
+					0xff, 0xff);
+				machine->gpu_sprite_background_prepared = 0xff;
+			}
+			else if (!sprite_count)
+				machine->gpu_sprite_background_prepared = 0;
+			render_triangle_gpu(machine, count, address, 0, 0x0fff);
+		}
 	}
 	else
 	{
@@ -1962,9 +2049,13 @@ static void gpu_trigger(xavix2_machine_t *machine, uint32_t offset)
 		 * depth-FF objects merely because GPU0 did not provide a point at which
 		 * to prepaint the distant band. */
 		if (!machine->gpu_sprite_background_prepared)
-			render_gpu_depth_range(machine, count, address, 0xff, 0xff);
-		render_gpu_depth_range(machine, count, address, 0, 0xfe);
-		machine->gpu_sprite_background_prepared = 1;
+		{
+			render_gpu_depth_range(machine, count, address, 0, 0xff);
+			machine->gpu_sprite_background_prepared = 0xff;
+		}
+		else if (machine->gpu_sprite_background_prepared > 0)
+			render_gpu_depth_range(machine, count, address, 0,
+				(uint8_t)(machine->gpu_sprite_background_prepared - 1));
 	}
 }
 

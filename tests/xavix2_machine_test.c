@@ -650,8 +650,8 @@ int main(void)
 	store64(machine->low_ram + 0x4000, UINT64_MAX);
 
 	/* The 16-byte GPU channel also carries Type-1 Gouraud triangles.  RGB555
-	 * vertex colors are interpolated independently and Nalpha stores inverse
-	 * alpha (zero is opaque). */
+	 * vertex colors are interpolated independently and are premultiplied by
+	 * alpha; Nalpha stores the inverse destination contribution. */
 	store16(machine->mmio + 0x400, 0x0600);
 	store16(machine->mmio + 0x404, 1);
 	store_triangle_record(machine->low_ram + 0x0600, 1,
@@ -666,13 +666,13 @@ int main(void)
 
 	store_triangle_record(machine->low_ram + 0x0600, 1,
 		0, 0, 4, 0, 0, 4,
-		UINT32_C(0x001f001f), UINT32_C(0x8000801f));
+		UINT32_C(0x000f000f), UINT32_C(0x8000800f));
 	machine->screen_data[1 * 0x800 + 1] = UINT32_C(0xff0000ff);
 	machine->cpu.r[0] = 0;
 	machine->cpu.r[1] = UINT32_C(0xffffe408);
 	machine->cpu.pc = 4;
 	CHECK(xavix2_cpu_execute(&machine->cpu, 4) == 4);
-	CHECK(machine->screen_data[1 * 0x800 + 1] == UINT32_C(0xff7f007f));
+	CHECK(machine->screen_data[1 * 0x800 + 1] == UINT32_C(0xff7b007f));
 
 	/* Triangle raster work is clipped to the guest-selected presentation
 	 * window.  The internal target remains 2048x1024, but pixels outside the
@@ -838,6 +838,33 @@ int main(void)
 	machine->cpu.pc = 4;
 	CHECK(xavix2_cpu_execute(&machine->cpu, 4) == 4);
 	CHECK(machine->screen_data[0] == UINT32_C(0xffff0000));
+	store16(machine->palette_ram + 4, UINT16_C(0x03e0));
+	machine->cpu.r[0] = 0;
+	machine->cpu.r[1] = UINT32_C(0xffffe414);
+	machine->cpu.pc = 4;
+	CHECK(xavix2_cpu_execute(&machine->cpu, 4) == 4);
+	CHECK(machine->screen_data[0] == UINT32_C(0xff00ff00));
+
+	/* Nonzero polygon depth uses the shared sprite/polygon ordering.  The
+	 * depth-D0 dragon body is behind a depth-2FF Type-1 shadow, while the
+	 * depth-10 character remains in front.  This is the Blue Dragon boss
+	 * connector arrangement rather than a title-specific layer override. */
+	store_triangle_record(machine->low_ram + 0x0600, 1,
+		0, 0, 4, 0, 0, 4,
+		UINT32_C(0x001f001f), UINT32_C(0x017f801f));
+	store64(machine->low_ram + 0x0700,
+		gpu_command(0x10, 0x10) | (UINT64_C(0xd0) << 21));
+	store64(machine->low_ram + 0x0708,
+		gpu_command(0x10, 0x10) | (UINT64_C(0x10) << 21));
+	store16(machine->palette_ram + 4, UINT16_C(0x7c00));
+	machine->gpu_sprite_background_prepared = 0;
+	memset(machine->screen_data, 0, sizeof(machine->screen_data));
+	machine->cpu.r[0] = 0;
+	machine->cpu.r[1] = UINT32_C(0xffffe408);
+	machine->cpu.pc = 4;
+	CHECK(xavix2_cpu_execute(&machine->cpu, 4) == 4);
+	CHECK(machine->screen_data[0] == UINT32_C(0xffff0000));
+	CHECK(machine->gpu_sprite_background_prepared == 0x30);
 	store16(machine->palette_ram + 4, UINT16_C(0x03e0));
 	machine->cpu.r[0] = 0;
 	machine->cpu.r[1] = UINT32_C(0xffffe414);

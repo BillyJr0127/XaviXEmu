@@ -7,6 +7,11 @@ semantic versioning while experimental releases carry a pre-release suffix.
 
 ## 0.3.1 - 2026-08-17
 
+- Correct XaviX 2 Type-1 premultiplied-alpha blending and merge nonzero-depth
+  polygons with sprite depth bands. Blue Dragon's deforming boss-shadow
+  connector is no longer attenuated twice or hidden behind the dragon-body
+  sprites, so it remains visibly joined as transparency increases down the
+  strip.
 - Fix Kenshin Dragon Quest analog-stick strokes being too slow for the game's
   vertical-confirm and sword-attack motion classifier. Its higher top speed is
   reached through a gradual hold acceleration so brief taps remain precise.
