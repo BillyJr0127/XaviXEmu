@@ -110,12 +110,56 @@ or Playable claim.
   `$7b80`, and the external one-hot keyboard addresses `$600001-$600080`.
   The observed `$7b80` value is `ff`; no hardware change is justified by that
   observation because neither title blocks before the verified menu.
-- Code changed: add exact loader metadata, route both titles through the
-  shared 24C16 board profile, assign independent EEPROM/runtime-state
-  identities, and generalize only the ROM-independent TV-PC diagnostic trace.
-  Mouse pulses, cursor-key mappings, Escape handling, and host-target
-  suppression remain specific to `tvpc_dor` until their meanings are traced.
+- Keyboard identification: Epoch's official model 37200 manual documents the
+  printed QWERTY/kana layout, two cursor-key clusters, input-mode key, and mail
+  shortcut: <https://epoch.jp/assets/pdf/support/manuals/37200_TORISETU.pdf>.
+- Matrix experiment: enter Hello Kitty's mailbox name editor, branch from one
+  runtime state, and assert each of the 64 raw matrix positions independently.
+  The displayed kana identifies every printable key; separate screens verify
+  Escape, Mail, Backspace, Shift, Enter, Space, and Input Mode.
+- Mouse result: cumulative X/Y counter changes and IN0 bit `0x80` produce the
+  matching game-owned bow-cursor motion and its single-button click path.
+- Code changed: retain the shared 24C16 board profile and independent save
+  identities, then enable the cumulative mouse counters, IN0 mouse button,
+  external keyboard rows, and host-target suppression for `tvpc_hk`. The
+  Doraemon-only vertical-mouse flight pulses remain scoped to `tvpc_dor`.
+  `tvpc_ham` remains without host mappings until its printed controls are
+  independently identified.
 
-Gameplay, keyboard meanings, later programs, and audio accuracy have not been
-verified. These are Experimental graphics/audio baselines, not Playable
-claims.
+Hello Kitty's mouse and complete printed keyboard are now host-accessible, but
+later programs, audio accuracy, and a complete play-through remain unverified.
+Hamtaro's controls remain unknown. Both titles therefore retain an
+**Experimental** compatibility classification.
+
+## 2026-08-29: Hyper Rescue ADC completion status
+
+- Symptom: `tomthr` displayed the XaviX logo, blanked the display, and then stayed
+  alive indefinitely at external PC `$91ffd7` without reaching its warning or
+  title screens. Horn, ignition, wiper, map, and combined button states did not
+  change the wait.
+- Firmware evidence: the loop at ROM `$11ffd0` writes command `$40` to ADC
+  control `$7b81`, then repeatedly reads `$7b81` and tests completion bit `$80`
+  before accumulating the sample from `$7b80`.
+- Root cause: XaviXEmu completed each ADC conversion synchronously but returned
+  zero from the control/status read, so the firmware could never observe
+  completion.
+- Change: retain the requested channel/control bits and return bit `$80` set
+  once the synchronous result is latched. A machine-level regression test now
+  verifies command `$40` reads back as status `$c0`.
+- Result: frame 600 renders the Japanese safety warning, frame 1,500 renders
+  the Hyper Rescue title, and pulsing the real horn/select input bit `$10`
+  enters the mode-select screen by frame 2,100. The doubled CPU clock and
+  base-rate video/audio timing remain unchanged.
+- Regression: all 31 locally present non-XaviX2 ROMs completed a fresh 600-frame
+  run with `stopped=0` after the change.
+
+## 2026-08-29: Duel Masters base-station boundary
+
+- The exact `duelmast` ZIP contains the 2 MiB Duel Station base-station BIOS.
+  It reaches and renders the scanner-gate diagnostic, polls the three cabinet
+  buttons and directions, and remains live.
+- The original machine exposes a separate external cartridge bus. No Duel
+  Masters game cartridge image is present in the local ROM set, so passing the
+  diagnostic cannot provide the missing title/game program. The BIOS is kept
+  explicitly classified Not working rather than silently patching around or
+  inventing cartridge contents.

@@ -189,7 +189,7 @@ static void op_adc(xavix_cpu_t *cpu, uint8_t value)
 	const uint8_t carry = (cpu->p & XAVIX_CPU_C) ? 1 : 0;
 
 	cpu->p &= (uint8_t)~(XAVIX_CPU_N | XAVIX_CPU_V | XAVIX_CPU_Z | XAVIX_CPU_C);
-	if (cpu->p & XAVIX_CPU_D)
+	if ((cpu->p & XAVIX_CPU_D) && cpu->decimal_arithmetic)
 	{
 		uint8_t al = (uint8_t)((old_a & 0x0f) + (value & 0x0f) + carry);
 		uint8_t ah;
@@ -236,7 +236,7 @@ static void op_sbc(xavix_cpu_t *cpu, uint8_t value)
 	if (!(diff & 0xff00))
 		cpu->p |= XAVIX_CPU_C;
 
-	if (cpu->p & XAVIX_CPU_D)
+	if ((cpu->p & XAVIX_CPU_D) && cpu->decimal_arithmetic)
 	{
 		uint8_t al = (uint8_t)((old_a & 0x0f) - (value & 0x0f) - borrow);
 		uint8_t ah = (uint8_t)((old_a >> 4) - (value >> 4) - ((int8_t)al < 0));
@@ -1038,6 +1038,7 @@ void xavix_cpu_init(xavix_cpu_t *cpu, xavix_cpu_read8_fn read8,
 	cpu->read8 = read8;
 	cpu->write8 = write8;
 	cpu->opaque = opaque;
+	cpu->decimal_arithmetic = 1;
 	xavix_cpu_reset(cpu);
 }
 
@@ -1046,16 +1047,19 @@ void xavix_cpu_reset(xavix_cpu_t *cpu)
 	xavix_cpu_read8_fn read8;
 	xavix_cpu_write8_fn write8;
 	void *opaque;
+	uint8_t decimal_arithmetic;
 
 	if (!cpu)
 		return;
 	read8 = cpu->read8;
 	write8 = cpu->write8;
 	opaque = cpu->opaque;
+	decimal_arithmetic = cpu->decimal_arithmetic;
 	memset(cpu, 0, sizeof(*cpu));
 	cpu->read8 = read8;
 	cpu->write8 = write8;
 	cpu->opaque = opaque;
+	cpu->decimal_arithmetic = decimal_arithmetic;
 
 	/* MAME's deterministic power-on values followed by the three reset
 	 * stack cycles: A=00, X=80, Y=00, P=36, SP=fd. */
@@ -1064,6 +1068,12 @@ void xavix_cpu_reset(xavix_cpu_t *cpu)
 	cpu->p = XAVIX_CPU_U | XAVIX_CPU_B | XAVIX_CPU_I | XAVIX_CPU_Z;
 	cpu->pc = (uint16_t)(read_vector(cpu, 0xfffc) |
 		((uint16_t)read_vector(cpu, 0xfffd) << 8));
+}
+
+void xavix_cpu_set_decimal_arithmetic(xavix_cpu_t *cpu, int enabled)
+{
+	if (cpu)
+		cpu->decimal_arithmetic = enabled ? 1 : 0;
 }
 
 void xavix_cpu_set_irq(xavix_cpu_t *cpu, int asserted)

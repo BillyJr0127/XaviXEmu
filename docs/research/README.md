@@ -18,5 +18,8 @@ expectations are documented in `../compatibility.md`.
 - [`epo_mini`](epo-mini.md)
 - [`tak_chq`](tak-chq.md)
 - [Early XaviX and TV-PC](early-xavix.md)
+- [XaviX and XaviX 2000 patent map](xavix-hardware-patents.md)
 - [TTV optical sensors](ttv-sensors.md)
 - [XaviX 2](xavix2.md)
+- [XaviX 2 sound processor](xavix2-audio.md)
+- [XaviX 2 geometry and rendering hardware](xavix2-3d.md)

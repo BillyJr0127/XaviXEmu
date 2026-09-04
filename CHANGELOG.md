@@ -4,7 +4,95 @@ All notable public changes will be documented in this file. The project uses
 semantic versioning while experimental releases carry a pre-release suffix.
 
 ## Unreleased
+- Reapply the saved 1x-4x window scale after a game is launched from the ROM
+  library. A selected 4x window therefore remains 4x after restarting the
+  application instead of inheriting the smaller 1080x720 library window.
+- Decode XaviX 2 translucent palette entries as the hardware's interleaved
+  premultiplied RGB444 plus three-bit `Nalpha`, rather than fixed one-half
+  transparency, with `Nalpha=7` as the indexed-texture transparent endpoint.
+  Take-copter's water palette now produces the wide cyan/white
+  distance haze that hides the sea/sky seam, and its three overlapping cloud
+  planes no longer form a dark rectangular background. The same generic path
+  is used by Blue Dragon, Naruto and both Dragon Ball titles. Enhanced 2x
+  presentation now also retains the 3D contribution beneath partially
+  transparent foreground sprites, avoiding a presentation-only seam where
+  Dragon Ball's red energy aura crosses 3D geometry while keeping fully opaque
+  sprite artwork pixel-sharp. The active-line compatibility path now recognizes
+  Dragon Ball's depth-zero tiled fighter followed by its large attack sprite:
+  only that later effect is restored after the fighter, so its opaque core
+  covers the enemy as on hardware. This includes the weak red sphere, which
+  remains depth zero while growing past the generic large-backing threshold,
+  as well as the charged nonzero-depth form. Other foreground objects retain their
+  established depth ordering, preventing repeated logos on the trial clear
+  screen.
+- Correct XaviX 2 premultiplied alpha composition from SSD's RPU patent.
+  Take-copter's white/cyan horizon haze and Dragon Ball's shared translucent
+  layers no longer halve their stored foreground RGB a second time. Match the
+  Take-copter F7 flight/fade sequence to hardware at one IRQ-7 event per 60 Hz
+  frame in every display mode; the logo/carousel width no longer incorrectly
+  doubles GPU submissions and makes menu animation or audio miss real time.
+  PCM pitch remains on its independent 98,437,488 Hz source. Implement the RPU
+  sprite `Filter=0`
+  four-tap sampler, including interpolation of premultiplied alpha, so the
+  scaled Take-copter flying characters no longer retain coarse nearest-neighbor
+  edges. Emulate the title-programmed `$e620` 2-by-2 Gouraud dither pattern to
+  soften RGB555 sky gradients without applying an invented whole-frame blur.
+  Merge Take-copter's GPU0/GPU1 submissions across the `$e408/$e414` pair:
+  its ROM-provided depth-zero full-screen transition now composites after the
+  clouds and characters, so the entire scene fades toward pale blue/white
+  together instead of repainting clear sprites over an already-white sky.
+  Restore the observed Type-1 backdrop then Nalpha-graded Type-0 water
+  class order, reducing the recent hard white horizon strip.
+- Add dedicated `epo_dtcj` Take-copter controls. Keyboard directions, right-
+  mouse drag, the selected PS/gamepad analogue stick, and Wii pointer input now
+  feed the firmware's verified 4-by-4 head-tilt receiver; left mouse/Enter
+  supplies a filtered forward/start gesture, and middle mouse/Space or a
+  bindable action performs the original quick backward-to-forward boost.
+  Per-game settings expose forward, backward, left, right, upright, and boost;
+  the former orange host target is hidden because head tilt is not a screen
+  cursor.
+- Add an in-game Escape confirmation: the first press pauses emulation and
+  audio, a second Escape safely saves EEPROM and returns to the game library,
+  while Enter resumes without advancing the guest during the prompt.
+- Add a PCSX2-style game library. Users can save a ROM directory in the local
+  INI, browse every mounted drive, recursively scan exact supported ZIPs in all
+  subfolders, view formal title, XaviXEmu's own
+  verified green/yellow/red support status, release year, XaviX generation,
+  maker, filename and a 160x120 screenshot thumbnail, then sort by any column.
+  Double-click/Enter launches; right-click opens a title-specific control guide
+  and that ROM's independent INI button bindings. F8 screenshots use the ROM
+  shortname so the first capture is reused as the game's thumbnail.
+- Recognize `rad_mtrk`, `rad_snow`, `rad_ssx`, `rad_sbw`, `tak_gin`,
+  `tcarnavi`, and `tomthr` by exact size/CRC32/SHA-1. Add an original-XaviX
+  plain-input profile for 1/2/4 MiB boards without injecting Hamtaro wireless
+  packets, plus independent F5/F7 state identities.
+- Add keyboard, mouse, and PS/gamepad analogue controls for the seven early
+  racing/vehicle systems. Model Monster Truck's direction bit and 20 Hz wheel
+  pulse interrupt, use graduated duty-cycle steering/board lean for fine
+  analogue corrections, and expose the observed vehicle accessory functions
+  including throttle, brake, reverse, nitro, horn, key, siren, map, lights,
+  wipers, menu, and microphone inputs.
 
+- Complete host controls for `ttv_mx` and `tom_jump`: keyboard and mouse keep
+  the original digital tilt/buttons, while the PS/gamepad left analogue stick
+  uses graduated duty-cycle steering for fine corrections. Configured
+  Primary/Confirm, Secondary, and Special actions map to accelerator, brake,
+  and pause.
+- Add Choro-Q wheel, accelerator, brake, and command controls for mouse,
+  keyboard, and PS/gamepad analog sticks. Keyboard steering now ramps slowly
+  through the verified useful range, held-button mouse steering is relative
+  and lower-sensitivity, and PS/gamepad steering uses a centre-precision curve
+  instead of overdriving the wheel input. Encode the centred virtual wheel
+  around the hardware's wrapping `$ff` counter; the earlier `$80` neutral value
+  was interpreted as a half-turn and permanently biased the car. Restore
+  `$6ffa/$6ffb` position-register
+  readback so the game's per-scanline scroll tables bend and scale the road;
+  partial rendering retains the absolute raster origin so the dashboard is
+  not repeated and the road remains in the racing viewport.
+  Correct SSD 2000 ADC/SBC behavior:
+  the D flag is preserved architecturally, including across interrupts, while
+  arithmetic remains binary. This fixes both the CPU-car corner search and the
+  command-ring corruption that previously froze the demo after a few seconds.
 ## 0.3.1 - 2026-08-17
 
 - Correct XaviX 2 Type-1 premultiplied-alpha blending and merge nonzero-depth

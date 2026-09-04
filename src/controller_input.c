@@ -98,6 +98,74 @@ uint8_t xavix_controller_integrate_axis(uint8_t position, uint8_t axis,
 	return (uint8_t)clamp_integer(result, 0, 255);
 }
 
+uint8_t xavix_controller_approach_axis(uint8_t position, uint8_t target,
+	unsigned maximum_step)
+{
+	unsigned distance;
+
+	if (!maximum_step || position == target)
+		return position;
+	if (position < target)
+	{
+		distance = (unsigned)target - position;
+		return distance <= maximum_step ? target :
+			(uint8_t)(position + maximum_step);
+	}
+	distance = (unsigned)position - target;
+	return distance <= maximum_step ? target :
+		(uint8_t)(position - maximum_step);
+}
+
+uint8_t xavix_controller_curve_racing_axis(uint8_t axis)
+{
+	int direction = (int)axis - 128;
+	unsigned magnitude;
+	unsigned limit;
+	unsigned travel;
+
+	if (!direction)
+		return 0x80;
+	magnitude = (unsigned)(direction < 0 ? -direction : direction);
+	limit = direction < 0 ? 128U : 127U;
+	/* Keep the virtual wheel's travel narrower than a PC joystick. A squared
+	 * response leaves generous precision near centre, while full deflection
+	 * still reaches the wheel counter's verified opposite-direction limits. */
+	travel = (magnitude * magnitude * 64U + limit * limit / 2U) /
+		(limit * limit);
+	return (uint8_t)(direction < 0 ? 128U - travel : 128U + travel);
+}
+
+uint8_t xavix_controller_encode_racing_wheel(uint8_t position)
+{
+	/* Choro-Q reads an eight-bit wrapping wheel counter, not an absolute ADC.
+	 * The untouched hardware value is $ff; translating the virtual centred
+	 * position preserves signed movement around that wrap point. */
+	return (uint8_t)((unsigned)position + 0x7fU);
+}
+
+int xavix_controller_pulse_digital_axis(uint8_t axis, unsigned phase)
+{
+	int direction = (int)axis - 128;
+	unsigned magnitude;
+	unsigned duty;
+
+	if (!direction)
+		return 0;
+	magnitude = (unsigned)(direction < 0 ? -direction : direction);
+	/* MX Dirt Rebel and IDATEN Jump use digital tilt switches.  Convert an
+	 * analogue stick or mouse position into an eight-frame duty cycle: the
+	 * centre remains neutral, a small tilt gives brief corrections, and a
+	 * near-full tilt holds the original switch continuously. */
+	if (magnitude <= 24)
+		return 0;
+	if (magnitude >= 96)
+		return direction < 0 ? -1 : 1;
+	duty = 2 + (magnitude - 25) * 5 / 70;
+	if ((phase & 7U) >= duty)
+		return 0;
+	return direction < 0 ? -1 : 1;
+}
+
 unsigned xavix_controller_ramped_maximum_step(unsigned maximum_step,
 	unsigned held_frames)
 {
@@ -544,6 +612,10 @@ static int update_gamepad(xavix_controller_input *input,
 {
 	JOYINFOEX state;
 	const JOYCAPSW *caps = &input->joystick_caps;
+	uint8_t left_axis_x;
+	uint8_t left_axis_y;
+	uint8_t right_axis_x;
+	uint8_t right_axis_y;
 	uint32_t right_x;
 	uint32_t right_y;
 	uint32_t right_min_x;
@@ -562,12 +634,14 @@ static int update_gamepad(xavix_controller_input *input,
 		return 0;
 	}
 	input->joystick_buttons = state.dwButtons;
+	left_axis_x = xavix_controller_normalize_axis(state.dwXpos,
+		caps->wXmin, caps->wXmax, input->dead_zone_percent);
+	left_axis_y = xavix_controller_normalize_axis(state.dwYpos,
+		caps->wYmin, caps->wYmax, input->dead_zone_percent);
 	input->joystick_x[0] = integrate_gamepad_axis(input, 0,
-		input->joystick_x[0], xavix_controller_normalize_axis(state.dwXpos,
-		caps->wXmin, caps->wXmax, input->dead_zone_percent));
+		input->joystick_x[0], left_axis_x);
 	input->joystick_y[0] = integrate_gamepad_axis(input, 1,
-		input->joystick_y[0], xavix_controller_normalize_axis(state.dwYpos,
-		caps->wYmin, caps->wYmax, input->dead_zone_percent));
+		input->joystick_y[0], left_axis_y);
 	reading->reflector[0].x = input->joystick_x[0];
 	reading->reflector[0].y = input->joystick_y[0];
 	reading->reflector[0].area = 0x28;
@@ -596,16 +670,23 @@ static int update_gamepad(xavix_controller_input *input,
 		right_min_y = caps->wVmin;
 		right_max_y = caps->wVmax;
 	}
+	right_axis_x = xavix_controller_normalize_axis(right_x,
+		right_min_x, right_max_x, input->dead_zone_percent);
+	right_axis_y = xavix_controller_normalize_axis(right_y,
+		right_min_y, right_max_y, input->dead_zone_percent);
 	input->joystick_x[1] = integrate_gamepad_axis(input, 2,
-		input->joystick_x[1], xavix_controller_normalize_axis(right_x,
-		right_min_x, right_max_x, input->dead_zone_percent));
+		input->joystick_x[1], right_axis_x);
 	input->joystick_y[1] = integrate_gamepad_axis(input, 3,
-		input->joystick_y[1], xavix_controller_normalize_axis(right_y,
-		right_min_y, right_max_y, input->dead_zone_percent));
+		input->joystick_y[1], right_axis_y);
 	reading->reflector[1].x = input->joystick_x[1];
 	reading->reflector[1].y = input->joystick_y[1];
 	reading->reflector[1].area = 0x28;
 	reading->reflector[1].visible = 1;
+	reading->gamepad_axis_x[0] = left_axis_x;
+	reading->gamepad_axis_y[0] = left_axis_y;
+	reading->gamepad_axis_x[1] = right_axis_x;
+	reading->gamepad_axis_y[1] = right_axis_y;
+	reading->gamepad_axes_valid = 1;
 	*buttons = state.dwButtons;
 	return 1;
 }

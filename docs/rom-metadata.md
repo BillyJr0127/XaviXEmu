@@ -25,7 +25,13 @@ identify exact, user-supplied images.
 | `tvpc_dor` | 4,194,304 | `6f2edbb2` | `98fa86f85e00aa40e7a585ff0bc930cb5ca88362` |
 | `tvpc_ham` | 4,194,304 | `76e8c854` | `5998c03292a16107d0d7ae00f77677582680f323` |
 | `tvpc_hk` | 4,194,304 | `87fc2f73` | `29a284b907abec175d4289d290490af17a2a963f` |
-| `ban_naru` | 8,388,608 | `e3465ad2` | `13e3d2de5d5a084635cab158f3639a1ea73265dc` |
+| `rad_mtrk` | 4,194,304 | `dccda0a7` | `7953cf29643672f8367639555b797c20bb533eab` |
+| `rad_snow` | 1,048,576 | `593e40b3` | `03483ac39eddd7746470fb60018e704382b0da59` |
+| `rad_ssx` | 4,194,304 | `108e19a6` | `3dfb18efb6331b96a53138a5ba29dae9cd966e90` |
+| `rad_sbw` | 4,194,304 | `640c1473` | `d37d1484a5b14735b35afbca305dad7d178b08a2` |
+| `tak_gin` | 2,097,152 | `79fdeae3` | `ab08790e95cdccf3541ecbddb87ebf0dedb3718b` |
+| `tcarnavi` | 4,194,304 | `f4e693fb` | `be37b35f1e1e661e10187253c2c3aa9858a90812` |
+| `tomthr` | 4,194,304 | `a7e8dc74` | `676b2a905b757356c6c1dfe3f10148484caa44c5` || `ban_naru` | 8,388,608 | `e3465ad2` | `13e3d2de5d5a084635cab158f3639a1ea73265dc` |
 | `ban_bldj` | 8,388,608 | `aa865fe3` | `2f5f4809a07a2f5671f81aa22e379c11c43943a0` |
 | `ban_db2j` | 8,388,608 | `7362ac0d` | `f1880470f0db56135d9bc88d7193d037ac49b996` |
 | `ban_dbz` | 8,388,608 | `7e535ea2` | `6c746af763273bd9e47929c3ba857c7af563bf79` |

@@ -70,6 +70,30 @@ int main(void)
 	CHECK(EPO_SSKJ_ROM_CRC32 == UINT32_C(0x3344b2fc));
 	CHECK(!strcmp(drgqst_rom_short_name(DRGQST_ROM_EPO_SSKJ), "epo_sskj"));
 	CHECK(drgqst_rom_is_xavix2(DRGQST_ROM_EPO_SSKJ));
-	puts("rom_loader_metadata_test: all tests passed");
+	CHECK(RAD_MTRK_ROM_SIZE == 4194304 && RAD_MTRK_ROM_CRC32 == UINT32_C(0xdccda0a7));
+	CHECK(!strcmp(drgqst_rom_short_name(DRGQST_ROM_RAD_MTRK), "rad_mtrk"));
+	CHECK(RAD_SNOW_ROM_SIZE == 1048576 && RAD_SNOW_ROM_CRC32 == UINT32_C(0x593e40b3));
+	CHECK(!strcmp(drgqst_rom_short_name(DRGQST_ROM_RAD_SNOW), "rad_snow"));
+	CHECK(RAD_SSX_ROM_CRC32 == UINT32_C(0x108e19a6));
+	CHECK(RAD_SBW_ROM_CRC32 == UINT32_C(0x640c1473));
+	CHECK(TAK_GIN_ROM_SIZE == 2097152 && TAK_GIN_ROM_CRC32 == UINT32_C(0x79fdeae3));
+	CHECK(!strcmp(drgqst_rom_short_name(DRGQST_ROM_TAK_GIN), "tak_gin"));
+	CHECK(TCARNAVI_ROM_CRC32 == UINT32_C(0xf4e693fb));
+	CHECK(!strcmp(drgqst_rom_short_name(DRGQST_ROM_TCARNAVI), "tcarnavi"));
+	CHECK(TOMTHR_ROM_CRC32 == UINT32_C(0xa7e8dc74));
+	CHECK(!strcmp(drgqst_rom_short_name(DRGQST_ROM_TOMTHR), "tomthr"));
+	CHECK(!drgqst_rom_is_xavix2(DRGQST_ROM_TOMTHR));
+	CHECK(EPO_CROK_ROM_SIZE == 4194304 &&
+		EPO_CROK_ROM_CRC32 == UINT32_C(0xa801779b));
+	CHECK(!strcmp(drgqst_rom_short_name(DRGQST_ROM_EPO_CROK), "epo_crok"));
+	CHECK(TAK_ZUBA_ROM_SIZE == 4194304 &&
+		TAK_ZUBA_ROM_CRC32 == UINT32_C(0x6d60c8d2));
+	CHECK(!strcmp(drgqst_rom_short_name(DRGQST_ROM_TAK_ZUBA), "tak_zuba"));
+	CHECK(DUELMAST_ROM_SIZE == 2097152 &&
+		DUELMAST_ROM_CRC32 == UINT32_C(0x2f11fcd7));
+	CHECK(!strcmp(drgqst_rom_short_name(DRGQST_ROM_DUELMAST), "duelmast"));
+	CHECK(EPO_GOLF_ROM_SIZE == 4194304 &&
+		EPO_GOLF_ROM_CRC32 == UINT32_C(0xd1f231cf));
+	CHECK(!strcmp(drgqst_rom_short_name(DRGQST_ROM_EPO_GOLF), "epo_golf"));	puts("rom_loader_metadata_test: all tests passed");
 	return 0;
 }

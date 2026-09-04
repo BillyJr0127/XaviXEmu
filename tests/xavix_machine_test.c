@@ -30,6 +30,12 @@ int main(void)
 	ok &= check(machine.state.fragment_ram[3] == 0x81, "sprite x high mirror");
 	ok &= check(machine.state.fragment_ram[0x403] == 1, "sprite x high plane");
 	ok &= check(xavix_machine_read_external(&machine, 0x12abcd) == 0xcd, "ROM mirroring");
+	xavix_machine_write_low(&machine, 0x6ffa, 0x68);
+	xavix_machine_write_low(&machine, 0x6ffb, 0x61);
+	ok &= check(xavix_machine_read_low(&machine, 0x6ffa) == 0x68,
+		"position IRQ X readback");
+	ok &= check(xavix_machine_read_low(&machine, 0x6ffb) == 0x61,
+		"position IRQ Y readback");
 	machine.state.vector_enable = 1;
 	machine.state.irq_vector[0] = 0x34;
 	machine.state.irq_vector[1] = 0x12;
@@ -50,5 +56,8 @@ int main(void)
 	xavix_machine_write_low(&machine, 0x7a81, 0x01);
 	ok &= check(!(machine.state.ioevent_active & 0x01), "IO event acknowledged");
 	ok &= check(!(machine.state.irq_source & 0x08), "IO event IRQ cleared");
+	xavix_machine_write_low(&machine, 0x7b81, 0x40);
+	ok &= check(xavix_machine_read_low(&machine, 0x7b81) == 0xc0,
+		"ADC completion flag");
 	return ok ? 0 : 1;
 }

@@ -407,6 +407,120 @@ done:
 	return ok;
 }
 
+static int test_position_irq_repeats_at_programmed_raster_position(void)
+{
+	static const uint8_t program[] = {
+		0x78,                         /* sei */
+		0xa9, 0x00,                   /* lda #$00 */
+		0x85, 0x20,                   /* sta $20: test counter = 0 */
+		0x8d, 0xfa, 0x6f,             /* sta $6ffa: x = 0 */
+		0xa9, 0x80,                   /* lda #$80 */
+		0x8d, 0xfb, 0x6f,             /* sta $6ffb: y = 128 */
+		0xa9, 0x10,                   /* lda #$10 */
+		0x8d, 0xf8, 0x6f,             /* sta $6ff8: position IRQ enable */
+		0x58,                         /* cli */
+		0x4c, 0x13, 0x80              /* idle: jmp idle */
+	};
+	static const uint8_t irq_handler[] = {
+		0xe6, 0x20,                   /* inc $20 */
+
+		0xa9, 0x50,                   /* lda #$50: enable + acknowledge */
+		0x8d, 0xf8, 0x6f,             /* sta $6ff8 */
+		0x40                          /* rti */
+	};
+	uint8_t *rom = NULL;
+	drgqst_core *core = NULL;
+	int ok = 0;
+
+	rom = (uint8_t *)malloc(TEST_ROM_SIZE);
+	core = (drgqst_core *)malloc(sizeof(*core));
+	if (!rom || !core)
+		goto done;
+	memset(rom, 0xea, TEST_ROM_SIZE);
+	memcpy(rom + 0x8000, program, sizeof(program));
+	memcpy(rom + 0x8100, irq_handler, sizeof(irq_handler));
+	rom[0xfffa] = 0x00;
+	rom[0xfffb] = 0x80;
+	rom[0xfffc] = 0x00;
+	rom[0xfffd] = 0x80;
+	rom[0xfffe] = 0x00;
+	rom[0xffff] = 0x81;
+	if (!drgqst_core_init(core, rom, TEST_ROM_SIZE))
+		goto done;
+
+	CHECK(drgqst_core_run_frame(core) != NULL);
+	CHECK(core->machine.state.main_ram[0x20] == 1);
+	CHECK((core->machine.state.video_control & 0x50) == 0x10);
+	CHECK(!(core->machine.state.irq_source & 0x40));
+
+	CHECK(drgqst_core_run_frame(core) != NULL);
+	CHECK(core->machine.state.main_ram[0x20] == 2);
+	CHECK(!(core->machine.state.irq_source & 0x40));
+	ok = 1;
+done:
+	free(core);
+	free(rom);
+	return ok;
+}
+static int test_position_irq_can_advance_to_next_scanline(void)
+{
+	static const uint8_t program[] = {
+		0x78,                         /* sei */
+		0xa9, 0x00,                   /* lda #$00 */
+		0x85, 0x20,                   /* sta $20: IRQ count */
+		0x85, 0x21,                   /* sta $21: last raster Y */
+		0x8d, 0xfa, 0x6f,             /* sta $6ffa: x = 0 */
+		0xa9, 0x80,                   /* lda #$80 */
+		0x8d, 0xfb, 0x6f,             /* sta $6ffb: y = 128 */
+		0xa9, 0x10,                   /* lda #$10 */
+		0x8d, 0xf8, 0x6f,             /* enable position IRQ */
+		0x58,                         /* cli */
+		0x4c, 0x15, 0x80              /* idle: jmp idle */
+	};
+	static const uint8_t irq_handler[] = {
+		0xe6, 0x20,                   /* inc $20 */
+		0xad, 0xfb, 0x6f,             /* lda $6ffb */
+		0x85, 0x21,                   /* sta $21 */
+		0xc9, 0x80,                   /* cmp #$80 */
+		0xd0, 0x0b,                   /* bne disable */
+		0xa9, 0x81,                   /* lda #$81 */
+		0x8d, 0xfb, 0x6f,             /* schedule next scanline */
+		0xa9, 0x50,                   /* acknowledge and remain enabled */
+		0x8d, 0xf8, 0x6f,
+		0x40,                         /* rti */
+		0xa9, 0x40,                   /* disable: acknowledge and disable */
+		0x8d, 0xf8, 0x6f,
+		0x40                          /* rti */
+	};
+	uint8_t *rom = NULL;
+	drgqst_core *core = NULL;
+	int ok = 0;
+
+	rom = (uint8_t *)malloc(TEST_ROM_SIZE);
+	core = (drgqst_core *)malloc(sizeof(*core));
+	if (!rom || !core)
+		goto done;
+	memset(rom, 0xea, TEST_ROM_SIZE);
+	memcpy(rom + 0x8000, program, sizeof(program));
+	memcpy(rom + 0x8100, irq_handler, sizeof(irq_handler));
+	rom[0xfffc] = 0x00;
+	rom[0xfffd] = 0x80;
+	rom[0xfffe] = 0x00;
+	rom[0xffff] = 0x81;
+	if (!drgqst_core_init(core, rom, TEST_ROM_SIZE))
+		goto done;
+
+	CHECK(drgqst_core_run_frame(core) != NULL);
+	CHECK(core->machine.state.main_ram[0x20] == 2);
+	CHECK(core->machine.state.main_ram[0x21] == 0x81);
+	CHECK(core->machine.state.position_irq_y == 0x81);
+	CHECK(!(core->machine.state.video_control & 0x10));
+	ok = 1;
+done:
+	free(core);
+	free(rom);
+	return ok;
+}
 static int test_repeated_one_piece_load_resets_host_input(void)
 {
 	uint8_t *rom = NULL;
@@ -576,6 +690,8 @@ static int test_early_xavix_profiles(void)
 	uint8_t *state = (uint8_t *)malloc(drgqst_state_serialized_size());
 	static const uint8_t expected_bowl_sync[4] = { 0x00, 0x02, 0x06, 0x04 };
 	size_t written = 0;
+	uint64_t normal_frame_cpu_cycles;
+	uint64_t doubled_frame_cpu_cycles;
 	unsigned phase;
 	int ok = 0;
 
@@ -584,6 +700,8 @@ static int test_early_xavix_profiles(void)
 	make_test_rom(rom);
 	if (!drgqst_core_init_profile(core, rom, TEST_ROM_SIZE,
 		DRGQST_CORE_XAVIX_BASE))
+		goto done;
+	if (!core->cpu.decimal_arithmetic)
 		goto done;
 	core->machine.state.input0 = 0x5a;
 	if (xavix_machine_read_low(&core->machine, 0x7a00) != 0x5a)
@@ -634,7 +752,11 @@ static int test_early_xavix_profiles(void)
 		DRGQST_CORE_XAVIX2000_I2C_24C04) ||
 		core->machine.rom_size != TEST_OMT_ROM_SIZE ||
 		core->game_profile != DRGQST_CORE_XAVIX2000_I2C_24C04 ||
-		xavix_machine_read_external(&core->machine, 0x401234) != rom[0x001234])
+		xavix_machine_read_external(&core->machine, 0x401234) != rom[0x001234] ||
+		core->cpu.decimal_arithmetic)
+		goto done;
+	drgqst_core_reset(core);
+	if (core->cpu.decimal_arithmetic)
 		goto done;
 
 	/* Excite Bowling is a 2 MiB image mirrored four times over the 8 MiB
@@ -676,6 +798,59 @@ static int test_early_xavix_profiles(void)
 		goto done;
 	if (drgqst_core_init_profile(core, rom, UINT32_C(0x100000),
 		DRGQST_CORE_EPO_BOWL_SENSOR_24C04))
+		goto done;
+
+	/* Croket and Zuba sample two physical motion channels through ADC5/7.
+	 * Control bit 6 changes the acquisition phase, so a centered host motion
+	 * value is returned with opposite signs across each firmware pair. */
+	make_test_rom_sized(rom, TEST_OMT_ROM_SIZE);
+	if (!drgqst_core_init_profile(core, rom, TEST_OMT_ROM_SIZE,
+		DRGQST_CORE_XAVIX_I2C_24C04))
+		goto done;
+	for (phase = 0; phase < 4; ++phase)
+	{
+		if (core->machine.state.anport_regs[phase] != 0x80)
+			goto done;
+	}
+	drgqst_core_set_early_motion_input(core, 0x21, 0x43);
+	{
+		static const uint8_t controls[4] = { 0x11, 0x13, 0x51, 0x53 };
+		static const uint8_t expected[4] = { 0xdf, 0xbd, 0x21, 0x43 };
+		for (phase = 0; phase < 4; ++phase)
+		{
+			xavix_machine_write_low(&core->machine, 0x7b81, controls[phase]);
+			if (xavix_machine_read_low(&core->machine, 0x7b80) !=
+				expected[phase])
+				goto done;
+		}
+	}
+	if (!drgqst_core_init_profile(core, rom, TEST_OMT_ROM_SIZE,
+		DRGQST_CORE_XAVIX_I2C_24C02))
+		goto done;
+	drgqst_core_set_early_motion_input(core, 0x35, 0x57);
+	xavix_machine_write_low(&core->machine, 0x7b81, 0x11);
+	if (xavix_machine_read_low(&core->machine, 0x7b80) != 0xcb)
+		goto done;
+	xavix_machine_write_low(&core->machine, 0x7b81, 0x53);
+	if (xavix_machine_read_low(&core->machine, 0x7b80) != 0x57)
+		goto done;
+	/* Hyper Rescue clocks the CPU at twice the ordinary XaviX rate while
+	 * retaining the normal video/audio time base. */
+	make_test_rom_sized(rom, TEST_OMT_ROM_SIZE);
+	if (!drgqst_core_init_profile(core, rom, TEST_OMT_ROM_SIZE,
+		DRGQST_CORE_XAVIX_PLAIN))
+		goto done;
+	drgqst_core_run_frame(core);
+	normal_frame_cpu_cycles = core->cpu.total_cycles;
+	if (!drgqst_core_init_profile(core, rom, TEST_OMT_ROM_SIZE,
+		DRGQST_CORE_XAVIX_43MHZ_PLAIN))
+		goto done;
+	drgqst_core_run_frame(core);
+	doubled_frame_cpu_cycles = core->cpu.total_cycles;
+	/* Either frame may finish on the far side of one multi-cycle
+	 * instruction, so allow one instruction of boundary skew. */
+	if (doubled_frame_cpu_cycles + 8U < normal_frame_cpu_cycles * 2U ||
+		doubled_frame_cpu_cycles > normal_frame_cpu_cycles * 2U + 8U)
 		goto done;
 	ok = 1;
 done:
@@ -963,6 +1138,21 @@ static int test_epo_hamc_sensor_profile(void)
 	if (xavix_machine_read_low(&core->machine, 0x7b80) != 0xff)
 		goto done;
 	drgqst_core_set_mouse(core, 0x12, 0xe4, 1, 1);
+	if (core->machine.state.peripherals.sensor.host_x != 0x12 ||
+		core->machine.state.peripherals.sensor.host_y != 0xe4 ||
+		core->machine.state.peripherals.sensor.host_mode !=
+			XAVIX_SENSOR_STEP_FORWARD)
+		goto done;
+	/* P1.0 and P1.5 start an illuminated acquisition and latch the current
+	 * host reflector.  Only ADC0 advances the CU5501-style scan. */
+	xavix_machine_write_low(&core->machine, 0x7a03, 0x21);
+	xavix_machine_write_low(&core->machine, 0x7a01, 0x21);
+	if (!core->machine.state.peripherals.sensor.illuminated ||
+		core->machine.state.peripherals.sensor.scan_x != 0x12 ||
+		core->machine.state.peripherals.sensor.scan_y != 0xe4 ||
+		core->machine.state.peripherals.sensor.scan_mode !=
+			XAVIX_SENSOR_STEP_FORWARD)
+		goto done;
 	for (index = 0; index < 8; ++index)
 	{
 		const uint8_t control = (uint8_t)((index & 3) |
@@ -970,9 +1160,9 @@ static int test_epo_hamc_sensor_profile(void)
 		xavix_machine_write_low(&core->machine, 0x7b81, control);
 		if (xavix_machine_read_low(&core->machine, 0x7b80) != 0 ||
 			core->machine.state.peripherals.sensor.pixel ||
-			core->machine.state.peripherals.sensor.adc_phase ||
-			core->machine.state.peripherals.sensor.host_x != 0x80 ||
-			core->machine.state.peripherals.sensor.host_y != 0x80)
+			core->machine.state.peripherals.sensor.adc_phase != 1 ||
+			core->machine.state.peripherals.sensor.host_x != 0x12 ||
+			core->machine.state.peripherals.sensor.host_y != 0xe4)
 			goto done;
 	}
 
@@ -1076,6 +1266,8 @@ int main(void)
 	RUN_TEST(test_internal_cursor_watch_profiles());
 	RUN_TEST(test_round_trip_and_continuation());
 	RUN_TEST(test_audio_register_writes_are_timed_within_frame());
+	RUN_TEST(test_position_irq_repeats_at_programmed_raster_position());
+	RUN_TEST(test_position_irq_can_advance_to_next_scanline());
 	RUN_TEST(test_repeated_one_piece_load_resets_host_input());
 	RUN_TEST(test_one_piece_bazooka_gesture());
 	RUN_TEST(test_onmyou_4mb_sensor_profile());

@@ -97,8 +97,8 @@ static int ensure_directory(const wchar_t *directory, wchar_t *error,
 }
 
 static int choose_output_path(const wchar_t *snap_directory,
-	wchar_t output[MAXIMUM_PATH_CHARACTERS], wchar_t *error,
-	size_t error_length)
+	const wchar_t *prefix, wchar_t output[MAXIMUM_PATH_CHARACTERS],
+	wchar_t *error, size_t error_length)
 {
 	SYSTEMTIME time;
 	unsigned attempt;
@@ -113,15 +113,15 @@ static int choose_output_path(const wchar_t *snap_directory,
 		if (!attempt)
 		{
 			_snwprintf(filename, sizeof(filename) / sizeof(filename[0]),
-				L"XaviXEmu-%04u%02u%02u-%02u%02u%02u-%03u.png",
-				time.wYear, time.wMonth, time.wDay, time.wHour,
+				L"%ls-%04u%02u%02u-%02u%02u%02u-%03u.png",
+				prefix, time.wYear, time.wMonth, time.wDay, time.wHour,
 				time.wMinute, time.wSecond, time.wMilliseconds);
 		}
 		else
 		{
 			_snwprintf(filename, sizeof(filename) / sizeof(filename[0]),
-				L"XaviXEmu-%04u%02u%02u-%02u%02u%02u-%03u-%03u.png",
-				time.wYear, time.wMonth, time.wDay, time.wHour,
+				L"%ls-%04u%02u%02u-%02u%02u%02u-%03u-%03u.png",
+				prefix, time.wYear, time.wMonth, time.wDay, time.wHour,
 				time.wMinute, time.wSecond, time.wMilliseconds, attempt);
 		}
 		filename[sizeof(filename) / sizeof(filename[0]) - 1] = L'\0';
@@ -294,9 +294,10 @@ static int write_png(const wchar_t *path, HBITMAP bitmap, UINT width,
 	return success;
 }
 
-int xavix_screenshot_save_png(HDC source, const RECT *source_rectangle,
-	const wchar_t *base_directory, wchar_t *saved_path,
-	size_t saved_path_length, wchar_t *error, size_t error_length)
+int xavix_screenshot_save_png_named(HDC source, const RECT *source_rectangle,
+	const wchar_t *base_directory, const wchar_t *file_prefix,
+	wchar_t *saved_path, size_t saved_path_length,
+	wchar_t *error, size_t error_length)
 {
 	wchar_t snap_directory[MAXIMUM_PATH_CHARACTERS];
 	wchar_t path[MAXIMUM_PATH_CHARACTERS];
@@ -308,7 +309,8 @@ int xavix_screenshot_save_png(HDC source, const RECT *source_rectangle,
 	clear_error(error, error_length);
 	if (saved_path && saved_path_length)
 		saved_path[0] = L'\0';
-	if (!source || !source_rectangle || !base_directory)
+	if (!source || !source_rectangle || !base_directory ||
+		!file_prefix || !file_prefix[0])
 	{
 		set_error(error, error_length,
 			L"No screenshot source or destination was supplied.");
@@ -317,7 +319,7 @@ int xavix_screenshot_save_png(HDC source, const RECT *source_rectangle,
 	if (!join_path(base_directory, L"snap", snap_directory, error,
 		error_length) ||
 		!ensure_directory(snap_directory, error, error_length) ||
-		!choose_output_path(snap_directory, path, error, error_length))
+		!choose_output_path(snap_directory, file_prefix, path, error, error_length))
 		return 0;
 	bitmap = create_cropped_bitmap(source, source_rectangle, &width, &height,
 		error, error_length);
@@ -347,4 +349,13 @@ int xavix_screenshot_save_png(HDC source, const RECT *source_rectangle,
 		memcpy(saved_path, path, required * sizeof(*saved_path));
 	}
 	return 1;
+}
+
+int xavix_screenshot_save_png(HDC source, const RECT *source_rectangle,
+	const wchar_t *base_directory, wchar_t *saved_path,
+	size_t saved_path_length, wchar_t *error, size_t error_length)
+{
+	return xavix_screenshot_save_png_named(source, source_rectangle,
+		base_directory, L"XaviXEmu", saved_path, saved_path_length,
+		error, error_length);
 }

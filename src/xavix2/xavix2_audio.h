@@ -63,6 +63,8 @@ void xavix2_audio_command(xavix2_audio *audio, uint16_t command,
 	uint8_t control_left, uint8_t control_right);
 uint32_t xavix2_audio_engine_rate(uint8_t divider_a, uint8_t divider_b);
 void xavix2_audio_render(xavix2_audio *audio, uint32_t engine_rate);
+void xavix2_audio_restore_descriptors(xavix2_audio *audio,
+	const uint8_t descriptors[XAVIX2_AUDIO_DESCRIPTOR_BYTES]);
 void xavix2_audio_set_mute_mask(xavix2_audio *audio, uint64_t mute_mask);
 uint8_t xavix2_audio_status(const xavix2_audio *audio, unsigned byte_index);
 const int16_t *xavix2_audio_frame(const xavix2_audio *audio);

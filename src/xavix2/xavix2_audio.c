@@ -121,14 +121,14 @@ void xavix2_audio_command(xavix2_audio *audio, uint16_t command,
 	}
 	voice->position = (uint64_t)start << 32;
 	voice->start_address = start;
-	/* Looping samples return to their primary waveform.  In Naruto the second
-	 * descriptor address is immediately after the primary 0x80 terminator;
-	 * treating it as a loop target selects a tiny neighbouring fragment and
-	 * produces a timbre absent from the isolated real-hardware phrase. */
+	/* SSD's sound-processor patent documents two arrays: the first contains
+	 * the attack waveform and the second contains the sustain waveform.  The
+	 * first 0x80 end code transfers playback to the second address; later end
+	 * codes repeat the second array.  XaviX 2 descriptors and ROM data match
+	 * that layout exactly. */
 	loop_address = descriptor_address(descriptor, 0x0e, 0x12);
 	voice->loop = operation == 0x240 && loop_address < audio->rom_size;
-	voice->loop_address = voice->loop ?
-		start : 0;
+	voice->loop_address = voice->loop ? loop_address : 0;
 	voice->pitch = load16(descriptor + 0x16);
 	voice->volume_left = descriptor[0x32];
 	voice->volume_right = descriptor[0x33];
@@ -292,6 +292,33 @@ void xavix2_audio_render(xavix2_audio *audio, uint32_t engine_rate)
 			if (voice->release_phase == XAVIX2_AUDIO_RELEASE_FINISHED)
 				stop_voice(voice);
 		}
+	}
+}
+
+void xavix2_audio_restore_descriptors(xavix2_audio *audio,
+	const uint8_t descriptors[XAVIX2_AUDIO_DESCRIPTOR_BYTES])
+{
+	unsigned channel;
+	if (!audio || !descriptors)
+		return;
+	for (channel = 0; channel < XAVIX2_AUDIO_VOICES; ++channel)
+	{
+		xavix2_audio_voice *voice = &audio->voice[channel];
+		const uint8_t *descriptor = descriptors +
+			channel * XAVIX2_AUDIO_DESCRIPTOR_SIZE;
+		uint32_t loop_address;
+		if (!voice->active || !voice->loop ||
+			voice->loop_address != voice->start_address)
+			continue;
+		loop_address = descriptor_address(descriptor, 0x0e, 0x12);
+		if (loop_address >= audio->rom_size ||
+			audio->rom[loop_address] == 0x80)
+		{
+			voice->loop = 0;
+			voice->loop_address = 0;
+		}
+		else
+			voice->loop_address = loop_address;
 	}
 }
 

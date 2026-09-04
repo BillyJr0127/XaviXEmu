@@ -766,33 +766,67 @@ static void finish_watched_sprite_report(xavix_video *video)
 		video->report.watched_sprite_bounds.valid;
 }
 
-const xavix_video_frame_report *xavix_video_render(
-	xavix_video *video, const xavix_video_inputs *inputs)
+void xavix_video_begin_frame(xavix_video *video)
 {
-	render_context render;
-	uint32_t background;
 	unsigned position;
-	uint8_t layer_mask = XAVIX_VIDEO_COLMIX_TILEMAP_0 |
-		XAVIX_VIDEO_COLMIX_TILEMAP_1 | XAVIX_VIDEO_COLMIX_SPRITES;
 
-	if (!video || !inputs)
-		return NULL;
-
+	if (!video)
+		return;
 	memset(&video->report, 0, sizeof(video->report));
 	video->report.sprite_mode_supported = 1;
-	rebuild_palette(video, inputs);
-	render.video = video;
-	render.input = inputs;
-	render.clip = make_hardware_clip(inputs);
-	video->report.hardware_clip = render.clip;
-	background = video->palette_argb[0];
-
 	for (position = 0; position < XAVIX_VIDEO_PIXELS; ++position)
 	{
 		video->framebuffer[position] = UINT32_C(0xff000000);
 		video->zbuffer[position] = 0;
 		video->pixel_owner[position] = OWNER_NONE;
 	}
+}
+
+static void include_clip(xavix_video_bounds *total,
+	const xavix_video_bounds *part)
+{
+	if (!part->valid)
+		return;
+	if (!total->valid)
+	{
+		*total = *part;
+		return;
+	}
+	if (part->min_x < total->min_x)
+		total->min_x = part->min_x;
+	if (part->min_y < total->min_y)
+		total->min_y = part->min_y;
+	if (part->max_x > total->max_x)
+		total->max_x = part->max_x;
+	if (part->max_y > total->max_y)
+		total->max_y = part->max_y;
+}
+
+void xavix_video_render_range(xavix_video *video,
+	const xavix_video_inputs *inputs, int min_y, int max_y)
+{
+	render_context render;
+	uint32_t background;
+	uint8_t layer_mask = XAVIX_VIDEO_COLMIX_TILEMAP_0 |
+		XAVIX_VIDEO_COLMIX_TILEMAP_1 | XAVIX_VIDEO_COLMIX_SPRITES;
+
+	if (!video || !inputs || min_y > max_y)
+		return;
+
+	rebuild_palette(video, inputs);
+	render.video = video;
+	render.input = inputs;
+	render.clip = make_hardware_clip(inputs);
+	if (min_y > render.clip.min_y)
+		render.clip.min_y = (int16_t)min_y;
+	if (max_y < render.clip.max_y)
+		render.clip.max_y = (int16_t)max_y;
+	if (render.clip.min_y > render.clip.max_y)
+		render.clip.valid = 0;
+
+	include_clip(&video->report.hardware_clip, &render.clip);
+	background = video->palette_argb[0];
+
 	if (render.clip.valid)
 	{
 		int y;
@@ -815,7 +849,24 @@ const xavix_video_frame_report *xavix_video_render(
 		draw_tilemap(&render, 1);
 	if (render.clip.valid && (layer_mask & XAVIX_VIDEO_COLMIX_SPRITES))
 		draw_sprites(&render);
+}
 
+const xavix_video_frame_report *xavix_video_end_frame(xavix_video *video)
+{
+	if (!video)
+		return NULL;
 	finish_watched_sprite_report(video);
 	return &video->report;
+}
+
+const xavix_video_frame_report *xavix_video_render(
+	xavix_video *video, const xavix_video_inputs *inputs)
+{
+
+	if (!video || !inputs)
+		return NULL;
+	xavix_video_begin_frame(video);
+	xavix_video_render_range(video, inputs, XAVIX_VIDEO_VISIBLE_Y_START,
+		XAVIX_VIDEO_VISIBLE_Y_END);
+	return xavix_video_end_frame(video);
 }

@@ -335,6 +335,10 @@ uint8_t xavix_machine_read_low(void *context, uint16_t address)
 		return state->video_control;
 	if (address == 0x6ff9)
 		return 0;
+	if (address == 0x6ffa)
+		return state->position_irq_x;
+	if (address == 0x6ffb)
+		return state->position_irq_y;
 	if (address >= 0x6ffc && address <= 0x6fff)
 		return 0xff;
 	if (address >= 0x7400 && address < 0x7580)
@@ -365,7 +369,13 @@ uint8_t xavix_machine_read_low(void *context, uint16_t address)
 	if (address == 0x7b80)
 		return state->adc_latch;
 	if (address == 0x7b81)
-		return 0;
+	{
+		/* ADC conversion is completed synchronously below, so expose the
+		 * hardware's completion flag immediately.  Hyper Rescue polls bit 7
+		 * after every channel request and otherwise remains in its post-BIOS
+		 * black screen forever. */
+		return (uint8_t)(state->adc_control | 0x80U);
+	}
 	if (address >= 0x7c00 && address <= 0x7c03)
 		return xavix_timer_read(&state->peripherals.timer, address - 0x7c00);
 	if (address >= 0x7ff0 && address <= 0x7ff6)

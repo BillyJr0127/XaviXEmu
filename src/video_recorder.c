@@ -11,6 +11,10 @@
 #include <objbase.h>
 #include <wincodec.h>
 #include <vfw.h>
+#include <mfapi.h>
+#include <mfidl.h>
+#include <mfreadwrite.h>
+#include <mferror.h>
 
 #include "video_recorder.h"
 
@@ -60,7 +64,8 @@ static void copy_path(wchar_t *output, size_t output_length,
 }
 
 static int choose_output_path(const wchar_t *directory,
-	wchar_t output[MAX_PATH], wchar_t *error, size_t error_length)
+	xavix_video_format format, wchar_t output[MAX_PATH], wchar_t *error,
+	size_t error_length)
 {
 	SYSTEMTIME time;
 	size_t directory_length;
@@ -85,15 +90,17 @@ static int choose_output_path(const wchar_t *directory,
 		if (!attempt)
 			result = _snwprintf(filename,
 				sizeof(filename) / sizeof(filename[0]),
-				L"XaviXEmu-%04u%02u%02u-%02u%02u%02u-%03u.avi",
+				L"XaviXEmu-%04u%02u%02u-%02u%02u%02u-%03u.%ls",
 				time.wYear, time.wMonth, time.wDay, time.wHour,
-				time.wMinute, time.wSecond, time.wMilliseconds);
+				time.wMinute, time.wSecond, time.wMilliseconds,
+				format == XAVIX_VIDEO_FORMAT_MP4 ? L"mp4" : L"avi");
 		else
 			result = _snwprintf(filename,
 				sizeof(filename) / sizeof(filename[0]),
-				L"XaviXEmu-%04u%02u%02u-%02u%02u%02u-%03u-%03u.avi",
+				L"XaviXEmu-%04u%02u%02u-%02u%02u%02u-%03u-%03u.%ls",
 				time.wYear, time.wMonth, time.wDay, time.wHour,
-				time.wMinute, time.wSecond, time.wMilliseconds, attempt);
+				time.wMinute, time.wSecond, time.wMilliseconds, attempt,
+				format == XAVIX_VIDEO_FORMAT_MP4 ? L"mp4" : L"avi");
 		if (result < 0 || (size_t)result >=
 			sizeof(filename) / sizeof(filename[0]) ||
 			directory_length + (size_t)separator + (size_t)result >= MAX_PATH)
@@ -112,7 +119,7 @@ static int choose_output_path(const wchar_t *directory,
 			return 1;
 	}
 	set_error(error, error_length,
-		L"A unique AVI filename could not be created.");
+		L"A unique recording filename could not be created.");
 	return 0;
 }
 
@@ -125,6 +132,8 @@ static void release_recorder(xavix_video_recorder *recorder,
 		return;
 	copy_path(partial_path, sizeof(partial_path) / sizeof(partial_path[0]),
 		recorder->path);
+	if (recorder->sink_writer)
+		IMFSinkWriter_Release((IMFSinkWriter *)recorder->sink_writer);
 	if (recorder->audio_stream)
 		AVIStreamRelease((PAVISTREAM)recorder->audio_stream);
 	if (recorder->video_stream)
@@ -136,6 +145,8 @@ static void release_recorder(xavix_video_recorder *recorder,
 			(IWICImagingFactory *)recorder->imaging_factory);
 	if (recorder->avi_initialized)
 		AVIFileExit();
+	if (recorder->mf_initialized)
+		MFShutdown();
 	if (recorder->com_uninitialize)
 		CoUninitialize();
 	memset(recorder, 0, sizeof(*recorder));
@@ -151,11 +162,13 @@ void xavix_video_recorder_init(xavix_video_recorder *recorder)
 
 int xavix_video_recorder_active(const xavix_video_recorder *recorder)
 {
-	return recorder && recorder->file && recorder->video_stream &&
-		recorder->audio_stream;
+	return recorder && ((recorder->format == XAVIX_VIDEO_FORMAT_MP4 &&
+		recorder->sink_writer) ||
+		(recorder->format == XAVIX_VIDEO_FORMAT_AVI && recorder->file &&
+			recorder->video_stream && recorder->audio_stream));
 }
 
-int xavix_video_recorder_start(xavix_video_recorder *recorder,
+static int start_avi(xavix_video_recorder *recorder,
 	const wchar_t *directory, unsigned width, unsigned height,
 	wchar_t *saved_path, size_t saved_path_length,
 	wchar_t *error, size_t error_length)
@@ -184,7 +197,8 @@ int xavix_video_recorder_start(xavix_video_recorder *recorder,
 		return 0;
 	}
 	memset(recorder, 0, sizeof(*recorder));
-	if (!choose_output_path(directory, recorder->path, error, error_length))
+	if (!choose_output_path(directory, XAVIX_VIDEO_FORMAT_AVI,
+		recorder->path, error, error_length))
 		return 0;
 
 	initialize_result = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
@@ -299,10 +313,212 @@ int xavix_video_recorder_start(xavix_video_recorder *recorder,
 
 	recorder->width = width;
 	recorder->height = height;
+	recorder->format = XAVIX_VIDEO_FORMAT_AVI;
 	copy_path(saved_path, saved_path_length, recorder->path);
 	return 1;
 }
 
+static int start_mp4(xavix_video_recorder *recorder,
+	const wchar_t *directory, unsigned width, unsigned height,
+	wchar_t *saved_path, size_t saved_path_length,
+	wchar_t *error, size_t error_length)
+{
+	IMFSinkWriter *writer = NULL;
+	IMFMediaType *output_video = NULL;
+	IMFMediaType *input_video = NULL;
+	IMFMediaType *output_audio = NULL;
+	IMFMediaType *input_audio = NULL;
+	DWORD video_stream = 0;
+	DWORD audio_stream = 0;
+	HRESULT result;
+	HRESULT initialize_result;
+	uint64_t bitrate;
+	int success = 0;
+
+	clear_error(error, error_length);
+	copy_path(saved_path, saved_path_length, L"");
+	if (!recorder || xavix_video_recorder_active(recorder))
+	{
+		set_error(error, error_length, L"A recording is already active.");
+		return 0;
+	}
+	if (!width || !height || (width & 1) || (height & 1) ||
+		width > INT_MAX || height > INT_MAX ||
+		(uint64_t)width * height * 4 > UINT_MAX)
+	{
+		set_error(error, error_length,
+			L"MP4 recording dimensions must be positive and even.");
+		return 0;
+	}
+	memset(recorder, 0, sizeof(*recorder));
+	recorder->format = XAVIX_VIDEO_FORMAT_MP4;
+	if (!choose_output_path(directory, XAVIX_VIDEO_FORMAT_MP4,
+		recorder->path, error, error_length))
+		return 0;
+	initialize_result = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+	if (SUCCEEDED(initialize_result))
+		recorder->com_uninitialize = 1;
+	else if (initialize_result != RPC_E_CHANGED_MODE)
+	{
+		set_error(error, error_length,
+			L"Windows media initialization failed (0x%08lx).",
+			(unsigned long)initialize_result);
+		recorder->path[0] = L'\0';
+		return 0;
+	}
+	result = MFStartup(MF_VERSION, MFSTARTUP_FULL);
+	if (FAILED(result))
+	{
+		set_error(error, error_length,
+			L"Windows Media Foundation could not start (0x%08lx).",
+			(unsigned long)result);
+		release_recorder(recorder, 1);
+		return 0;
+	}
+	recorder->mf_initialized = 1;
+	result = MFCreateSinkWriterFromURL(recorder->path, NULL, NULL, &writer);
+	if (SUCCEEDED(result))
+		recorder->sink_writer = writer;
+	if (FAILED(result))
+		goto failed;
+
+	result = MFCreateMediaType(&output_video);
+	if (SUCCEEDED(result)) result = IMFMediaType_SetGUID(output_video,
+		&MF_MT_MAJOR_TYPE, &MFMediaType_Video);
+	if (SUCCEEDED(result)) result = IMFMediaType_SetGUID(output_video,
+		&MF_MT_SUBTYPE, &MFVideoFormat_H264);
+	bitrate = (uint64_t)width * height * 12;
+	if (bitrate < UINT32_C(2000000)) bitrate = UINT32_C(2000000);
+	if (bitrate > UINT32_C(20000000)) bitrate = UINT32_C(20000000);
+	if (SUCCEEDED(result)) result = IMFMediaType_SetUINT32(output_video,
+		&MF_MT_AVG_BITRATE, (UINT32)bitrate);
+	if (SUCCEEDED(result)) result = IMFMediaType_SetUINT32(output_video,
+		&MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive);
+	if (SUCCEEDED(result)) result = IMFMediaType_SetUINT64(output_video, &MF_MT_FRAME_SIZE,
+		((uint64_t)width << 32) | height);
+	if (SUCCEEDED(result)) result = IMFMediaType_SetUINT64(output_video, &MF_MT_FRAME_RATE,
+		((uint64_t)VIDEO_FRAME_RATE << 32) | 1);
+	if (SUCCEEDED(result)) result = IMFMediaType_SetUINT64(output_video, &MF_MT_PIXEL_ASPECT_RATIO,
+		(UINT64_C(1) << 32) | 1);
+	if (SUCCEEDED(result)) result = IMFSinkWriter_AddStream(writer,
+		output_video, &video_stream);
+	if (FAILED(result)) goto failed;
+
+	result = MFCreateMediaType(&input_video);
+	if (SUCCEEDED(result)) result = IMFMediaType_SetGUID(input_video,
+		&MF_MT_MAJOR_TYPE, &MFMediaType_Video);
+	if (SUCCEEDED(result)) result = IMFMediaType_SetGUID(input_video,
+		&MF_MT_SUBTYPE, &MFVideoFormat_RGB32);
+	if (SUCCEEDED(result)) result = IMFMediaType_SetUINT32(input_video,
+		&MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive);
+	if (SUCCEEDED(result)) result = IMFMediaType_SetUINT64(input_video, &MF_MT_FRAME_SIZE,
+		((uint64_t)width << 32) | height);
+	if (SUCCEEDED(result)) result = IMFMediaType_SetUINT64(input_video, &MF_MT_FRAME_RATE,
+		((uint64_t)VIDEO_FRAME_RATE << 32) | 1);
+	if (SUCCEEDED(result)) result = IMFMediaType_SetUINT64(input_video, &MF_MT_PIXEL_ASPECT_RATIO,
+		(UINT64_C(1) << 32) | 1);
+	if (SUCCEEDED(result)) result = IMFMediaType_SetUINT32(input_video,
+		&MF_MT_DEFAULT_STRIDE, width * 4);
+	if (SUCCEEDED(result)) result = IMFSinkWriter_SetInputMediaType(writer,
+		video_stream, input_video, NULL);
+	if (FAILED(result)) goto failed;
+
+	result = MFCreateMediaType(&output_audio);
+	if (SUCCEEDED(result)) result = IMFMediaType_SetGUID(output_audio,
+		&MF_MT_MAJOR_TYPE, &MFMediaType_Audio);
+	if (SUCCEEDED(result)) result = IMFMediaType_SetGUID(output_audio,
+		&MF_MT_SUBTYPE, &MFAudioFormat_AAC);
+	if (SUCCEEDED(result)) result = IMFMediaType_SetUINT32(output_audio,
+		&MF_MT_AUDIO_NUM_CHANNELS, AUDIO_CHANNELS);
+	if (SUCCEEDED(result)) result = IMFMediaType_SetUINT32(output_audio,
+		&MF_MT_AUDIO_SAMPLES_PER_SECOND, AUDIO_SAMPLE_RATE);
+	if (SUCCEEDED(result)) result = IMFMediaType_SetUINT32(output_audio,
+		&MF_MT_AUDIO_BITS_PER_SAMPLE, AUDIO_BITS);
+	if (SUCCEEDED(result)) result = IMFMediaType_SetUINT32(output_audio,
+		&MF_MT_AUDIO_AVG_BYTES_PER_SECOND, 16000);
+	if (SUCCEEDED(result)) result = IMFMediaType_SetUINT32(output_audio,
+		&MF_MT_AUDIO_BLOCK_ALIGNMENT, 1);
+	if (SUCCEEDED(result)) result = IMFMediaType_SetUINT32(output_audio,
+		&MF_MT_AAC_PAYLOAD_TYPE, 0);
+	if (SUCCEEDED(result)) result = IMFMediaType_SetUINT32(output_audio,
+		&MF_MT_AAC_AUDIO_PROFILE_LEVEL_INDICATION, 0x29);
+	if (SUCCEEDED(result)) result = IMFSinkWriter_AddStream(writer,
+		output_audio, &audio_stream);
+	if (FAILED(result)) goto failed;
+
+	result = MFCreateMediaType(&input_audio);
+	if (SUCCEEDED(result)) result = IMFMediaType_SetGUID(input_audio,
+		&MF_MT_MAJOR_TYPE, &MFMediaType_Audio);
+	if (SUCCEEDED(result)) result = IMFMediaType_SetGUID(input_audio,
+		&MF_MT_SUBTYPE, &MFAudioFormat_PCM);
+	if (SUCCEEDED(result)) result = IMFMediaType_SetUINT32(input_audio,
+		&MF_MT_AUDIO_NUM_CHANNELS, AUDIO_CHANNELS);
+	if (SUCCEEDED(result)) result = IMFMediaType_SetUINT32(input_audio,
+		&MF_MT_AUDIO_SAMPLES_PER_SECOND, AUDIO_SAMPLE_RATE);
+	if (SUCCEEDED(result)) result = IMFMediaType_SetUINT32(input_audio,
+		&MF_MT_AUDIO_BITS_PER_SAMPLE, AUDIO_BITS);
+	if (SUCCEEDED(result)) result = IMFMediaType_SetUINT32(input_audio,
+		&MF_MT_AUDIO_BLOCK_ALIGNMENT,
+		(AUDIO_CHANNELS * AUDIO_BITS) / 8);
+	if (SUCCEEDED(result)) result = IMFMediaType_SetUINT32(input_audio,
+		&MF_MT_AUDIO_AVG_BYTES_PER_SECOND,
+		AUDIO_SAMPLE_RATE * AUDIO_CHANNELS * AUDIO_BITS / 8);
+	if (SUCCEEDED(result)) result = IMFMediaType_SetUINT32(input_audio,
+		&MF_MT_ALL_SAMPLES_INDEPENDENT, TRUE);
+	if (SUCCEEDED(result)) result = IMFSinkWriter_SetInputMediaType(writer,
+		audio_stream, input_audio, NULL);
+	if (FAILED(result)) goto failed;
+
+	result = IMFSinkWriter_BeginWriting(writer);
+	if (FAILED(result)) goto failed;
+	recorder->width = width;
+	recorder->height = height;
+	recorder->mf_video_stream = video_stream;
+	recorder->mf_audio_stream = audio_stream;
+	copy_path(saved_path, saved_path_length, recorder->path);
+	success = 1;
+
+failed:
+	if (input_audio) IMFMediaType_Release(input_audio);
+	if (output_audio) IMFMediaType_Release(output_audio);
+	if (input_video) IMFMediaType_Release(input_video);
+	if (output_video) IMFMediaType_Release(output_video);
+	if (!success)
+	{
+		set_error(error, error_length,
+			L"The MP4 H.264/AAC encoder could not be initialized (0x%08lx).",
+			(unsigned long)result);
+		release_recorder(recorder, 1);
+	}
+	return success;
+}
+
+int xavix_video_recorder_start_format(xavix_video_recorder *recorder,
+	const wchar_t *directory, unsigned width, unsigned height,
+	xavix_video_format format, wchar_t *saved_path, size_t saved_path_length,
+	wchar_t *error, size_t error_length)
+{
+	if (format == XAVIX_VIDEO_FORMAT_MP4)
+		return start_mp4(recorder, directory, width, height, saved_path,
+			saved_path_length, error, error_length);
+	if (format != XAVIX_VIDEO_FORMAT_AVI)
+	{
+		set_error(error, error_length, L"The recording format is invalid.");
+		return 0;
+	}
+	return start_avi(recorder, directory, width, height, saved_path,
+		saved_path_length, error, error_length);
+}
+
+int xavix_video_recorder_start(xavix_video_recorder *recorder,
+	const wchar_t *directory, unsigned width, unsigned height,
+	wchar_t *saved_path, size_t saved_path_length,
+	wchar_t *error, size_t error_length)
+{
+	return xavix_video_recorder_start_format(recorder, directory, width,
+		height, XAVIX_VIDEO_FORMAT_AVI, saved_path, saved_path_length,
+		error, error_length);
+}
 static int encode_jpeg(xavix_video_recorder *recorder,
 	const uint32_t *pixels, unsigned pixel_stride,
 	IStream **encoded_stream, ULARGE_INTEGER *encoded_size,
@@ -387,6 +603,107 @@ static int encode_jpeg(xavix_video_recorder *recorder,
 	return success;
 }
 
+static int write_mp4_frame(xavix_video_recorder *recorder,
+	const uint32_t *pixels, unsigned pixel_stride,
+	const int16_t *interleaved_stereo, size_t audio_frames,
+	wchar_t *error, size_t error_length)
+{
+	IMFSinkWriter *writer = (IMFSinkWriter *)recorder->sink_writer;
+	IMFMediaBuffer *video_buffer = NULL;
+	IMFSample *video_sample = NULL;
+	IMFMediaBuffer *audio_buffer = NULL;
+	IMFSample *audio_sample = NULL;
+	BYTE *destination = NULL;
+	DWORD maximum_length = 0;
+	DWORD current_length = 0;
+	DWORD video_bytes = recorder->width * recorder->height * 4;
+	DWORD audio_bytes = (DWORD)(audio_frames * AUDIO_CHANNELS * sizeof(int16_t));
+	LONGLONG video_time = (LONGLONG)recorder->video_frame * 10000000 /
+		VIDEO_FRAME_RATE;
+	LONGLONG video_end = (LONGLONG)(recorder->video_frame + 1) * 10000000 /
+		VIDEO_FRAME_RATE;
+	LONGLONG audio_time = (LONGLONG)recorder->audio_frame * 10000000 /
+		AUDIO_SAMPLE_RATE;
+	LONGLONG audio_end = (LONGLONG)(recorder->audio_frame + audio_frames) *
+		10000000 / AUDIO_SAMPLE_RATE;
+	HRESULT result;
+	uint32_t y;
+	int success = 0;
+
+	result = MFCreateMemoryBuffer(video_bytes, &video_buffer);
+	if (SUCCEEDED(result)) result = IMFMediaBuffer_Lock(video_buffer,
+		&destination, &maximum_length, &current_length);
+	if (SUCCEEDED(result))
+	{
+		/* The sink writer consumes RGB32 sample buffers from their first row.
+		 * The recording DIB is already top-down, so preserve its row order.
+		 * Reversing it here made every encoded MP4 vertically inverted. */
+		for (y = 0; y < recorder->height; ++y)
+			memcpy(destination + y * recorder->width * 4,
+				pixels + y * pixel_stride, recorder->width * 4);
+		IMFMediaBuffer_Unlock(video_buffer);
+		destination = NULL;
+		result = IMFMediaBuffer_SetCurrentLength(video_buffer, video_bytes);
+	}
+	if (SUCCEEDED(result)) result = MFCreateSample(&video_sample);
+	if (SUCCEEDED(result)) result = IMFSample_AddBuffer(video_sample,
+		video_buffer);
+	if (SUCCEEDED(result)) result = IMFSample_SetSampleTime(video_sample,
+		video_time);
+	if (SUCCEEDED(result)) result = IMFSample_SetSampleDuration(video_sample,
+		video_end - video_time);
+	if (SUCCEEDED(result)) result = IMFSinkWriter_WriteSample(writer,
+		recorder->mf_video_stream, video_sample);
+	if (FAILED(result))
+	{
+		set_error(error, error_length,
+			L"The MP4 video frame could not be encoded (0x%08lx).",
+			(unsigned long)result);
+		goto done;
+	}
+
+	result = MFCreateMemoryBuffer(audio_bytes, &audio_buffer);
+	if (SUCCEEDED(result)) result = IMFMediaBuffer_Lock(audio_buffer,
+		&destination, &maximum_length, &current_length);
+	if (SUCCEEDED(result))
+	{
+		memcpy(destination, interleaved_stereo, audio_bytes);
+		IMFMediaBuffer_Unlock(audio_buffer);
+		destination = NULL;
+		result = IMFMediaBuffer_SetCurrentLength(audio_buffer, audio_bytes);
+	}
+	if (SUCCEEDED(result)) result = MFCreateSample(&audio_sample);
+	if (SUCCEEDED(result)) result = IMFSample_AddBuffer(audio_sample,
+		audio_buffer);
+	if (SUCCEEDED(result)) result = IMFSample_SetSampleTime(audio_sample,
+		audio_time);
+	if (SUCCEEDED(result)) result = IMFSample_SetSampleDuration(audio_sample,
+		audio_end - audio_time);
+	if (SUCCEEDED(result)) result = IMFSinkWriter_WriteSample(writer,
+		recorder->mf_audio_stream, audio_sample);
+	if (FAILED(result))
+	{
+		set_error(error, error_length,
+			L"The MP4 audio frame could not be encoded (0x%08lx).",
+			(unsigned long)result);
+		goto done;
+	}
+	recorder->video_frame++;
+	recorder->audio_frame += (uint32_t)audio_frames;
+	success = 1;
+
+done:
+	if (destination)
+	{
+		if (audio_buffer) IMFMediaBuffer_Unlock(audio_buffer);
+		else if (video_buffer) IMFMediaBuffer_Unlock(video_buffer);
+	}
+	if (audio_sample) IMFSample_Release(audio_sample);
+	if (audio_buffer) IMFMediaBuffer_Release(audio_buffer);
+	if (video_sample) IMFSample_Release(video_sample);
+	if (video_buffer) IMFMediaBuffer_Release(video_buffer);
+	return success;
+}
 int xavix_video_recorder_write_frame(xavix_video_recorder *recorder,
 	const uint32_t *pixels, unsigned pixel_stride,
 	const int16_t *interleaved_stereo, size_t audio_frames,
@@ -411,6 +728,9 @@ int xavix_video_recorder_write_frame(xavix_video_recorder *recorder,
 		set_error(error, error_length, L"The recording frame is not valid.");
 		return 0;
 	}
+	if (recorder->format == XAVIX_VIDEO_FORMAT_MP4)
+		return write_mp4_frame(recorder, pixels, pixel_stride,
+			interleaved_stereo, audio_frames, error, error_length);
 	if (!encode_jpeg(recorder, pixels, pixel_stride, &encoded_stream,
 		&encoded_size, error, error_length))
 		return 0;
@@ -473,6 +793,19 @@ int xavix_video_recorder_stop(xavix_video_recorder *recorder,
 		return 0;
 	}
 	copy_path(path, sizeof(path) / sizeof(path[0]), recorder->path);
+	if (recorder->format == XAVIX_VIDEO_FORMAT_MP4)
+	{
+		HRESULT result = IMFSinkWriter_Finalize(
+			(IMFSinkWriter *)recorder->sink_writer);
+		if (FAILED(result))
+		{
+			set_error(error, error_length,
+				L"The MP4 file could not be finalized (0x%08lx).",
+				(unsigned long)result);
+			release_recorder(recorder, 1);
+			return 0;
+		}
+	}
 	release_recorder(recorder, 0);
 	copy_path(saved_path, saved_path_length, path);
 	return 1;

@@ -9,6 +9,8 @@ add_executable(xavixemu WIN32
 	src/main.c
 	src/controller_input.c
 	src/cursor_presentation.c
+	src/game_controls.c
+	src/game_library.c
 	src/core/drgqst_core.c
 	src/core/drgqst_state.c
 	src/core/xavix_audio.c
@@ -53,7 +55,10 @@ target_compile_definitions(xavixemu PRIVATE
 
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
 	target_compile_options(xavixemu PRIVATE
-		-Os
+		# Emulation and software rasterization are dominated by tight CPU loops.
+		# CMake's Release profile already supplies -O3; do not override it with
+		# the size-oriented -Os, which made the shipped GUI slower than the O3
+		# performance probes used to validate frame pacing.
 		-fdata-sections
 		-ffunction-sections
 		-fno-ident
@@ -68,6 +73,7 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 target_link_libraries(xavixemu PRIVATE
+	comctl32
 	comdlg32
 	gdi32
 	hid
@@ -78,6 +84,9 @@ target_link_libraries(xavixemu PRIVATE
 	vfw32
 	ole32
 	windowscodecs
+	mfplat
+	mfreadwrite
+	mfuuid
 )
 
 install(TARGETS xavixemu RUNTIME DESTINATION .)
@@ -95,6 +104,16 @@ if(BUILD_TESTING)
 		UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 	target_link_libraries(controller-input-test PRIVATE hid setupapi winmm)
 	add_test(NAME controller-input-test COMMAND controller-input-test)
+
+	add_executable(game-controls-test
+		tests/game_controls_test.c
+		src/game_controls.c
+	)
+	target_include_directories(game-controls-test PRIVATE
+		${CMAKE_CURRENT_SOURCE_DIR}/src)
+	target_compile_definitions(game-controls-test PRIVATE
+		UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+	add_test(NAME game-controls-test COMMAND game-controls-test)
 
 	add_executable(sha1-test
 		tests/sha1_test.c
@@ -139,6 +158,9 @@ if(BUILD_TESTING)
 		${CMAKE_CURRENT_SOURCE_DIR}/src/xavix2
 	)
 	add_test(NAME xavix2-machine-test COMMAND xavix2-machine-test)
+	set_tests_properties(xavix2-machine-test PROPERTIES
+		ENVIRONMENT "XAVIX2_EXPERIMENTAL_SCANLINE_COMPOSITOR=1"
+	)
 
 	add_executable(xavix2-audio-test
 		tests/xavix2_audio_test.c
@@ -196,7 +218,8 @@ if(BUILD_TESTING)
 		WIN32_LEAN_AND_MEAN
 		NOMINMAX
 	)
-	target_link_libraries(video-recorder-test PRIVATE ole32 vfw32 windowscodecs)
+	target_link_libraries(video-recorder-test PRIVATE
+		ole32 vfw32 windowscodecs mfplat mfreadwrite mfuuid)
 	add_test(NAME video-recorder-test COMMAND video-recorder-test)
 
 	add_executable(cursor-presentation-test
@@ -231,6 +254,22 @@ if(BUILD_TESTING)
 	)
 	add_test(NAME drgqst-state-test COMMAND drgqst-state-test)
 
+	add_executable(game-library-test
+		tests/game_library_test.c
+		src/game_library.c
+		src/rom_loader.c
+		src/sha1.c
+		${MINIZ_DIRECTORY}/miniz.c
+	)
+	target_include_directories(game-library-test PRIVATE
+		${CMAKE_CURRENT_SOURCE_DIR}/src
+		${MINIZ_DIRECTORY}
+	)
+	target_compile_definitions(game-library-test PRIVATE
+		WIN32_LEAN_AND_MEAN NOMINMAX MINIZ_NO_TIME MINIZ_NO_STDIO
+		MINIZ_NO_ARCHIVE_WRITING_APIS MINIZ_NO_ZLIB_APIS
+		MINIZ_NO_ZLIB_COMPATIBLE_NAMES)
+	add_test(NAME game-library-test COMMAND game-library-test)
 	add_executable(rom-verify
 		tests/rom_verify.c
 		src/rom_loader.c

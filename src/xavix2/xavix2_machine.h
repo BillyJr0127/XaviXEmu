@@ -156,6 +156,7 @@ typedef struct xavix2_machine
 	uint64_t gpu_trigger_count;
 	uint64_t gpu_pixel_write_count;
 	uint8_t gpu_sprite_background_prepared;
+	uint8_t timer_rate_hz;
 	uint64_t dma_transfer_count;
 	uint64_t frame_count;
 	uint64_t unmapped_read_count;
@@ -178,9 +179,18 @@ void xavix2_machine_set_motion_packet_address(xavix2_machine_t *machine,
 	uint16_t address);
 void xavix2_machine_set_fixed_pio_input(xavix2_machine_t *machine,
 	uint32_t input);
+void xavix2_machine_set_timer_rate(xavix2_machine_t *machine,
+	unsigned rate_hz);
+void xavix2_machine_update_takecopter_timer_rate(xavix2_machine_t *machine);
+void xavix2_machine_set_high_resolution_3d(xavix2_machine_t *machine,
+	int enabled);
+void xavix2_machine_set_skip_render(xavix2_machine_t *machine, int enabled);
+unsigned xavix2_machine_frame_scale(const xavix2_machine_t *machine);
 void xavix2_machine_reset(xavix2_machine_t *machine);
 void xavix2_machine_raise_irq(xavix2_machine_t *machine, unsigned level);
 void xavix2_machine_clear_irq(xavix2_machine_t *machine, unsigned level);
+int xavix2_machine_transmit_epoch_ir(xavix2_machine_t *machine,
+	uint32_t serial_word);
 void xavix2_machine_set_capture(xavix2_machine_t *machine,
 	uint16_t capture_a, uint16_t capture_b);
 uint64_t xavix2_machine_execute(xavix2_machine_t *machine,

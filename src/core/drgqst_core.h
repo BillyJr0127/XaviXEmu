@@ -32,7 +32,13 @@ enum drgqst_core_profile
 	DRGQST_CORE_XAVIX2000_PARALLEL_NVRAM = 10,
 	DRGQST_CORE_XAVIX2000_PLAIN = 11,
 	DRGQST_CORE_EPO_HAMC_SENSOR = 12,
-	DRGQST_CORE_TOM_DPGM_SENSOR_24C08 = 13
+	DRGQST_CORE_TOM_DPGM_SENSOR_24C08 = 13,
+	DRGQST_CORE_XAVIX_PLAIN = 14,
+	DRGQST_CORE_XAVIX_43MHZ_PLAIN = 15,
+	DRGQST_CORE_XAVIX_I2C_24C04 = 16,
+	DRGQST_CORE_XAVIX_I2C_24C02 = 17,
+	DRGQST_CORE_XAVIX2000_SENSOR_24C04 = 18,
+	DRGQST_CORE_DUELMAST_24C04 = 19
 };
 
 typedef struct drgqst_core
@@ -70,6 +76,8 @@ typedef struct drgqst_core
 	uint8_t epo_hamd_packet_queue_head;
 	uint8_t epo_hamd_packet_queue_count;
 	uint8_t tvpc_keyboard_rows[8];
+	uint16_t video_segment_start_y;
+	uint8_t video_frame_active;
 } drgqst_core;
 
 int drgqst_core_init(drgqst_core *core, const uint8_t *rom, size_t rom_size);
@@ -110,6 +118,10 @@ void drgqst_core_set_reflectors(drgqst_core *core,
 /* Set one Super Dash Ball controller's raw MAME-style analog channels. */
 void drgqst_core_set_sdb_input(drgqst_core *core, unsigned player,
 	uint8_t raw_x, uint8_t raw_y, int button_pressed);
+
+/* Set the two physical early-XaviX motion ADC channels (5 and 7). */
+void drgqst_core_set_early_motion_input(drgqst_core *core,
+	uint8_t channel5, uint8_t channel7);
 
 /* Emit one two-reflector forward-thrust gesture for the One Piece game. */
 void drgqst_core_trigger_bazooka(drgqst_core *core);

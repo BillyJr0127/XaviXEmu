@@ -146,6 +146,14 @@ const xavix_video_frame_report *xavix_video_render(
 	xavix_video *video,
 	const xavix_video_inputs *inputs);
 
+/* Position IRQ handlers can replace registers while the display is being
+ * scanned. These helpers preserve already emitted pixels; tilemap scroll
+ * always uses the absolute hardware raster line. */
+void xavix_video_begin_frame(xavix_video *video);
+void xavix_video_render_range(xavix_video *video,
+	const xavix_video_inputs *inputs, int min_y, int max_y);
+const xavix_video_frame_report *xavix_video_end_frame(xavix_video *video);
+
 const uint32_t *xavix_video_framebuffer(const xavix_video *video);
 const xavix_video_frame_report *xavix_video_last_report(const xavix_video *video);
 int xavix_video_feather_visible(const xavix_video *video);

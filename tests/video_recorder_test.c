@@ -109,5 +109,44 @@ int main(void)
 	CHECK(memcmp(header + 8, "AVI ", 4) == 0);
 	CHECK(verify_stream_lengths(path));
 	CHECK(DeleteFileW(path));
+
+	/* MP4 uses the Windows H.264/AAC Media Foundation encoders and keeps the
+	 * same 60 FPS / 48 kHz sample timeline as AVI. */
+	xavix_video_recorder_init(&recorder);
+	CHECK(xavix_video_recorder_start_format(&recorder, directory,
+		TEST_WIDTH, TEST_HEIGHT, XAVIX_VIDEO_FORMAT_MP4, path,
+		sizeof(path) / sizeof(path[0]), error,
+		sizeof(error) / sizeof(error[0])));
+	CHECK(xavix_video_recorder_active(&recorder));
+	for (frame = 0; frame < TEST_FRAMES; ++frame)
+	{
+		for (i = 0; i < TEST_WIDTH * TEST_HEIGHT; ++i)
+		{
+			unsigned x = i % TEST_WIDTH;
+			unsigned y = i / TEST_WIDTH;
+			pixels[i] = UINT32_C(0xff000000) |
+				((uint32_t)((x * 17 + frame * 23) & 0xff) << 16) |
+				((uint32_t)((y * 21 + frame * 11) & 0xff) << 8) |
+				(uint32_t)((x + y + frame * 31) & 0xff);
+		}
+		for (i = 0; i < AUDIO_FRAMES_PER_VIDEO_FRAME * 2; ++i)
+			audio[i] = (int16_t)((int)(i * 13 + frame * 101) - 12000);
+		CHECK(xavix_video_recorder_write_frame(&recorder, pixels,
+			TEST_WIDTH, audio, AUDIO_FRAMES_PER_VIDEO_FRAME,
+			error, sizeof(error) / sizeof(error[0])));
+	}
+	CHECK(xavix_video_recorder_stop(&recorder, stopped_path,
+		sizeof(stopped_path) / sizeof(stopped_path[0]), error,
+		sizeof(error) / sizeof(error[0])));
+	CHECK(wcscmp(path, stopped_path) == 0);
+	file = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, NULL,
+		OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+	CHECK(file != INVALID_HANDLE_VALUE);
+	read = 0;
+	CHECK(ReadFile(file, header, sizeof(header), &read, NULL));
+	CloseHandle(file);
+	CHECK(read == sizeof(header));
+	CHECK(memcmp(header + 4, "ftyp", 4) == 0);
+	CHECK(DeleteFileW(path));
 	return 0;
 }

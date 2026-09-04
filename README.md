@@ -23,7 +23,7 @@ filtering, and some music behaviour are still not hardware-perfect.
 
 Version 0.3.1 also adds remappable dual analog-stick reflector controls for PS
 and compatible Windows gamepads, an initial two-Wii-Remote IR path, Japanese
-and French interfaces, per-game INI settings, display-sized F9/F10 AVI
+and French interfaces, per-game INI settings, display-sized F9/F10 AVI/MP4
 recording, and the local `save`/`snap` directory layout. The Wii Remote path
 has not been tested on physical Wii Remote hardware by the maintainer and
 should be considered experimental while awaiting user reports.
@@ -56,8 +56,8 @@ holders or MAMEdev. See [the legal notes](docs/legal.md).
 | XaviX 2000 | `ttv_lotr` | Playable | Maintainer-verified gameplay with synthetic CU5501 sword input |
 | XaviX 2000 | `ttv_sw` | Playable | Maintainer-verified gameplay with synthetic CU5501A input |
 | XaviX 2000 | `ttv_swj` | Playable | Maintainer-verified Japanese gameplay with synthetic CU5501A input |
-| XaviX 2000 | `ttv_mx` | Experimental | Title, career menu, digital tilt/accelerator input, 24C04 persistence, and PCM output |
-| XaviX 2000 | `tom_jump` | Experimental | Title, start menu, digital tilt/accelerator input, 24C04 persistence, and PCM output |
+| XaviX 2000 | `ttv_mx` | Experimental | Race reached; keyboard/mouse tilt, graduated PS/gamepad analogue tilt, accelerator/brake/pause, 24C04 persistence, and PCM output |
+| XaviX 2000 | `tom_jump` | Experimental | Game-mode menu reached; keyboard/mouse tilt, graduated PS/gamepad analogue tilt, accelerator/brake/pause, 24C04 persistence, and PCM output |
 | XaviX 2000 | `epo_sdb` | Experimental | Safety/title screens, four controller channels, two buttons, and 4 KiB parallel NVRAM |
 | XaviX 2000 | `epo_ebox` | Experimental | EPOCH/title/character/level screens, digital controls, 4 KiB parallel NVRAM, and PCM output |
 | XaviX 2000 | `epo_es2j` | Experimental | Safety/title screens, game-select menu, attract-mode football, plain digital input, and PCM output |
@@ -65,17 +65,28 @@ holders or MAMEdev. See [the legal notes](docs/legal.md).
 | XaviX 2000 | `tom_dpgm` | Experimental | Disney logo and heart/wand sensor tutorial, 24C08 persistence, and PCM output |
 | XaviX 2000 | `epo_mini` | Experimental | Safety warning and animated title screens, 24C08 initialization, and PCM output |
 | XaviX 2000 | `epo_bowl` | Experimental | Safety/title/menu screens, synthetic sensor acquisition, and 24C04 persistence |
-| XaviX 2000 | `tak_chq` | Experimental | Animated attract/title/race screens, diagnostic P0/ANPORT input, 24C04 persistence, and PCM output |
+| XaviX 2000 | `tak_chq` | Experimental | Animated attract/title/race screens, GUI wheel/accelerator/brake/command input, CPU-car corner fix, 24C04 persistence, and PCM output |
+| XaviX 2000 | `epo_golf` | Experimental | EPOCH/title screens, synthetic club motion, caddy/confirm and model/back controls, 24C04 persistence, and runtime states |
+| XaviX 2000 | `duelmast` | Not working | Base-station BIOS and scanner diagnostic boot; cabinet controls and persistence are wired, but the required external game cartridge is absent |
+| XaviX | `rad_mtrk` | Experimental | Exact ROM recognition, stable frame execution, 20 Hz pulse-wheel input, throttle/reverse/nitro/horn controls, and graduated mouse/PS analogue steering |
+| XaviX | `rad_snow` | Experimental | Exact ROM recognition, stable frame execution, board direction/go/select controls, and graduated mouse/PS analogue tilt |
+| XaviX | `rad_ssx` | Experimental | Exact ROM recognition, stable frame execution, board direction/go/select controls, and graduated mouse/PS analogue tilt |
+| XaviX | `rad_sbw` | Experimental | Exact ROM recognition, stable frame execution, board direction/go/select controls, and graduated mouse/PS analogue tilt |
+| XaviX | `tak_gin` | Experimental | Exact 2 MiB ROM recognition, stable frame execution, and four-direction keyboard/mouse/PS analogue board control |
+| XaviX | `tcarnavi` | Experimental | Exact ROM recognition, stable frame execution, analogue steering plus accelerator/brake/key/siren/reverse/lights/horn/wipers/menu controls |
+| XaviX | `tomthr` | Experimental | Safety/title/mode-select screens, corrected ADC completion, verified horn-to-menu entry, and directional rescue vehicle plus horn/key/map/wipers/lights/microphone controls |
+| XaviX | `epo_crok` | Experimental | Safety/title screens, dual motion channels, red button, 24C04 persistence, and runtime states |
+| XaviX | `tak_zuba` | Experimental | Title screen, dual sword motion channels, separate triggers, 24C02 persistence, and runtime states |
 | XaviX | `epo_hamd` | Experimental | Animated title, decoded dual wireless controllers, activity-menu entry, and menu confirmation |
 | XaviX | `tvpc_dor` | Experimental | Title, main menu, mouse, cursor-key matrix, 24C16 EEPROM, and verified flight-game input |
 | XaviX | `tvpc_ham` | Experimental | Title/main menu, 24C16 EEPROM initialization, independent persistence, and PCM output |
 | XaviX | `tvpc_hk` | Experimental | Title/main menu, 24C16 EEPROM initialization, independent persistence, and PCM output |
 | XaviX 2 | `ban_naru` | Playable | Maintainer-verified gameplay, corrected later-stage enemies/attacks, motion input, runtime states, and improved provisional PCM |
 | XaviX 2 | `ban_bldj` | Playable | Maintainer-verified story/battle gameplay, corrected scaled characters and translucent layers, independent reflector attacks, runtime states, and improved provisional PCM |
-| XaviX 2 | `ban_db2j` | Experimental | Optical route/dwell menus, Shenron/Kame House story, first-battle entry, corrected motion input, and provisional PCM; polygon materials remain incomplete |
-| XaviX 2 | `ban_dbz` | Experimental | Exact store-demo image, receiver/optical selection, random battle entry, basic/two-hand/deflect inputs, corrected terrain material routing, fractional zoom, and provisional PCM; polygon lighting remains incomplete |
+| XaviX 2 | `ban_db2j` | Playable (known issues) | User-verified story/battle play and motion input; F7 can resume with broken graphics, and attack/hit layers, transparency, polygon materials, and provisional PCM remain incomplete |
+| XaviX 2 | `ban_dbz` | Playable (known issues) | User-verified random battles in the exact store-demo image, receiver/optical selection, basic/two-hand/deflect inputs, corrected terrain material routing, fractional zoom, and provisional PCM; polygon lighting remains incomplete |
 | XaviX 2 | `epo_dab2j` | Experimental | XaviX/EPOCH logos, safety warning, later book-screen rendering, isolated runtime state, and PCM output |
-| XaviX 2 | `epo_dtcj` | Experimental | XaviX/EPOCH startup and complete Doraemon tutorial rendering, isolated runtime state, 24C04 persistence, and PCM output |
+| XaviX 2 | `epo_dtcj` | Experimental | XaviX/EPOCH startup, complete Doraemon tutorial/attract rendering, native filtered head-tilt input, keyboard/mouse/PS analogue/Wii controls, bindable boost, isolated runtime state, 24C04 persistence, and PCM output |
 | XaviX 2 | `epo_pabj` | Experimental | XaviX/EPOCH startup and complete Pooh name-entry rendering, isolated runtime state, and PCM output |
 | XaviX 2 | `epo_ssk2` | Not working | Exact ROM recognition, isolated runtime state, and dedicated 24C04 persistence |
 | XaviX 2 | `epo_sskj` | Not working | Exact ROM recognition, isolated runtime state, early CPU/audio activity, and dedicated 24C04 persistence |
@@ -88,6 +99,14 @@ does not mean that a game is fully playable.
 
 - Native Win32 front end with Traditional Chinese, Japanese, French, and English
   interfaces.
+- PCSX2-style game library: choose a ROM directory, recursively identify exact
+  supported ZIPs, show formal title/year/platform/maker/filename metadata and
+  green **Fully playable**, yellow **Initial support**, or red **Not working**
+  status, then sort by any column. Double-click or press Enter to launch.
+  Titles with implemented host controls offer a right-click game-specific
+  settings page containing only their real named actions; boot-only titles do
+  not show a misleading generic binding page. The first `shortname-*.png`
+  screenshot becomes that game's thumbnail.
 - Nearest-neighbour output, window scaling, maximized mode, optional 4:3
   presentation, and borderless fullscreen.
 - Mouse-driven virtual optical input, dual analog-stick PS/gamepad input, and
@@ -96,7 +115,7 @@ does not mean that a game is fully playable.
 - 24C02, 24C04, 24C08, and 24C16 EEPROM models.
 - Per-game EEPROM and runtime-state files for supported original XaviX and
   XaviX 2000 profiles.
-- PNG screenshots and MJPEG AVI recordings generated locally by the user.
+- PNG screenshots and selectable MJPEG AVI or H.264/AAC MP4 recordings generated locally by the user.
 - Strict ROM size, CRC32, and SHA-1 verification.
 - ROM-independent automated CPU, video, audio, peripheral, persistence,
   screenshot, and state tests.
@@ -136,23 +155,34 @@ download is needed during configuration or compilation.
 
 1. Build or obtain a clean XaviXEmu release.
 2. Start `XaviXEmu.exe`.
-3. Choose **File > Open ROM ZIP...** or the equivalent Traditional Chinese
-   command.
-4. Select a lawfully obtained ZIP matching the documented metadata.
+3. Choose **File > Set ROM directory...** (or the large folder button), then
+   select any folder on any mounted drive containing your lawfully obtained
+   ZIPs. XaviXEmu scans that folder and all of its subfolders and lists exact
+   supported images.
+4. Double-click a game, press Enter on the selected row, or use **File > Open
+   ROM ZIP...** to open one file directly. Right-click a row to start it or
+   open that title's control guide and independent button settings.
+5. While a game is running, press **Escape** once to pause and show the exit
+   confirmation. Press **Escape** again to return to the game library, or
+   press **Enter** to continue playing.
 
-The emulator does not scan the computer for games and does not copy, rename,
-modify, or add files to the selected ZIP.
+Green titles are verified fully playable, yellow titles have initial support,
+and red titles are recognized but not working. Statuses follow XaviXEmu's own
+verified gameplay, save-state probes, and maintainer testing. The selected ROM
+directory and sort column are remembered in `XaviXEmu.ini`.
+Scanning is read-only: the emulator does not copy, rename, modify, or add files
+inside the ROM directory.
 
 ## Saves, screenshots, and recordings
 
 For supported original XaviX, XaviX 2000, and XaviX 2 profiles, EEPROM (where
 present) and F5/F7 runtime states are stored under the `save` directory beside
 the executable. Existing files from older releases remain readable and are
-migrated after a successful load. F8 writes PNG files under `snap`; F9 starts
-a fixed-size 60 FPS MJPEG AVI with synchronized 48 kHz stereo sound and F10
-stops it in the same `snap` directory. By default the recording uses the
+migrated after a successful load. F8 writes game-prefixed PNG files under `snap` (the first one is used as the game-library thumbnail); choose **View > Recording format** to select
+MJPEG AVI or H.264/AAC MP4. F9 starts a fixed-size 60 FPS recording with
+synchronized 48 kHz stereo sound and F10 stops it in the same `snap` directory. By default the recording uses the
 current display size, includes the presented host cursor, and rescales later
-guest 320x240/640x480 mode changes into that fixed AVI frame. Uncheck
+guest 320x240/640x480 mode changes into that fixed recording frame. Uncheck
 **Record at current display size** under **View** to record at the guest
 resolution active when F9 is pressed. These files are runtime output and must
 not be committed.
@@ -163,7 +193,8 @@ debugging without sharing the ROM itself.
 manually in Traditional Chinese, Japanese, French, or English, or left on
 automatic: Traditional-Chinese Windows locales prefer Traditional Chinese,
 Japanese locales prefer Japanese, French locales prefer French, and all other
-or unknown locales prefer English.
+or unknown locales prefer English. The selected 1x-4x window scale is also
+remembered and reapplied after launching a title from the ROM library.
 
 ## Known limitations
 

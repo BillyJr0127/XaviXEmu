@@ -22,7 +22,7 @@
   unimplemented opcode before the first blocking loop.  The GPU renders the
   XaviX logo and Japanese safety warning correctly.
 - Code changed: `src/xavix2/xavix2_cpu.*`, `src/xavix2/xavix2_machine.*`, and
-  `tests/xavix2_boot_probe.c`.  They began as an isolated probe and the proven
+  tests/xavix2_boot_probe.c`.  They began as an isolated probe and the proven
   frame/input path is now linked into the GUI as experimental support.
 
 ## Frame wait initially mistaken for a blocker
@@ -308,18 +308,18 @@ bus callbacks on load. XaviX 2 support remains experimental.
 
 - Observed symptom: title/menu music eventually retained harsh unrelated
   noise, and the noise accumulated while navigating.
-- Audio data involved: looping voices use samples such as `$79b280-$7a197f`,
-  `$7dac80-$7dc5ff`, and `$7bca00-$7bfeff`.  In every inspected case the
-  descriptor address at `+$0e/+$12` points one byte beyond the `$80` PCM end
-  marker, not back into the sample.
-- Hypothesis: treating that descriptor value as the loop destination enters
-  unrelated ROM data immediately after the sample ends.
-- Experiment: preserve the descriptor value as an optional end boundary and
-  restart a `$240|channel` looping voice from its primary start address.
-- Result: looping voices remain inside their evidenced PCM ranges.  A
-  ROM-independent regression uses a descriptor end pointer after the marker
-  and verifies that playback returns to the primary start.
-- Code changed: `src/xavix2/xavix2_audio.c`, its voice state, audio test, and
+- Initial hypothesis: because descriptor `+$0e/+$12` points one byte beyond the
+  first `$80` end code, it was provisionally treated as an end boundary and a
+  `$240|channel` voice restarted from the primary waveform.
+- Superseding evidence: SSD's US 7,561,931 B1 explicitly specifies an attack
+  array followed by a separately terminated sustain array.  Naruto ROM data
+  matches it byte-for-byte: the descriptor's second address is the first byte
+  of a complete second array, not unrelated data.
+- Correction: looping voices play the first array once and repeat the second.
+  F7 loading also refreshes the loop head from the guest descriptor so older
+  states do not retain the provisional primary-loop address.  See
+  [`xavix2-audio.md`](xavix2-audio.md) for the patent and ROM measurements.
+- Code changed: `src/xavix2/xavix2_audio.c`, state restoration, audio test, and
   opt-in WAV/voice diagnostics in the boot probe.
 
 Follow-up user testing showed that the corrected loop endpoints did not fix the
@@ -434,14 +434,12 @@ on the user's machine before any clock change is considered.
   0.82/0.83, 1.23/1.24, 1.64/1.65, and 3.27/3.29 seconds.  The residual roughly
   2% alignment offset is below the precision justified by a mixed-video source,
   so the hardware-like 120:60 integer cadence is retained.
-- The remaining overlapping loop noise exposed two separate lifecycle gaps.
-  Channel 8, for example, starts at ROM `$7dac80`, has its second descriptor
-  address at `$7dc600`, and contains terminators at `$7dc5ff` and `$7dc67f`.
-  Treating the second address as a sustain target selects a tiny neighbouring
-  fragment; restarting at the primary address instead gives the substantially
-  stronger match to the isolated real-hardware phrase.  The second address is
-  retained as a descriptor boundary while `$240|channel` restarts the primary
-  waveform at a terminator.
+- The earlier primary-restart conclusion was later disproved by the SSD sound
+  patent and a wider ROM measurement.  Channel 8's `$7dc600-$7dc67f` second
+  array is a short sustain cycle; other instruments have second arrays of
+  thousands of bytes.  This exact attack/sustain layout now takes precedence
+  over the earlier mixed-video comparison.  See
+  [`xavix2-audio.md`](xavix2-audio.md).
 - Command traces then separated the two forms of `$c0|channel`. Pitch slides
   write zero to `$ea1a/$ea1b`; note releases set `$ea1b` bit 0 at routine
   `$40055d42-$40055d89`.  Initial notes on channels 11-13 release six video
@@ -451,10 +449,11 @@ on the user's machine before any clock change is considered.
   still observes the channel during the release stage.  The provisional model
   now keeps the active bit asserted during a 16-frame linear fade, then clears
   the voice; a new key-on cancels the fade.  An isolated title-state comparison
-  keeps the sampled pitch ratio at approximately 1.00.  Firmware field `+$36`
-  is modified by the release routine and likely selects an instrument-specific
-  envelope rate, but its transfer function and the hardware filter remain to
-  be decoded before audio can be considered exact.
+  keeps the sampled pitch ratio at approximately 1.00.  Firmware tracing now
+  proves that the release routine reads `+$36`, scales it by low RAM `$1441`
+  divided by 64, writes it back, and then sets `$ea1b` bit 0.  Its exact
+  envelope meaning and the hardware filter remain to be decoded before audio
+  can be considered exact.
 
 ## Shared controller/power status register (2026-08-12)
 
@@ -552,7 +551,7 @@ on the user's machine before any clock change is considered.
   channel-ready bits and a traced projector fixture. Type-0 Filter bit 27 is
   now honored: zero performs the documented four-tap bilinear interpolation,
   while one retains nearest sampling. Map-0/Map-1 folding, transparent texels,
-  and premultiplied half-alpha are covered by synthetic fixtures.
+  and premultiplied palette alpha are covered by synthetic fixtures.
 
 ## Indexed-palette alpha on the Blue Dragon result screen (2026-08-15)
 
@@ -567,12 +566,15 @@ on the user's machine before any clock change is considered.
   texels.
 - SSD's RPU patent describes palette entries as premultiplied RGB plus
   `(1-alpha)` and blends them as `destination * (1-alpha) + source`.
-  <https://patents.google.com/patent/CN101116112A/zh>. The observed one-bit
-  palette form is consistent with half transparency: the repeated `$8421`
-  entry is the transparent key, while other high-bit entries add their
-  premultiplied RGB555 value to half the existing framebuffer color. Texel
+  <https://patents.google.com/patent/CN101116112A/zh>. A later EPOCH trace
+  resolves the exact high-bit layout as `1:B4:N2:G4:N1:R4:N0`: bit 15 selects
+  premultiplied RGB444 plus the three interleaved `Nalpha` bits. `$8421` is
+  consequently zero source with `Nalpha=7`, the indexed-texture fully
+  transparent endpoint. The endpoint is not an exact-color key: EPOCH also
+  uses `$8c61`, `$8423`, `$8463`, and `$8c63` on transparent borders. Texel
   zero is not intrinsically transparent; Blue Dragon's sky uses it for normal
-  opaque colors.
+  opaque colors. Type-1 Gouraud `Nalpha=7` remains the separately documented
+  87.5% destination contribution.
 - Applying that model restores both colored panels and leaves the background
   engraving visible through them, matching the supplied hardware capture and
   the result sequence around 4:43 in
@@ -682,54 +684,38 @@ on the user's machine before any clock change is considered.
   GPU0 terrain, then depth-`$00-$fe` HUD/foreground sprites. The compatibility
   renderer follows that evidenced split while retaining sprite-only title
   behavior; a complete scanline/depth merger remains future work.
-- Command `$0f` rotates packed signed XYZ10 normals through the firmware-loaded
-  Q8.8 matrix and stores provisional signed XYZ8 results. The allocation is
-  constrained directly by DBZ: as many as 131 results start at `$b540`, while
-  the live material-remap table starts only `$200` bytes later at `$b740`.
-  Four-byte and twelve-byte expansions overwrite that table; the resulting
-  garbage attributes `$28/$2b/$34/$3e/$3f` select unrelated textures. Three
-  component bytes fit the allocation, preserve the transformed vector, and
-  restore final terrain attributes to the firmware-created `$00/$01` set at
-  both the canyon path and the maintainer's Namek F7 checkpoint.
-- Command `$07` transforms two signed XYZ16 vectors through the firmware-loaded
-  Q8.8 3x3 matrix. DBZ immediately copies the first six-byte result, in reversed
-  component order, to the `$e850/$e852/$e854` light registers. The maintainer's
-  Namek checkpoint now changes those registers from the former all-zero result
-  to the traced `(-7789, 8251, -20914)` directional-light vector.
-- Command `$4d` now replaces Type-0 `Bw/Cw` with the documented perspective
-  ratios `64*Az/Bz` and `64*Az/Cz`, clamped to their eight-bit fields, while
-  preserving the guest's texture, light, and layer attributes. At the Namek F7
-  checkpoint this changes only terrain texture sampling: polygon coordinates,
-  Type-1 records, list counts, and HUD/sprite layers remain bit-exact. The
-  updated weights follow the moving projected mesh without a title or material
-  special case.
-- Firmware routes Type-1 normal/light processing through command `$0b`, but the
-  exact signed dot-product clamp is not established by a hardware output
-  fixture. Opposite plausible signs each fixed one black face while creating
-  other black wedges. The emulator therefore leaves `$0b` unimplemented and
-  preserves the firmware-created RGB555 colors instead of committing a visual
-  heuristic.
-- Command `$0e` also remains unimplemented. Its Type-0 face normal is packed as
-  signed X11/Y11/Z10 (for example `$00201000` decodes to `(0,-1022,0)`), and its
-  only polygon destination field is Light at `d2[14:10]`. The traced matrix and
-  light vector narrow the output to adjacent five-bit candidates, but hardware
-  rounding and the RPU's Light-to-RGB transfer are still missing. Broad textured
-  surfaces consequently remain too flat/bright. This is a rendering milestone,
-  not a claim of exact battle terrain, model lighting, or complete effects.
-- The software rasterizer previously walked every triangle's bounding box on
-  the complete 2048x1024 internal surface even though the guest exposes only
-  a 320x240 gameplay window (or 640x480 during mode `$08` startup). The host
-  framebuffer is not guest-readable, so clipping this presentation loop to
-  `$e656/$e658` is behavior-preserving. At the DB2J battle checkpoint a
-  300-frame Release probe changes from 61.6 to 123.1 FPS while retaining frame
-  hash `$749008A6288782A7` exactly.
-- A bounded `$0e` trace confirms a Q8.8-like 3x3 normal/light matrix, packed
-  normal source, and in-place Type-0 polygon destination, but it does not
-  establish the hardware's signed dot-product clamp or five-bit brightness
-  rounding. Guessed Lambert conversions produced screen-sized black terrain
-  faces and were rejected; `$0e` remains explicit accuracy work rather than a
-  visually convenient game-specific correction.
-
+- SSD's geometry patent resolves the formerly ambiguous normal-lighting chain.
+  `$0f` is the composite `TD` command: it transforms each packed Vector10
+  normal to internal Q0.15, computes the light/view dot flags, and writes one
+  eight-bit `Dot` record per normal. It does not write three XYZ bytes. The
+  one-byte output keeps DBZ/DB2J's following material tables intact instead of
+  corrupting them.
+- Command `$0b` (`Ccalc`) consumes those indexed Dot records for Type-1
+  polygons. It applies the documented face/sign test, adds the five-bit
+  Ambient level, and rewrites the three premultiplied RGB555 vertex colors.
+  Command `$0e` (`TDBP`) performs the same transform/dot path for sequential
+  Type-0 face normals and writes only `d2[14:10]` Light. The rasterizer applies
+  that field as the documented `1/32..32/32` texture-RGB multiplier while
+  preserving palette alpha.
+- The signed light vector still comes from command `$07`, which transforms
+  signed XYZ16 values through the Q7.8 matrix before firmware copies the
+  result to `$e850/$e852/$e854`. ROM-independent tests cover opposite normals,
+  front/back sign selection, Ambient, Type-1 vertex colors, Type-0 Light, and
+  the one-byte TD output boundary.
+- Vector16 screen X/Y are signed Q15.1. Composite `$0c` APV must therefore
+  retain the same factor of two as stand-alone `Pproj` followed by `View`.
+  Removing the old APV-only half-scale closes DB2J F7's left ground opening by
+  projecting the ROM's terrain at its hardware size; it also reduces the list
+  naturally through the documented viewport clipping rather than a
+  title-specific hole filler. Blue Dragon, Naruto and DBZ F7 checkpoints keep
+  their existing HUD, character and foreground layers.
+- The two GPU channels still need a fully scanline-accurate YSU/RPU merge. The
+  current compositor preserves ordinary equal-depth sprite list order, which
+  keeps DB2J's later attack/hit effects in front of the tiled enemy, and uses
+  the established premultiplied palette/Type-1 alpha paths. Longer F7 replays
+  show the energy sphere and hit flashes over the animated enemy at their
+  firmware-submitted depth; remaining edge-order cases should be solved by the
+  patented per-line merger, not by game-specific object reordering.
 ### DB2J large enemy projection
 
 - The DB2J battle also uses geometry command `$0d` for a separate large-object
@@ -874,6 +860,14 @@ on the user's machine before any clock change is considered.
   quarter. Mode `$08` now reports the full 640x480 surface and validates the
   origin against that size; later title and gameplay modes continue to report
   their programmed 320x240 viewport.
+- The full 16-bit value and programmed origin both matter. EPOCH Take-copter's
+  XaviX startup logo uses `$e650=$1608` with origin Y `$0120` and is a native
+  640x480 surface. Later scenes keep `$1608` but switch origin Y to `$0110`;
+  their lists fill 640 pixels across and only 240 backing rows. Presenting the
+  latter as native 640x480 compressed the scene into the upper half, while
+  doubling the startup form stretched and clipped its logo. Only the `$0110`
+  form is now line-doubled. A 30-frame cold-boot capture of the `$0120` form is
+  pixel-identical to the retained pre-doubling baseline.
 
 ## EPOCH XaviX 2 recognition batch (2026-08-15)
 
@@ -925,3 +919,397 @@ record's physical source and calibration are not yet proven, so no synthetic
 mouse mapping is enabled. `epo_sskj` likewise has no PIO input reads at the
 blank-screen checkpoint, despite active CPU/audio work and 24 serial EEPROM
 writes, pointing to a separate unmodelled controller/acquisition condition.
+
+## EPOCH Take-copter infrared receiver (2026-08-26)
+
+`epo_dtcj` does not read an ordinary button register or the wrist-reflector
+motion buffer. Its firmware arms the head-mounted receiver with IRQ2, samples
+PIO7 with IRQ10, shifts the serial word into low RAM `$02e4`, and decodes it
+through the ROM tables at `$006dcc00-$006dcc4f`. Successful packets write the
+mapped direction to `$02e0` and set the new-sample flag at `$02e1`.
+
+The receiver has a persistent one-bit phase distinction. A newly synchronized
+packet leaves counter `$02e2=$1a` and needs 27 IRQ10 clocks for bits 26 through
+0. Once armed, the next IRQ2 handler consumes the first count itself, leaves
+`$02e2=$19`, and needs only 26 IRQ10 clocks for bits 25 through 0. Sending 27
+clocks unconditionally shifts every later packet and produced only an
+occasional valid sample. The emulator now reads the firmware's live counter
+after IRQ2 and supplies exactly the remaining clocks, while the original IRQ
+handlers and ROM lookup remain responsible for decoding.
+
+The verified 4-by-4 code grid is:
+
+| Horizontal | Neutral | Down | Up | Both vertical |
+|---|---:|---:|---:|---:|
+| Neutral | `0199e667` | `0199e001` | `019987ff` | `01999999` |
+| Right | `01986679` | `0198601f` | `019807e1` | `01981987` |
+| Left | `0181e787` | `0181e1e1` | `0181861f` | `01819879` |
+| Both horizontal | `01866799` | `018661ff` | `01860601` | `01861867` |
+
+The mapped bits are `$01/$04` for the two horizontal directions and
+`$10/$40` for the two vertical directions. The routine at `$000352cb`
+filters the latest five samples and requires a magnitude of at least three
+before changing direction. Host keyboard directions take priority. A held
+right-button mouse drag accumulates relative head tilt and returns to centre on
+release, preventing a menu direction from remaining asserted indefinitely.
+The selected PS analogue stick uses its current normalized axes rather than
+the retained reflector position used by optical games, so its physical spring
+return also sends neutral. Wii position selects the same grid. Because the
+physical controller is worn on the head rather than pointed at the television,
+the game has no persistent point cursor. The GUI therefore suppresses both the
+former EPOCH orange tilt marker and the XaviX2-wide blue diagnostic target;
+this presentation choice does not change the tilt reports. Horizontal,
+vertical, diagonal, and the quick backward-to-forward acceleration sequence
+are all represented through the same two axes. Rapid backward-to-forward
+crossing on a PS analogue stick or right-button mouse drag is promoted to the
+filtered sequence rather than being lost between video reports.
+
+At the saved opening checkpoint, holding the Left code starts a `$78`-tick
+firmware countdown. Completion changes `$0c8c` from state 1 to state 3. A
+70-video-frame Left hold followed by neutral reaches the later `$1608`
+640x240 line-doubled scene, changes the GPU lists from
+`$7380/4,$32d0/3` to the active
+`$5ce0/6,$32d0/37-38` pair, continues audio, and produces no unmapped reads or
+writes over a 500-frame replay. Keeping Left held far beyond the completed
+prompt can steer subsequent screens and is not a valid neutral-transition
+test.
+
+## EPOCH Take-copter eye-plane geometry (2026-08-26)
+
+> Correction after locating SSD's geometry-engine patent: `$ffffe844` is
+> `ZNear` and `$ffffe846` is `ZFar`; `$e846=$7fff` is not a disabled-near-plane
+> sentinel. The experimental fan-clipping result described below was based on
+> that incorrect interpretation and is not a valid hardware model. See
+> [XaviX 2 geometry and rendering hardware](xavix2-3d.md) for the patent-backed
+> GE/YSU/RPU model and replacement plan.
+
+The later-game F7 fixture resumes at cycle `53851842112` in display mode
+`$1610`, crop `$0360/$0188`. Before this fix, 97.5 percent of its 320x240
+frame was white and only the bottom character-status text survived. The
+firmware was still submitting three command-`$4d` geometry batches, including
+272 vertices in the terrain batch, so this was not a stalled game or a missing
+presentation crop.
+
+The projector's `$e846` register is `$7fff` here. This is a disabled explicit
+near-plane sentinel, not a signed Q16.16 near distance. Treating it as a
+distance rejected every projected triangle. The remaining issue was faces
+crossing the camera eye: rejecting a complete face when one vertex had
+non-positive depth kept only a thin horizon strip. The command-`$4d` path now
+copies the source list before compaction, clips Gouraud terrain against a
+one-unit eye plane and the selected 320x240 viewport, interpolates RGB555
+edge colors, and fan-triangulates the clipped result. Indexed material faces
+are composed after the Gouraud sky/terrain base for this sentinel mode.
+
+The saved state now produces 146 valid polygons on its first resumed frame.
+Sixty-frame neutral, left, right, and up replays finish with different frame
+hashes and 127-149 polygons, matching visible horizon/terrain movement rather
+than a static replacement picture. A command-`$4d` regression test checks
+that an eye-crossing face produces only in-viewport packed coordinates and
+that a fully behind-camera face still produces no output. A 30-frame cold
+boot capture remains byte-identical to the retained pre-fix XaviX-logo
+baseline. Exact later-scene character and material composition still needs
+comparison with original hardware.
+
+## EPOCH Take-copter presentation, controls, and audio cross-check (2026-08-30)
+
+Cold-boot captures separate three firmware-selected display forms. Mode
+`$1608` with origin `$0120` is a native 640x480 logo frame; mode `$1608` with
+origin `$0110` is a logical 640x240 scene that the presenter line-doubles to
+640x480; the later `$1610`, crop `$0360/$0188` path is a full 320x240 frame.
+The current 60-second controlled replay fills the complete output with the
+Doraemon flight artwork, sky, and water, and the saved later scene also fills
+all 320x240 pixels. Its sparse horizon is therefore missing geometry/material
+content, not a host-side half-height resolution or viewport error.
+
+The host now exposes six title-specific actions: forward/start, backward,
+left, right, upright, and boost. A tap is retained for six video reports
+because the firmware consumes a five-sample filtered history. The boost action
+sends six backward reports, six forward reports, and six neutral reports.
+Keyboard, right-button relative mouse movement, the selected PS/gamepad
+analogue stick, and Wii position all converge on the same
+verified 4-by-4 infrared code grid instead of bypassing the game's decoder.
+
+The title programs sound dividers `$ea00=$20` and `$ea05=$17`, which derive a
+124,289 Hz engine rate from the 98,437,488 Hz source. This PCM source clock and
+its Q16 pitch remain independent of the firmware-event timer. The earlier
+wide-window spectrum comparison was sufficient to reject a PCM pitch change,
+but not to establish visual/event cadence.
+
+### Take-copter horizon blending, late-flight fade, and cadence (2026-08-30)
+
+The public hardware recording at 11:20 shows a cyan haze between the sky and
+water rather than an additional fog sprite. The resumed `epo_dtcj` frame uses
+Type-0 descriptors zero through three for the complete water surface: 2 bpp,
+`Filter=0`, full light, and high-bit palette entries `$8c63,$9ce6,$ad4b,$bdce`.
+Their interleaved `Nalpha` values are exactly `7,6,5,4`. The passing cloud uses
+`$8c61,$9ce6,$bdce,$e319`, another deliberate `7,6,4,1` ramp. This resolves the
+high-bit format as `1:B4:N2:G4:N1:R4:N0`, with premultiplied RGB444 and
+three-bit inverse alpha. Treating every entry as fixed one-half transparency
+had darkened the cloud's rectangular border three times and suppressed the
+water's cyan/white distance haze. Treating `Nalpha=7` as only 7/8 transparent
+then left lighter but still plainly visible rectangles around clouds,
+characters, and title art. The indexed-texture path now discards that endpoint;
+values zero through six use the patent's
+`background * Nalpha/8 + premultiplied source` blend. Palette scans from EPOCH,
+Naruto, Blue Dragon, DBZ and DB2J find no confirmed visible `Nalpha=7` texel,
+so this remains a shared hardware rule rather than a title-specific exception.
+
+Near the end of the flight, records 215 and 216 in the `$4e00` GPU0 polygon
+stream form the two halves of the complete visible viewport at depth zero and
+color `$7fff`. The sky and terrain records use larger depths `$a00-$e00`.
+The contemporaneous GPU1 list still contains 16 cloud/character sprites at
+depths `$2e-$7c`. The former submission-order renderer completed GPU0 first,
+including the transition, then E414 repainted every GPU1 sprite at full
+contrast. This exactly explains the emulator's white sky with unaffected
+characters.
+
+The EPOCH compositor now draws the nonzero Type-1 sky/terrain backdrop, lets
+Nalpha-graded Type-0 water soften that backdrop, draws the E414 sprite
+stream, and finally composites GPU0's deferred depth-zero Type-1 transition.
+The fade records themselves prove that the missing gradual transition was not
+an absent alpha ramp: at resumed frames 400, 410, and 420, the two full-screen
+triangles progress through `Nalpha=5/2/0` while their already-premultiplied
+RGB555 values rise from `$2d6b` through `$5ef7` to `$7fff`. Replays now show
+clouds, characters, and the sky losing contrast together before the final
+opaque white frame. A cross-channel regression test locks the E408-before-E414
+case so sprites cannot be repainted after the fade.
+
+The frame also contains the horizon material; it is not an uncovered geometry
+hole. Type-1 records provide the cyan/white sea-base gradient and Type-0
+records provide the bit-15 RGB444/Nalpha water texture. Class ordering removes
+the recent opaque-sky-over-water white strip; decoding the texture's `7..4`
+alpha ramp then restores the broad cyan/white haze that hides the sea/sky seam
+without blurring clouds or characters. Dense F7 replays also retain the
+already-correct gradual full-scene fade.
+
+Feature matching
+puts resumed emulator frame zero at hardware-video second 17.7. With the
+former universal 120 Hz IRQ-7 sequencer, emulator frame 480 reached the title
+after eight host seconds, while hardware reaches it near second 33.9: a 2.03x
+event-speed error. Take-copter therefore uses one IRQ-7 tick per 60 Hz video
+frame in every display mode. An initial follow-up incorrectly inferred that the
+`$1608` logo/carousel surface selected 120 Hz from its higher note-command count.
+User validation showed the carousel and audio falling far out of real time, and
+a same-state benchmark isolated the cause: 300 menu frames take 5.958 seconds at
+120 Hz but 2.946 seconds at 60 Hz. Display width is not a timer selector, and
+note-command counts are not independent cadence evidence. Bandai's independently
+verified boards retain 120 Hz throughout.
+
+A left/neutral/right carousel replay at 60 Hz confirms that the firmware accepts
+the recovered EPOCH infrared direction words. Door, story, high-score, and
+free-mode cards remain separate in every full 640x480 frame. The raw lower 240
+rows are blank, the presenter replaces all 480 output rows on every call, and
+the GPU clears its complete internal target at vblank. The two or three dark
+blue rounded strips below each card are also present in that card's ROM source
+art and on hardware; they are intentional shadows, not a stale second menu row.
+A genuinely duplicated full card would need a new F5 captured on the bad frame.
+### Take-copter sprite filtering and Gouraud dither (2026-08-30)
+
+The first resumed flight frame submits 16 sprites. Every command has the
+unclipped-sprite `Filter` bit 29 clear, which Fig. 16 and Fig. 21 of
+CN 101116112 A define as four-tap bilinear sampling. The five flying-character
+parts at indices 11-15 are all reduced from their source sizes with Q2.4 scales
+`$0e`, `$0c`, `$0b`, `$08`, and `$09`. Nearest-neighbor sampling was therefore
+the direct cause of their coarse outlines. Sprite rendering now reverse-maps
+destination pixel centres, samples the four surrounding row-padded texels, and
+interpolates RGB plus the patented premultiplied `(1-alpha)` value. `Filter=1`
+remains nearest-neighbor. A synthetic 2x sprite regression locks down both
+modes, and resumed Blue Dragon, Naruto, DBZ, and DB2J states remain stable.
+
+The same F7 state contains `$e620=$c6`; all four Bandai states contain
+`$e620=$d8`. Each byte is a different permutation of the four two-bit values
+0, 1, 2, and 3. This matches Fig. 20 exactly: the register packs the four noise
+values selected by the X/Y coordinate LSBs and added to fractional Gouraud RGB
+before RGB555 quantization. Applying that programmed pattern changes only
+quantization choice and makes the cyan-to-white sky gradient less banded.
+
+There is no missing full-screen white sprite in the resumed GPU1 list: the
+largest source is 120 by 48 and the remaining records are clouds and flying
+characters. The hardware recording's additional broad softness is consistent
+with the patented final path through an NTSC/PAL composite video encoder and
+analog video DAC. The patent does not publish that encoder's filter
+coefficients, so an exact composite low-pass model remains separate work; a
+title-specific white overlay or arbitrary whole-frame blur is not justified by
+the submitted scene data.
+
+### Take-copter translucent mesh coverage and cloud placement (2026-08-30)
+
+The later rainbow fixture submits GPU0 Type-1 records 57 through 88 at depth
+`$a05`, all with `Nalpha=3`. The former all-inclusive barycentric test let both
+triangles own pixels exactly on a shared edge. Twenty-one pixels in the 32-face
+rainbow mesh were consequently blended twice, exposing its diagonal
+triangulation; the dense water mesh had the same general defect. The RPU patent
+gives a half-open split between the upper and lower portions of a triangle, but
+does not specify a complete modern top-left pixel-coverage convention. A trace-
+and image-compatible top-left edge rule changes 224 pixels in the resumed
+frame, removes all shared-edge double coverage, and is protected by an adjacent
+translucent-triangle fixture. The established premultiplied
+`source + destination*Nalpha/8` transfer remains unchanged.
+
+The rainbow's broad level lower end is not a missing alpha layer: all five
+bottom vertices are deliberately at screen Y 105 with color `$4d82`. The softer
+hardware capture is consistent with the final composite-video path; changing
+Type-1 alpha or adding a title-specific blur would regress the Blue Dragon
+connector and EPOCH full-scene fade.
+
+The same F7 frame's three cloud objects use Type-0 descriptors 0 through 2 and
+the shared `$19003d1d` material. Their palette entries `$8421`, `$9ce6`,
+`$ad4b`, and `$bdce` provide the expected transparent-to-half-opacity white
+ramp. At the
+saved yaw, the only positive-depth cloud spans visible X 342 through 478 and
+is just outside the 320-pixel right edge; the other two are behind the camera.
+Rightward motion brings them through Y 71 through 114, above the Y 140--155
+horizon. This state therefore does not support a global cloud Y offset or a
+display line-doubling change; a new F5 is required if an underwater-cloud
+frame can still be reproduced.
+
+### Take-copter cross-class depth merge and composite output (2026-08-30)
+
+The RPU patent sorts the Type-0 and Type-1 streams independently, then feeds
+both through one merger sorter. For semitransparent content, larger raw depth is
+drawn first so the destination already contains the surface behind the current
+primitive. The former EPOCH shortcut instead rendered every nonzero Type-1
+primitive before every Type-0 primitive, regardless of their interleaved
+12-bit depths.
+
+The resumed fixture contains 356 GPU0 records: 227 Type-0 and 129 Type-1.
+Replaying the same RAM, palette, and ROM with the patented cross-class depth
+order changes exactly 3,793 of 76,800 visible pixels. Of these, 2,785 lie in
+the sea/sky transition at Y 139 through 157. The live renderer now walks each
+distinct nonzero raw depth from far to near and renders both types in stable
+record order. Depth-zero Type-0 remains in the first GPU0 pass, while the
+existing depth-zero Type-1 full-scene transition is still deferred until the
+E414 sprite pass. A mixed Type-0/Type-1 overlap fixture prevents class order
+from overriding raw depth. The complete 19-test suite passes, and an F7 A/B
+reproduces the predicted 3,793/2,785 pixel counts exactly.
+
+This correction fixes a real layer-joining error, but it does not reshape the
+rainbow. That object is a 32-face Type-1 Gouraud mesh at depth `$a05`, with one
+polygon-wide `Nalpha=3`; its five bottom vertices are deliberately level at
+screen Y 105. Type-1 does not pass through the texture bilinear unit, has no
+per-vertex alpha, and the patents describe no multisample or coverage
+anti-aliasing block. Its dedicated 2-by-2 dither only perturbs fractional RGB
+before quantization to reduce Mach bands.
+
+The final hardware boundary is also now better constrained. CN 101116112 A
+sends line-buffer RGB through an NTSC/PAL composite video encoder and video
+DAC. SSD's earlier dedicated encoder patent, JPH 10-301552 A / JP 3554137 B2,
+uses subcarrier modulation and documents optional Y band-stop and C band-pass
+analogue filters to reduce luminance/chrominance interference. It gives NTSC
+and PAL encoder clocks of 21.47727 and 21.28137 MHz, respectively, but does not
+publish a receiver/capture filter response. Therefore a future Composite
+presentation mode should model horizontal luma/chroma bandwidth separately;
+an arbitrary full-frame Gaussian blur or title-specific rainbow blur is not a
+hardware-backed core fix.
+
+Primary sources:
+
+- <https://patents.google.com/patent/CN101116112A/zh>
+- <https://patents.google.com/patent/US20080273030A1/en>
+- <https://patents.google.com/patent/US20090278845A1/en>
+- <https://patents.google.com/patent/JP3554137B2/ja>
+
+### Mixed-layer seams in enhanced presentation (2026-08-30)
+
+The remaining join around Take-copter objects was not a native triangle crack.
+The resumed rainbow contains 40 shared Type-1 edges with zero duplicate
+coverage, zero uncovered pixels, and matching colors at every shared vertex.
+Instead, the optional 2x presentation path chose its resampler from only the
+nearest native pixel: polygon pixels used bilinear interpolation while an
+adjacent sprite pixel used nearest-neighbour.  The same final RGB edge was
+therefore filtered on one side and hard-cut on the other.
+
+This distinction does not exist at the documented hardware boundary.  The RPU
+color blender first writes the already-composited polygon/sprite RGB into its
+line buffer, and only then does the video encoder consume that RGB stream.
+The enhanced presenter now keeps wholly non-polygon footprints sharp, but any
+2-by-2 footprint touching polygon content is filtered symmetrically on both
+sides of the join.  In the resumed F7 frame this changes 3,192 of 307,200 2x
+output pixels.  A red-polygon/blue-sprite regression verifies symmetric
+75/25 and 25/75 samples while the solid regions remain unchanged.
+
+This removes an emulator-created object seam but deliberately does not alter
+the rainbow's level native bottom edge.  A future composite-video mode may
+model luma and chroma bandwidth after final composition; it must remain
+separate from geometry, coverage, and alpha correctness.
+
+### Translucent sprites over 3D (2026-08-30)
+
+The `ban_dbz` F7 battle trace identifies the expanding red energy ball as a
+96-by-96 indexed GPU1 sprite.  Four consecutive ROM frames at `17b680`,
+`17c880`, `17da80`, and `17ec80` are 0x1200 bytes apart.  Direct 4-bpp decoding
+disproves the earlier transparent-cutout hypothesis: palette index zero is
+confined to the area outside the ball, while its complete centre uses index
+six (`41bf`), an ordinary opaque RGB555 pink/white entry.
+
+The actual failure was foreground-list reordering.  Each `$e414` list submits
+23 small depth-zero tiles that assemble Frieza, followed by the depth-`71`
+energy sphere.  The compatibility renderer globally sorted that list by
+Depth, drawing the sphere first and then reconstructing Frieza over its opaque
+centre.  Four stage captures isolated this sequence.  The patented RPU uses a
+scanline prefetch/recycle merger rather than a frame-wide object sort.  Until
+that path is literal, the compatibility renderer recognizes the consecutive
+depth-zero small-tile run and moves only its immediately following large
+effect behind that run in draw time (therefore in front on screen).  The same
+rule covers the weak sphere: it stays at depth zero but grows beyond the
+generic presentation-backing area threshold, which previously made it flip
+behind the fighter partway through its animation.  All other
+foreground, background, and pre-polygon objects retain their established
+depth sort.  This narrower rule also prevents the trial clear screen's
+depth-`04` logo tiles from being replayed over its higher-depth panel bands.
+The result hides Frieza behind the opaque core as in the public hardware
+recording: <https://www.youtube.com/watch?v=J1pfNd5NEPg>.
+
+An independent block-like edge did come from optional enhanced presentation.
+Its ownership mask previously cleared the underlying polygon bit for every
+visible sprite texel, including translucent texels that retain destination
+RGB.  The palette and bilinear samplers now propagate the effective
+destination weight to presentation; only a fully opaque sprite replaces
+polygon ownership.  Native 1x output remains bit-identical, while the 2x
+presenter filters the already-composited aura/character boundary consistently.
+A regression covers a translucent sprite crossing the last polygon pixel;
+another covers the different-depth tiled-enemy/energy-sphere foreground order.
+
+### RPU frame latch and alternating Bandai command buffers (2026-08-31)
+
+The `ban_db2j` reflection checkpoint exposed a brown cross for one host frame
+and a dark rectangle for the next.  Eight consecutive final-frame captures
+first suggested a transparent-palette failure, but captures taken immediately
+after every `$e414` trigger separated the two submissions inside each 60 Hz
+video frame.  The first complete `$e408/$e414` pair was clean on frames four,
+five and six.  Only the second pair, using the alternate `$7fc0/$8420` command
+buffer, introduced the rectangles.
+
+The ROM evidence explains why forcing palette index zero transparent would be
+wrong.  The 36-by-36 reflection texture at `$415300` has index zero around its
+complete border, but the second submission changes its palette epoch from a
+transparent `$8421` entry to `$8021` and later to opaque `$530e`.  The following
+73-by-81 effect at `$28cd00` is likewise dominated by border index zero while
+its second-submit palette uses `$8021`.  Drawing both complete lists into one
+persistent software framebuffer therefore combines object data from one epoch
+with the alternate buffer's palette and leaves exactly the observed blocks.
+Other XaviX2 art uses an opaque index zero, so a global color-key remains
+disproved.
+
+SSD's RPU prefetchers consume a sorted polygon/sprite submission for the
+displayed frame and receive an explicit frame/field-switch notification.  The
+Bandai firmware runs its event interrupt at 120 Hz while video remains 60 Hz,
+so it can trigger the alternate complete buffer before the next vblank.  The
+emulator now retains the first completed merged surface until that vblank;
+the later paired `$e408/$e414` trigger remains guest-visible as ready but does
+not repaint the current line-buffer surface.  Sprite-only startup submissions
+are unaffected because they do not set the completed merged-pair latch.
+
+The same F7 state now produces eight clean consecutive frames with the
+reflection and character animation intact.  One-frame resumed captures from
+Blue Dragon, DBZ, Naruto and Take-copter retain their expected terrain,
+characters, HUD and clouds.  A synthetic regression changes the palette before
+a second complete pair and verifies that neither the completed pixel nor the
+GPU pixel-write counter changes before vblank.  Avoiding the redundant full
+raster also reduces the DB2J high-resolution replay average from about
+14.15 ms to 7.21 ms per frame; in a new 1,800-frame run only one frame exceeded
+16.67 ms and the maximum was 22.56 ms.
+
+Primary source:
+
+- <https://patents.google.com/patent/US20090278845A1/en>

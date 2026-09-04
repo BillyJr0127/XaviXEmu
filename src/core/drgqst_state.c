@@ -598,6 +598,7 @@ int drgqst_state_load(drgqst_core *core, const uint8_t *input,
 	xavix_cpu_read8_fn read8;
 	xavix_cpu_write8_fn write8;
 	void *cpu_opaque;
+	uint8_t decimal_arithmetic;
 	const uint8_t *rom;
 	size_t rom_size;
 	xavix_machine_hooks hooks;
@@ -638,12 +639,14 @@ int drgqst_state_load(drgqst_core *core, const uint8_t *input,
 	read8 = core->cpu.read8;
 	write8 = core->cpu.write8;
 	cpu_opaque = core->cpu.opaque;
+	decimal_arithmetic = core->cpu.decimal_arithmetic;
 	rom = core->machine.rom;
 	rom_size = core->machine.rom_size;
 	hooks = core->machine.hooks;
 	restored_cpu.read8 = read8;
 	restored_cpu.write8 = write8;
 	restored_cpu.opaque = cpu_opaque;
+	restored_cpu.decimal_arithmetic = decimal_arithmetic;
 	core->cpu = restored_cpu;
 	core->machine.state = restored_machine;
 	core->machine.rom = rom;
@@ -655,6 +658,7 @@ int drgqst_state_load(drgqst_core *core, const uint8_t *input,
 	/* Presentation data is derived.  Keep the configured sprite watch, clear
 	 * stale output, and let the next host frame render the restored machine. */
 	xavix_video_reset(&core->video);
+	core->video_frame_active = 0;
 	memset(core->frame_audio, 0, sizeof(core->frame_audio));
 	core->audio_frame_cycles = 0;
 	core->audio_frame_position = 0;

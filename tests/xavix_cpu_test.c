@@ -258,14 +258,17 @@ static int test_nmi_and_rti(void)
 	xavix_cpu_init(&cpu, fixture_read, fixture_write, &fixture);
 	cpu.code_bank = 1;
 	cpu.a = 0x11;
+	cpu.p |= XAVIX_CPU_D;
 	xavix_cpu_set_nmi(&cpu, 1);
 
 	CHECK(step(&cpu) == 8);
 	CHECK(cpu.code_bank == 0 && cpu.pc == 0x9000 && cpu.s == 0xf9);
+	CHECK(cpu.p & XAVIX_CPU_D);
 	CHECK(step(&cpu) == 2);
 	CHECK(cpu.a == 0x77);
 	CHECK(step(&cpu) == 7);
 	CHECK(cpu.code_bank == 1 && cpu.pc == 0x8000 && cpu.s == 0xfd);
+	CHECK(cpu.p & XAVIX_CPU_D);
 	CHECK(!cpu.nmi_pending);
 
 	fixture_destroy(&fixture);
@@ -294,6 +297,61 @@ static int test_decimal_adc(void)
 	CHECK(cpu.p & XAVIX_CPU_C);
 	CHECK(cpu.p & XAVIX_CPU_N);
 	CHECK(!(cpu.p & XAVIX_CPU_Z));
+
+	fixture_destroy(&fixture);
+	return 1;
+}
+
+static int test_ssd2000_arithmetic_stays_binary(void)
+{
+	static const uint8_t program[] = {
+		0xa9, 0x99, /* lda #$99 */
+		0xf8,       /* sed */
+		0x18,       /* clc */
+		0x69, 0x01, /* adc #$01: binary $9a, not BCD $00 */
+		0xa9, 0x61, /* lda #$61 */
+		0x83,       /* staj */
+		0xa9, 0xc0, /* lda #$c0 */
+		0x87,       /* stak */
+		0xa9, 0x94, /* lda #$94 */
+		0x8b,       /* stal */
+		0xa9, 0x02, /* lda #$02 */
+		0x8f,       /* stam */
+		0x18,       /* clc */
+		0xa3,       /* ldaj */
+		0x67,       /* adck: binary $61 + $c0 = $21, carry set */
+		0x6a,       /* ror a: midpoint $90 */
+		0x38,       /* sec */
+		0xa9, 0x00, /* lda #$00 */
+		0xeb,       /* sbcl: binary $00 - $94 = $6c, borrow */
+		0xa9, 0x00, /* lda #$00 */
+		0xef        /* sbcm with borrow: $00 - $02 - 1 = $fd */
+	};
+	fixture_t fixture;
+	xavix_cpu_t cpu;
+	int i;
+
+	CHECK(fixture_create(&fixture));
+	set_vector(&fixture, 0xfffc, 0x8000);
+	memcpy(&fixture.rom[0x008000], program, sizeof(program));
+	xavix_cpu_init(&cpu, fixture_read, fixture_write, &fixture);
+	xavix_cpu_set_decimal_arithmetic(&cpu, 0);
+	xavix_cpu_reset(&cpu);
+	CHECK(!cpu.decimal_arithmetic);
+	for (i = 0; i < 4; ++i)
+		CHECK(step(&cpu));
+	CHECK(cpu.a == 0x9a);
+	CHECK(cpu.p & XAVIX_CPU_D);
+	for (; i < 16; ++i)
+		CHECK(step(&cpu));
+	CHECK(cpu.a == 0x90);
+	CHECK(cpu.p & XAVIX_CPU_D);
+	for (; i < 21; ++i)
+		CHECK(step(&cpu));
+	CHECK(cpu.a == 0xfd);
+	CHECK(cpu.p & XAVIX_CPU_N);
+	CHECK(!(cpu.p & XAVIX_CPU_C));
+	CHECK(cpu.p & XAVIX_CPU_D);
 
 	fixture_destroy(&fixture);
 	return 1;
@@ -490,6 +548,7 @@ int main(int argc, char **argv)
 	RUN_TEST(test_pointer_register());
 	RUN_TEST(test_nmi_and_rti());
 	RUN_TEST(test_decimal_adc());
+	RUN_TEST(test_ssd2000_arithmetic_stays_binary());
 	RUN_TEST(test_all_opcodes_dispatch());
 	puts("xavix_cpu_test: all tests passed");
 	return 0;

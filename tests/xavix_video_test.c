@@ -137,6 +137,50 @@ static void test_tile_priority_and_clip(void)
 	CHECK(video.framebuffer[0] == UINT32_C(0xff000000));
 }
 
+static void test_partial_tilemap_uses_absolute_raster_position(void)
+{
+	static xavix_video video;
+	xavix_video_inputs input;
+	uint8_t ram[0x4000] = { 0 };
+	uint8_t palette_sh[XAVIX_VIDEO_PALETTE_ENTRIES] = { 0 };
+	uint8_t palette_l[XAVIX_VIDEO_PALETTE_ENTRIES] = { 0 };
+	uint8_t segments[XAVIX_VIDEO_SEGMENT_BYTES] = { 0 };
+	uint8_t tile0[8] = { 0 };
+	test_rom rom;
+	uint32_t color;
+
+	memset(&input, 0, sizeof(input));
+	memset(&rom, 0, sizeof(rom));
+	xavix_video_init(&video);
+	rom.base = 0x800000;
+	memset(rom.bytes + 8, 0xff, 8);
+	ram[0x100 + 64] = 1;
+	ram[0x100 + 128] = 1;
+	segments[0] = 0x00;
+	segments[1] = 0x80;
+	make_opaque_pen(palette_sh, palette_l, 1, 0);
+	color = xavix_video_palette_decode(palette_sh[1], palette_l[1], NULL);
+	tile0[0] = 0x01;
+	tile0[6] = 0x02;
+	tile0[7] = 0x80;
+	input.main_ram = ram;
+	input.main_ram_size = sizeof(ram);
+	input.palette_sh = palette_sh;
+	input.palette_l = palette_l;
+	input.palette_entries = XAVIX_VIDEO_PALETTE_ENTRIES;
+	input.segment_regs = segments;
+	input.tilemap_regs[0] = tile0;
+	input.read_program_byte = read_test_rom;
+	input.read_program_opaque = &rom;
+
+	xavix_video_begin_frame(&video);
+	xavix_video_render_range(&video, &input, 16, 31);
+	xavix_video_render_range(&video, &input, 32, 47);
+	xavix_video_end_frame(&video);
+	CHECK(video.framebuffer[0] == color);
+	CHECK(video.framebuffer[16 * XAVIX_VIDEO_WIDTH] == color);
+	CHECK(video.framebuffer[32 * XAVIX_VIDEO_WIDTH] == UINT32_C(0xff000000));
+}
 static void test_feather_visible_pixel_bounds(void)
 {
 	static xavix_video video;
@@ -233,6 +277,7 @@ int main(void)
 {
 	test_fragment_write_alias();
 	test_tile_priority_and_clip();
+	test_partial_tilemap_uses_absolute_raster_position();
 	test_feather_visible_pixel_bounds();
 	test_colmix_layer_enables();
 	puts("xavix_video_test: ok");

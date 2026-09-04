@@ -13,23 +13,45 @@
 extern "C" {
 #endif
 
+typedef enum xavix_video_format
+{
+	XAVIX_VIDEO_FORMAT_AVI,
+	XAVIX_VIDEO_FORMAT_MP4
+} xavix_video_format;
+
 typedef struct xavix_video_recorder
 {
 	void *file;
 	void *video_stream;
 	void *audio_stream;
 	void *imaging_factory;
+	void *sink_writer;
 	uint32_t video_frame;
 	uint32_t audio_frame;
 	unsigned width;
 	unsigned height;
+	uint32_t mf_video_stream;
+	uint32_t mf_audio_stream;
+	xavix_video_format format;
 	int avi_initialized;
+	int mf_initialized;
 	int com_uninitialize;
 	wchar_t path[MAX_PATH];
 } xavix_video_recorder;
 
 void xavix_video_recorder_init(xavix_video_recorder *recorder);
 int xavix_video_recorder_active(const xavix_video_recorder *recorder);
+
+int xavix_video_recorder_start_format(
+	xavix_video_recorder *recorder,
+	const wchar_t *directory,
+	unsigned width,
+	unsigned height,
+	xavix_video_format format,
+	wchar_t *saved_path,
+	size_t saved_path_length,
+	wchar_t *error,
+	size_t error_length);
 
 int xavix_video_recorder_start(
 	xavix_video_recorder *recorder,

@@ -41,6 +41,9 @@ typedef struct xavix_virtual_reflector
 typedef struct xavix_controller_reading
 {
 	xavix_virtual_reflector reflector[2];
+	uint8_t gamepad_axis_x[2];
+	uint8_t gamepad_axis_y[2];
+	int gamepad_axes_valid;
 	uint32_t actions;
 	uint32_t pressed;
 	enum xavix_controller_source active_source;
@@ -130,6 +133,11 @@ uint8_t xavix_controller_normalize_axis(uint32_t value, uint32_t minimum,
 	uint32_t maximum, int dead_zone_percent);
 uint8_t xavix_controller_integrate_axis(uint8_t position, uint8_t axis,
 	unsigned maximum_step);
+uint8_t xavix_controller_approach_axis(uint8_t position, uint8_t target,
+	unsigned maximum_step);
+uint8_t xavix_controller_curve_racing_axis(uint8_t axis);
+uint8_t xavix_controller_encode_racing_wheel(uint8_t position);
+int xavix_controller_pulse_digital_axis(uint8_t axis, unsigned phase);
 unsigned xavix_controller_ramped_maximum_step(unsigned maximum_step,
 	unsigned held_frames);
 uint8_t xavix_controller_calibrate_wii_axis(int value, int minimum,

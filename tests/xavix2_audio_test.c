@@ -67,19 +67,26 @@ int main(void)
 	rom[0x25] = 0x80;
 	store_address(voice0, 0x02, 0x06, 0x20);
 	store16(voice0 + 0x16, 0x8000);
-	/* Firmware descriptors put the secondary boundary one byte beyond the
-	 * primary terminator.  Looping returns to the primary start. */
+	/* The secondary array begins one byte beyond the attack terminator. */
 	store_address(voice0, 0x0e, 0x12, 0x23);
 	xavix2_audio_command(&audio, 0x240, descriptors, 0, 0, 0, 0);
 	CHECK(audio.voice[0].start_address == 0x20);
-	CHECK(audio.voice[0].loop_address == 0x20);
+	CHECK(audio.voice[0].loop_address == 0x23);
+	audio.voice[0].loop_address = 0x24;
+	xavix2_audio_restore_descriptors(&audio, descriptors);
+	CHECK(audio.voice[0].loop_address == 0x24);
+	/* Older F7 files captured the provisional primary-loop address.  Restore
+	 * derives the patent-confirmed sustain address from guest descriptors. */
+	audio.voice[0].loop_address = 0x20;
+	xavix2_audio_restore_descriptors(&audio, descriptors);
+	CHECK(audio.voice[0].loop_address == 0x23);
 	xavix2_audio_render(&audio, 96000);
 	frame = xavix2_audio_frame(&audio);
 	CHECK(frame[0] == 10 * 255 / 2);
 	CHECK(frame[2] == 20 * 255 / 2);
-	CHECK(frame[4] == 10 * 255 / 2);
-	CHECK(frame[6] == 20 * 255 / 2);
-	CHECK(frame[8] == 10 * 255 / 2);
+	CHECK(frame[4] == 30 * 255 / 2);
+	CHECK(frame[6] == 40 * 255 / 2);
+	CHECK(frame[8] == 30 * 255 / 2);
 	CHECK(xavix2_audio_status(&audio, 0) == 1);
 
 	/* Host diagnostics may mute a channel without changing guest-visible
@@ -116,7 +123,7 @@ int main(void)
 	CHECK(audio.voice[0].release_phase == 1);
 	xavix2_audio_render(&audio, 96000);
 	frame = xavix2_audio_frame(&audio);
-	CHECK(frame[0] == 10 * 7 / 2 && frame[1] == 10 * 9 / 2);
+	CHECK(frame[0] == 30 * 7 / 2 && frame[1] == 30 * 9 / 2);
 	CHECK(audio.voice[0].release_phase == 2);
 	for (unsigned release_frame = 1; release_frame < 16; ++release_frame)
 		xavix2_audio_render(&audio, 96000);

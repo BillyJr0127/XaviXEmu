@@ -9,7 +9,38 @@
 #include <string.h>
 
 static void sync_frame_audio(drgqst_core *core, uint32_t elapsed_cycles);
+static void flush_video_to(drgqst_core *core, unsigned end_y);
 
+static void sync_position_irq(drgqst_core *core, uint32_t previous_cycles,
+	uint32_t elapsed_cycles)
+{
+	xavix_machine_state *state;
+	uint32_t raster_position;
+	uint32_t target_cycles;
+
+	if (!core || !core->audio_frame_active || !core->audio_frame_cycles)
+		return;
+	state = &core->machine.state;
+	if (!(state->video_control & 0x10U))
+		return;
+
+	/* The XaviX display timer is programmed in native 256-by-256 raster
+	 * coordinates.  Convert that position to the current frame's master-clock
+	 * budget and latch source 0x40 when an instruction crosses it. */
+	raster_position = ((uint32_t)state->position_irq_y << 8) |
+		state->position_irq_x;
+	target_cycles = (uint32_t)(((uint64_t)raster_position *
+		core->audio_frame_cycles) / UINT32_C(0x10000));
+	if ((previous_cycles < target_cycles ||
+		(target_cycles == 0 && previous_cycles == 0)) &&
+		elapsed_cycles >= target_cycles)
+	{
+		flush_video_to(core, state->position_irq_y);
+		state->video_control |= 0x40;
+		state->irq_source |= 0x40;
+		state->irq_asserted = 1;
+	}
+}
 static uint8_t cpu_read(void *opaque, xavix_cpu_bus_t bus, uint32_t address)
 {
 	xavix_machine *machine = (xavix_machine *)opaque;
@@ -145,6 +176,25 @@ static int profile_uses_parallel_nvram(enum drgqst_core_profile profile)
 		profile == DRGQST_CORE_XAVIX2000_PARALLEL_NVRAM_SDB;
 }
 
+static int profile_uses_ssd2000_cpu(enum drgqst_core_profile profile)
+{
+	switch (profile)
+	{
+	case DRGQST_CORE_XAVIX2000_I2C_24C04:
+	case DRGQST_CORE_XAVIX2000_PARALLEL_NVRAM_SDB:
+	case DRGQST_CORE_EPO_BOWL_SENSOR_24C04:
+	case DRGQST_CORE_XAVIX2000_PARALLEL_NVRAM:
+	case DRGQST_CORE_XAVIX2000_PLAIN:
+	case DRGQST_CORE_EPO_HAMC_SENSOR:
+	case DRGQST_CORE_TOM_DPGM_SENSOR_24C08:
+	case DRGQST_CORE_XAVIX2000_SENSOR_24C04:
+	case DRGQST_CORE_DUELMAST_24C04:
+		return 1;
+	default:
+		return 0;
+	}
+}
+
 static uint8_t xavix_i2c_io1_read(void *opaque, uint8_t direction)
 {
 	drgqst_core *core = (drgqst_core *)opaque;
@@ -176,6 +226,34 @@ static void xavix_i2c24c04_io1_write(void *opaque, uint8_t data,
 		&core->machine.state.peripherals.eeprom, scl, sda);
 }
 
+static void xavix_i2c24c02_io1_write(void *opaque, uint8_t data,
+	uint8_t direction)
+{
+	drgqst_core *core = (drgqst_core *)opaque;
+	const int scl = (direction & 0x10) ? !!(data & 0x10) : 0;
+	const int sda = (direction & 0x08) ? !!(data & 0x08) : 1;
+	xavix_eeprom24c02_set_lines(
+		&core->machine.state.peripherals.eeprom, scl, sda);
+}
+
+static uint8_t early_motion_adc_read(void *opaque, unsigned channel)
+{
+	drgqst_core *core = (drgqst_core *)opaque;
+	uint8_t motion;
+
+	/* Zuba's ROM stores controls 51/11 and 53/13 as successive samples of
+	 * ADC5 and ADC7, then subtracts each pair to measure blade motion. Host
+	 * input is a signed motion value centered on 80; present it on opposite
+	 * acquisition phases so a held deflection survives sub-frame sampling. */
+	if (channel == 5)
+		motion = core->machine.state.anport_regs[0];
+	else if (channel == 7)
+		motion = core->machine.state.anport_regs[1];
+	else
+		return 0xff;
+	return (core->machine.state.adc_control & 0x40) ?
+		motion : (uint8_t)(0x100U - motion);
+}
 static uint8_t sdb_anport_read(void *opaque, unsigned channel)
 {
 	drgqst_core *core = (drgqst_core *)opaque;
@@ -315,12 +393,22 @@ advance:
 
 static uint8_t epo_hamc_adc_read(void *opaque, unsigned channel)
 {
-	(void)opaque;
-	(void)channel;
-	/* The firmware performs a 32-by-32 acquisition, but the electrical
-	 * reflectance geometry is not yet known.  Return the unused-channel
-	 * baseline while keeping the proven synchronization edges separate. */
-	return 0x00;
+	drgqst_core *core = (drgqst_core *)opaque;
+	if (channel != 0)
+		return 0x00;
+	/* The glove firmware performs the same 32-by-32 illuminated acquisition
+	 * used by the other optical accessories.  The exact glove silhouette is
+	 * unknown, so expose the host-selected reflector footprint while keeping
+	 * this title's independently verified synchronization sequence. */
+	return xavix_cu5501a_read_adc(&core->machine.state.peripherals.sensor);
+}
+
+static void epo_hamc_io1_write(void *opaque, uint8_t data,
+	uint8_t direction)
+{
+	drgqst_core *core = (drgqst_core *)opaque;
+	xavix_cu5501a_write_io1(&core->machine.state.peripherals.sensor,
+		data, direction);
 }
 
 static void ban_onep_io1_write(void *opaque, uint8_t data, uint8_t direction)
@@ -403,6 +491,12 @@ static void configure_internal_cursor_watch(drgqst_core *core)
 	case DRGQST_CORE_XAVIX2000_PLAIN:
 	case DRGQST_CORE_EPO_HAMC_SENSOR:
 	case DRGQST_CORE_TOM_DPGM_SENSOR_24C08:
+	case DRGQST_CORE_XAVIX_PLAIN:
+	case DRGQST_CORE_XAVIX_43MHZ_PLAIN:
+	case DRGQST_CORE_XAVIX_I2C_24C04:
+	case DRGQST_CORE_XAVIX_I2C_24C02:
+	case DRGQST_CORE_XAVIX2000_SENSOR_24C04:
+	case DRGQST_CORE_DUELMAST_24C04:
 	default:
 		watch.enabled = 0;
 		break;
@@ -414,15 +508,22 @@ int drgqst_core_init_profile(drgqst_core *core, const uint8_t *rom,
 	size_t rom_size, enum drgqst_core_profile profile)
 {
 	xavix_machine_hooks hooks;
-	if (!core || !rom || (rom_size != UINT32_C(0x800000) &&
-		rom_size != UINT32_C(0x400000) &&
-		(rom_size != UINT32_C(0x200000) ||
-			profile != DRGQST_CORE_EPO_BOWL_SENSOR_24C04)))
+	if (!core || !rom ||
+		(rom_size != UINT32_C(0x800000) &&
+		 rom_size != UINT32_C(0x400000) &&
+		 !(rom_size == UINT32_C(0x200000) &&
+			(profile == DRGQST_CORE_EPO_BOWL_SENSOR_24C04 ||
+			 profile == DRGQST_CORE_XAVIX_PLAIN ||
+			 profile == DRGQST_CORE_DUELMAST_24C04)) &&
+		 !(rom_size == UINT32_C(0x100000) &&
+			profile == DRGQST_CORE_XAVIX_PLAIN)))
 		return 0;
 	memset(core, 0, sizeof(*core));
 	core->game_profile = (uint8_t)profile;
 	xavix_machine_init(&core->machine, rom, rom_size);
 	xavix_cpu_init(&core->cpu, cpu_read, cpu_write, &core->machine);
+	xavix_cpu_set_decimal_arithmetic(&core->cpu,
+		!profile_uses_ssd2000_cpu(profile));
 	xavix_audio_init(&core->audio, XAVIX_CLOCK_HZ,
 		XAVIX_AUDIO_DEFAULT_HOST_RATE, 0x80);
 	memset(&hooks, 0, sizeof(hooks));
@@ -441,6 +542,14 @@ int drgqst_core_init_profile(drgqst_core *core, const uint8_t *rom,
 		hooks.read_io1 = xavix_i2c_io1_read;
 		hooks.write_io1 = xavix_i2c24c16_io1_write;
 		hooks.read_external = tvpc_external_read;
+	}
+	else if (profile == DRGQST_CORE_XAVIX_I2C_24C04 ||
+		profile == DRGQST_CORE_XAVIX_I2C_24C02)
+	{
+		hooks.read_io1 = xavix_i2c_io1_read;
+		hooks.write_io1 = profile == DRGQST_CORE_XAVIX_I2C_24C02 ?
+			xavix_i2c24c02_io1_write : xavix_i2c24c04_io1_write;
+		hooks.read_adc = early_motion_adc_read;
 	}
 	else if (profile == DRGQST_CORE_XAVIX2000_I2C_24C04)
 	{
@@ -472,11 +581,20 @@ int drgqst_core_init_profile(drgqst_core *core, const uint8_t *rom,
 	else if (profile == DRGQST_CORE_XAVIX2000_PLAIN)
 	{
 		/* Plain XaviX 2000 boards expose digital P0/P1 input with no serial
-		 * EEPROM or optical device.  Their unconnected ANPORT callbacks read
-		 * high, while the unused ADC channels read low. */
+		 * EEPROM or optical device. */
 		hooks.read_io1 = xavix_base_io1_read;
 		hooks.write_io1 = xavix_base_io1_write;
 		hooks.read_anport = open_anport_read;
+		hooks.read_adc = unused_adc_read;
+	}
+	else if (profile == DRGQST_CORE_XAVIX_PLAIN ||
+		profile == DRGQST_CORE_XAVIX_43MHZ_PLAIN)
+	{
+		/* Early digital boards need their writable ANPORT registers for such
+		 * controls as the rescue vehicle microphone.  A distinct profile also
+		 * prevents Hamtaro wireless packets from becoming steering interrupts. */
+		hooks.read_io1 = xavix_base_io1_read;
+		hooks.write_io1 = xavix_base_io1_write;
 		hooks.read_adc = unused_adc_read;
 	}
 	else if (profile == DRGQST_CORE_EPO_HAMC_SENSOR)
@@ -485,7 +603,7 @@ int drgqst_core_init_profile(drgqst_core *core, const uint8_t *rom,
 		 * acquisition loop.  Preserve only those observed synchronization
 		 * requirements here; the reflector geometry remains unmodelled. */
 		hooks.read_io1 = epo_hamc_io1_read;
-		hooks.write_io1 = xavix_base_io1_write;
+		hooks.write_io1 = epo_hamc_io1_write;
 		hooks.read_anport = open_anport_read;
 		hooks.read_adc = epo_hamc_adc_read;
 	}
@@ -494,9 +612,11 @@ int drgqst_core_init_profile(drgqst_core *core, const uint8_t *rom,
 		profile == DRGQST_CORE_TTV_CU5501_24C02 ||
 		profile == DRGQST_CORE_TTV_CU5501A_24C02 ||
 		profile == DRGQST_CORE_EPO_BOWL_SENSOR_24C04 ||
+		profile == DRGQST_CORE_XAVIX2000_SENSOR_24C04 ||
+		profile == DRGQST_CORE_DUELMAST_24C04 ||
 		profile == DRGQST_CORE_TOM_DPGM_SENSOR_24C08)
 	{
-		/* Excite Bowling and Disney Princess wait for the same
+		/* Excite Bowling, Disney Princess, Excite Golf and Duel Masters wait for the same
 		 * two-bit sync sequence before reading a 32-by-32 sensor through ADC0.
 		 * Keep that wiring in explicit EEPROM-sized profiles so plain digital
 		 * boards do not inherit synthetic optical signals. */
@@ -508,6 +628,10 @@ int drgqst_core_init_profile(drgqst_core *core, const uint8_t *rom,
 	xavix_machine_set_hooks(&core->machine, &hooks);
 	if (profile == DRGQST_CORE_XAVIX2000_PARALLEL_NVRAM_SDB)
 		memset(core->machine.state.anport_regs, 0x01,
+			sizeof(core->machine.state.anport_regs));
+	else if (profile == DRGQST_CORE_XAVIX_I2C_24C04 ||
+		profile == DRGQST_CORE_XAVIX_I2C_24C02)
+		memset(core->machine.state.anport_regs, 0x80,
 			sizeof(core->machine.state.anport_regs));
 	xavix_video_init(&core->video);
 	configure_internal_cursor_watch(core);
@@ -550,6 +674,7 @@ void drgqst_core_reset(drgqst_core *core)
 	xavix_cpu_reset(&core->cpu);
 	xavix_audio_reset(&core->audio);
 	xavix_video_reset(&core->video);
+	core->video_frame_active = 0;
 	configure_internal_cursor_watch(core);
 	core->frame_fraction = 0;
 	core->audio_frame_cycles = 0;
@@ -601,16 +726,34 @@ static void sync_frame_audio(drgqst_core *core, uint32_t elapsed_cycles)
 	sync_audio_irq(core);
 }
 
+static unsigned profile_cpu_clock_multiplier(const drgqst_core *core)
+{
+	return core && core->game_profile == DRGQST_CORE_XAVIX_43MHZ_PLAIN ? 2U : 1U;
+}
+
 int drgqst_core_step(drgqst_core *core)
 {
 	int cycles;
+	uint32_t previous_frame_cycles;
+	uint64_t previous_cpu_cycles;
+	unsigned machine_cycles;
 	if (!core)
 		return 0;
 	sync_interrupt_lines(core);
+	previous_frame_cycles = core->machine.state.frame_cycles;
+	previous_cpu_cycles = core->cpu.total_cycles;
 	cycles = xavix_cpu_execute(&core->cpu, 1);
 	if (cycles > 0)
 	{
-		xavix_machine_advance(&core->machine, (unsigned)cycles);
+		if (profile_cpu_clock_multiplier(core) == 2U)
+			machine_cycles = (unsigned)((core->cpu.total_cycles >> 1) -
+				(previous_cpu_cycles >> 1));
+		else
+			machine_cycles = (unsigned)cycles;
+		if (machine_cycles)
+			xavix_machine_advance(&core->machine, machine_cycles);
+		sync_position_irq(core, previous_frame_cycles,
+			core->machine.state.frame_cycles);
 		if (core->game_profile == DRGQST_CORE_XAVIX_BASE &&
 			!(core->machine.state.ioevent_active & 0x01))
 		{
@@ -660,30 +803,67 @@ uint64_t drgqst_core_run_cycles(drgqst_core *core, uint32_t cycles)
 	return elapsed;
 }
 
-static const uint32_t *render_frame(drgqst_core *core)
+static void populate_video_inputs(drgqst_core *core, xavix_video_inputs *inputs)
 {
 	xavix_machine_state *state = &core->machine.state;
+	memset(inputs, 0, sizeof(*inputs));
+	inputs->main_ram = state->main_ram;
+	inputs->main_ram_size = sizeof(state->main_ram);
+	inputs->fragment_ram = state->fragment_ram;
+	inputs->palette_sh = state->palette_sh;
+	inputs->palette_l = state->palette_l;
+	inputs->palette_entries = 256;
+	inputs->segment_regs = state->segment_regs;
+	inputs->tilemap_regs[0] = state->tile_regs[0];
+	inputs->tilemap_regs[1] = state->tile_regs[1];
+	inputs->sprite_mode = state->sprite_reg;
+	inputs->arena_start = state->arena_start;
+	inputs->arena_end = state->arena_end;
+	inputs->arena_control = state->arena_control;
+	inputs->colmix_sh = state->colmix_sh;
+	inputs->colmix_l = state->colmix_l;
+	inputs->colmix_control = state->colmix_control;
+	inputs->read_program_byte = video_read;
+	inputs->read_program_opaque = &core->machine;
+}
+
+static void begin_video_frame(drgqst_core *core)
+{
+	xavix_video_begin_frame(&core->video);
+	core->video_segment_start_y = 0;
+	core->video_frame_active = 1;
+}
+
+
+static void flush_video_to(drgqst_core *core, unsigned end_y)
+{
 	xavix_video_inputs inputs;
-	memset(&inputs, 0, sizeof(inputs));
-	inputs.main_ram = state->main_ram;
-	inputs.main_ram_size = sizeof(state->main_ram);
-	inputs.fragment_ram = state->fragment_ram;
-	inputs.palette_sh = state->palette_sh;
-	inputs.palette_l = state->palette_l;
-	inputs.palette_entries = 256;
-	inputs.segment_regs = state->segment_regs;
-	inputs.tilemap_regs[0] = state->tile_regs[0];
-	inputs.tilemap_regs[1] = state->tile_regs[1];
-	inputs.sprite_mode = state->sprite_reg;
-	inputs.arena_start = state->arena_start;
-	inputs.arena_end = state->arena_end;
-	inputs.arena_control = state->arena_control;
-	inputs.colmix_sh = state->colmix_sh;
-	inputs.colmix_l = state->colmix_l;
-	inputs.colmix_control = state->colmix_control;
-	inputs.read_program_byte = video_read;
-	inputs.read_program_opaque = &core->machine;
-	xavix_video_render(&core->video, &inputs);
+
+	if (!core || !core->video_frame_active ||
+		core->video_segment_start_y > end_y)
+		return;
+	if (end_y > 255U)
+		end_y = 255U;
+	populate_video_inputs(core, &inputs);
+	xavix_video_render_range(&core->video, &inputs,
+		(int)core->video_segment_start_y, (int)end_y);
+	core->video_segment_start_y = (uint16_t)(end_y + 1U);
+}
+
+static const uint32_t *render_frame(drgqst_core *core)
+{
+	if (core->video_frame_active)
+	{
+		flush_video_to(core, XAVIX_VIDEO_VISIBLE_Y_END);
+		xavix_video_end_frame(&core->video);
+		core->video_frame_active = 0;
+	}
+	else
+	{
+		xavix_video_inputs inputs;
+		populate_video_inputs(core, &inputs);
+		xavix_video_render(&core->video, &inputs);
+	}
 	return xavix_video_framebuffer(&core->video);
 }
 
@@ -705,7 +885,8 @@ const uint32_t *drgqst_core_run_frame(drgqst_core *core)
 	core->audio_frame_cycles = cycles;
 	core->audio_frame_position = 0;
 	core->audio_frame_active = 1;
-	drgqst_core_run_cycles(core, cycles);
+	begin_video_frame(core);
+	drgqst_core_run_cycles(core, cycles * profile_cpu_clock_multiplier(core));
 	if (core->game_profile == DRGQST_CORE_BAN_ONEP)
 	{
 		if (core->ban_onep_left_punch && core->ban_onep_left_punch < 19)
@@ -722,7 +903,7 @@ const uint32_t *drgqst_core_run_frame(drgqst_core *core)
 		else
 			core->ban_onep_bazooka_phase = 0;
 	}
-	sync_frame_audio(core, cycles);
+	sync_frame_audio(core, core->machine.state.frame_cycles);
 	core->audio_frame_active = 0;
 	core->machine.state.frame_cycles = 0;
 	if (core->machine.state.video_control & 0x20)
@@ -793,8 +974,7 @@ void drgqst_core_set_mouse(drgqst_core *core, uint8_t x, uint8_t y,
 	if (!core)
 		return;
 	if (core->game_profile == DRGQST_CORE_XAVIX2000_PARALLEL_NVRAM ||
-		core->game_profile == DRGQST_CORE_XAVIX2000_PLAIN ||
-		core->game_profile == DRGQST_CORE_EPO_HAMC_SENSOR)
+		core->game_profile == DRGQST_CORE_XAVIX2000_PLAIN)
 		return;
 	if (core->game_profile == DRGQST_CORE_BAN_ONEP)
 	{
@@ -944,6 +1124,17 @@ void drgqst_core_set_sdb_input(drgqst_core *core, unsigned player,
 		else
 			core->machine.state.input0 &= (uint8_t)~0x10;
 	}
+}
+
+void drgqst_core_set_early_motion_input(drgqst_core *core,
+	uint8_t channel5, uint8_t channel7)
+{
+	if (!core ||
+		(core->game_profile != DRGQST_CORE_XAVIX_I2C_24C04 &&
+		 core->game_profile != DRGQST_CORE_XAVIX_I2C_24C02))
+		return;
+	core->machine.state.anport_regs[0] = channel5;
+	core->machine.state.anport_regs[1] = channel7;
 }
 
 void drgqst_core_trigger_bazooka(drgqst_core *core)

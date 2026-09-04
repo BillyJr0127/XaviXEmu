@@ -73,6 +73,9 @@ typedef struct xavix_cpu
 	uint8_t stopped;
 	uint64_t total_cycles;
 
+	/* CPU-family configuration is host-owned, not serialized. */
+	uint8_t decimal_arithmetic;
+
 	/* Host bindings are not part of a serialized save state. */
 	xavix_cpu_read8_fn read8;
 	xavix_cpu_write8_fn write8;
@@ -82,6 +85,7 @@ typedef struct xavix_cpu
 void xavix_cpu_init(xavix_cpu_t *cpu, xavix_cpu_read8_fn read8,
 	xavix_cpu_write8_fn write8, void *opaque);
 void xavix_cpu_reset(xavix_cpu_t *cpu);
+void xavix_cpu_set_decimal_arithmetic(xavix_cpu_t *cpu, int enabled);
 void xavix_cpu_set_irq(xavix_cpu_t *cpu, int asserted);
 void xavix_cpu_set_nmi(xavix_cpu_t *cpu, int asserted);
 

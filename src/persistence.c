@@ -72,6 +72,21 @@ static const wchar_t EPO_SSKJ_STATE_FILENAME[] = L"epo_sskj-runtime-state.sav";
 static const wchar_t EPO_DTCJ_EEPROM_FILENAME[] = L"epo_dtcj-eeprom.sav";
 static const wchar_t EPO_SSK2_EEPROM_FILENAME[] = L"epo_ssk2-eeprom.sav";
 static const wchar_t EPO_SSKJ_EEPROM_FILENAME[] = L"epo_sskj-eeprom.sav";
+static const wchar_t RAD_MTRK_STATE_FILENAME[] = L"rad_mtrk-runtime-state.sav";
+static const wchar_t RAD_SNOW_STATE_FILENAME[] = L"rad_snow-runtime-state.sav";
+static const wchar_t RAD_SSX_STATE_FILENAME[] = L"rad_ssx-runtime-state.sav";
+static const wchar_t RAD_SBW_STATE_FILENAME[] = L"rad_sbw-runtime-state.sav";
+static const wchar_t TAK_GIN_STATE_FILENAME[] = L"tak_gin-runtime-state.sav";
+static const wchar_t TCARNAVI_STATE_FILENAME[] = L"tcarnavi-runtime-state.sav";
+static const wchar_t TOMTHR_STATE_FILENAME[] = L"tomthr-runtime-state.sav";
+static const wchar_t EPO_CROK_EEPROM_FILENAME[] = L"epo_crok-eeprom.sav";
+static const wchar_t EPO_CROK_STATE_FILENAME[] = L"epo_crok-runtime-state.sav";
+static const wchar_t TAK_ZUBA_EEPROM_FILENAME[] = L"tak_zuba-eeprom.sav";
+static const wchar_t TAK_ZUBA_STATE_FILENAME[] = L"tak_zuba-runtime-state.sav";
+static const wchar_t DUELMAST_EEPROM_FILENAME[] = L"duelmast-eeprom.sav";
+static const wchar_t DUELMAST_STATE_FILENAME[] = L"duelmast-runtime-state.sav";
+static const wchar_t EPO_GOLF_EEPROM_FILENAME[] = L"epo_golf-eeprom.sav";
+static const wchar_t EPO_GOLF_STATE_FILENAME[] = L"epo_golf-runtime-state.sav";
 static volatile LONG temporary_counter;
 
 static void clear_error(wchar_t *error, size_t error_length)
@@ -212,6 +227,36 @@ static const wchar_t *filename_for_kind(enum drgqst_persistence_kind kind)
 		return EPO_SSK2_EEPROM_FILENAME;
 	case DRGQST_PERSISTENCE_EPO_SSKJ_EEPROM:
 		return EPO_SSKJ_EEPROM_FILENAME;
+	case DRGQST_PERSISTENCE_RAD_MTRK_RUNTIME_STATE:
+		return RAD_MTRK_STATE_FILENAME;
+	case DRGQST_PERSISTENCE_RAD_SNOW_RUNTIME_STATE:
+		return RAD_SNOW_STATE_FILENAME;
+	case DRGQST_PERSISTENCE_RAD_SSX_RUNTIME_STATE:
+		return RAD_SSX_STATE_FILENAME;
+	case DRGQST_PERSISTENCE_RAD_SBW_RUNTIME_STATE:
+		return RAD_SBW_STATE_FILENAME;
+	case DRGQST_PERSISTENCE_TAK_GIN_RUNTIME_STATE:
+		return TAK_GIN_STATE_FILENAME;
+	case DRGQST_PERSISTENCE_TCARNAVI_RUNTIME_STATE:
+		return TCARNAVI_STATE_FILENAME;
+	case DRGQST_PERSISTENCE_TOMTHR_RUNTIME_STATE:
+		return TOMTHR_STATE_FILENAME;
+	case DRGQST_PERSISTENCE_EPO_CROK_EEPROM:
+		return EPO_CROK_EEPROM_FILENAME;
+	case DRGQST_PERSISTENCE_EPO_CROK_RUNTIME_STATE:
+		return EPO_CROK_STATE_FILENAME;
+	case DRGQST_PERSISTENCE_TAK_ZUBA_EEPROM:
+		return TAK_ZUBA_EEPROM_FILENAME;
+	case DRGQST_PERSISTENCE_TAK_ZUBA_RUNTIME_STATE:
+		return TAK_ZUBA_STATE_FILENAME;
+	case DRGQST_PERSISTENCE_DUELMAST_EEPROM:
+		return DUELMAST_EEPROM_FILENAME;
+	case DRGQST_PERSISTENCE_DUELMAST_RUNTIME_STATE:
+		return DUELMAST_STATE_FILENAME;
+	case DRGQST_PERSISTENCE_EPO_GOLF_EEPROM:
+		return EPO_GOLF_EEPROM_FILENAME;
+	case DRGQST_PERSISTENCE_EPO_GOLF_RUNTIME_STATE:
+		return EPO_GOLF_STATE_FILENAME;
 	default:
 		return NULL;
 	}
@@ -256,12 +301,25 @@ static int validate_payload_size(
 	}
 	if (kind == DRGQST_PERSISTENCE_EPO_DTCJ_EEPROM ||
 		kind == DRGQST_PERSISTENCE_EPO_SSK2_EEPROM ||
-		kind == DRGQST_PERSISTENCE_EPO_SSKJ_EEPROM)
+		kind == DRGQST_PERSISTENCE_EPO_SSKJ_EEPROM ||
+		kind == DRGQST_PERSISTENCE_EPO_CROK_EEPROM ||
+		kind == DRGQST_PERSISTENCE_DUELMAST_EEPROM ||
+		kind == DRGQST_PERSISTENCE_EPO_GOLF_EEPROM)
 	{
 		if (payload_size != DRGQST_PERSISTENCE_EEPROM24C04_SIZE)
 		{
 			set_error(error, error_length,
 				L"24C04 EEPROM saves must contain exactly 512 bytes.");
+			return 0;
+		}
+		return 1;
+	}
+	if (kind == DRGQST_PERSISTENCE_TAK_ZUBA_EEPROM)
+	{
+		if (payload_size != DRGQST_PERSISTENCE_EEPROM24C02_SIZE)
+		{
+			set_error(error, error_length,
+				L"24C02 EEPROM saves must contain exactly 256 bytes.");
 			return 0;
 		}
 		return 1;
@@ -305,7 +363,18 @@ static int validate_payload_size(
 		kind == DRGQST_PERSISTENCE_EPO_DTCJ_RUNTIME_STATE ||
 		kind == DRGQST_PERSISTENCE_EPO_PABJ_RUNTIME_STATE ||
 		kind == DRGQST_PERSISTENCE_EPO_SSK2_RUNTIME_STATE ||
-		kind == DRGQST_PERSISTENCE_EPO_SSKJ_RUNTIME_STATE)
+		kind == DRGQST_PERSISTENCE_EPO_SSKJ_RUNTIME_STATE ||
+		kind == DRGQST_PERSISTENCE_RAD_MTRK_RUNTIME_STATE ||
+		kind == DRGQST_PERSISTENCE_RAD_SNOW_RUNTIME_STATE ||
+		kind == DRGQST_PERSISTENCE_RAD_SSX_RUNTIME_STATE ||
+		kind == DRGQST_PERSISTENCE_RAD_SBW_RUNTIME_STATE ||
+		kind == DRGQST_PERSISTENCE_TAK_GIN_RUNTIME_STATE ||
+		kind == DRGQST_PERSISTENCE_TCARNAVI_RUNTIME_STATE ||
+		kind == DRGQST_PERSISTENCE_TOMTHR_RUNTIME_STATE ||
+		kind == DRGQST_PERSISTENCE_EPO_CROK_RUNTIME_STATE ||
+		kind == DRGQST_PERSISTENCE_TAK_ZUBA_RUNTIME_STATE ||
+		kind == DRGQST_PERSISTENCE_DUELMAST_RUNTIME_STATE ||
+		kind == DRGQST_PERSISTENCE_EPO_GOLF_RUNTIME_STATE)
 	{
 		if (!payload_size || payload_size > DRGQST_PERSISTENCE_MAX_STATE_SIZE)
 		{

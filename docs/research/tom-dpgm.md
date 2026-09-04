@@ -27,6 +27,9 @@ introduce a title-specific state transition.
 - 600 frames reached the Disney Interactive logo.
 - 1,800 frames reached the star-field heart and wand sensor tutorial.
 - 3,600 frames reached a four-heart sensor exercise.
+- Continuous circular host motion advances to the in-game `スティックを
+  ハートにあわせてね` alignment tutorial through the unmodified optical
+  acquisition path.
 - The CPU remained active and the 3,600-frame run produced 5,760,000 stereo
   samples, with 219,016 nonzero samples and peak magnitude 5,721. This proves
   PCM activity, not audio accuracy.
@@ -36,6 +39,6 @@ introduce a title-specific state transition.
 
 ## Current limitations
 
-The original reflector geometry, optical timing, host control mapping, gameplay,
-audio accuracy, and a complete play-through remain unverified. The title is
-therefore classified **Experimental**.
+The original reflector geometry and optical timing, later gameplay, audio
+accuracy, and a complete play-through remain unverified. The title is therefore
+classified **Experimental**.

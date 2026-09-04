@@ -9,8 +9,8 @@ paths.
   peripherals, optical-input synthesis, and portable runtime state.
 - `src/xavix2`: experimental XaviX 2 RISC CPU, machine, GPU command path, and
   PCM audio.
-- `src`: Win32 front end, ZIP/ROM verification, persistence, screenshots,
-  cursor presentation, and host audio.
+- `src`: Win32 front end, verified ROM-directory game library, persistence,
+  screenshots, cursor presentation, and host audio.
 - `tests`: ROM-independent automated tests plus optional diagnostic probes.
 - `tools`: read-only reverse-engineering utilities.
 - `docs/research`: dated observations, hypotheses, experiments, and results.
@@ -36,9 +36,12 @@ described as a complete XaviX 2 implementation.
 ## Front end and persistence
 
 The Win32 front end uses GDI for nearest-neighbour presentation, WinMM for
-audio, WIC for PNG capture, and the common file dialog for selecting a ZIP.
+audio, WIC for PNG capture and library thumbnails, and the common file dialog
+for selecting a ZIP. Its library recursively scans a configured ROM directory,
+accepts only images that pass the same exact identity checks as direct loading,
+and sorts verified entries by title, release year, platform, maker, or filename.
 ROM files are opened read-only. EEPROM and runtime-state files are written
-beside the executable for supported XaviX 2000 profiles.
+beside the executable for supported profiles.
 
 ## Test boundaries
 

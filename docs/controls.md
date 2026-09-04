@@ -10,22 +10,32 @@ original accessories used ordinary buttons.
 - F5: save the single runtime-state slot where supported.
 - F7: load the runtime-state slot where supported.
 - F8: save a local PNG screenshot.
-- F9: start a fixed-size, 60 FPS MJPEG AVI recording. The default **View >
-  Record at current display size** option uses the current game viewport size
-  and records the presented host cursor. The AVI size remains fixed if the
-  window or guest video mode changes while recording.
-- F10: stop and finalize the AVI recording. Recordings include synchronized
-  48 kHz stereo sound and are saved under the local `snap` directory.
+- F9: start a fixed-size, 60 FPS recording. Choose **View > Recording format**
+  for MJPEG AVI or H.264/AAC MP4. The default **View > Record at current
+  display size** option uses the current game viewport size and records the
+  presented host cursor. The recording size remains fixed if the window or
+  guest video mode changes while recording.
+- F10: stop and finalize the recording. Recordings include synchronized 48 kHz
+  stereo sound and are saved under the local `snap` directory. The selected
+  format is remembered in `XaviXEmu.ini`.
 - F11: toggle runtime timing diagnostics.
 - Alt+Enter: toggle borderless fullscreen.
-- Escape: leave fullscreen.
+- Escape while a game is running: pause and show the exit confirmation. Press
+  Escape again to close the game and return to the library, or Enter to
+  resume. Holding Escape cannot accidentally confirm because key repeats are ignored.
 
 ## PS / gamepad and Wii Remote
 
-Open **Controller > Controller settings** after loading a game. The selected
-input source, dead zone, single-reflector stick, Wii calibration, and each
-game's action-button bindings are stored in `XaviXEmu.ini` beside the
-executable.
+Open **Controller > Controller settings** after loading a game, or right-click
+a title whose host controls are already implemented in the game library. The
+right-click command is deliberately absent for titles that only boot but do not
+yet have usable controls. The dialog shows only that title's real actions—such
+as Dragon Quest attack/defense/magic/special, a racer's accelerator/brake and
+accessory buttons, or Star Wars saber actions—and hides unused generic slots.
+Each game's action-button bindings are stored in a separate
+`Controls.<shortname>` section of `XaviXEmu.ini` beside the executable; input
+source, dead zone, single-reflector stick, and Wii calibration remain shared
+hardware preferences.
 
 - PS and compatible Windows gamepads: the left analog stick supplies
   reflector 1 and the right analog stick supplies reflector 2. The sticks move
@@ -80,36 +90,91 @@ progress. Mouse control remains the default until another source is selected.
 - Right mouse: menu X.
 - Space or both mouse buttons: broad reverse-side reflection.
 
-## `ttv_lotr`, `ttv_sw`, and `ttv_swj`
+## 	tv_lotr`, 	tv_sw`, and 	tv_swj`
 
 Move the mouse in a quick horizontal, vertical, or diagonal stroke. These
 games draw a special cursor in some scenes. XaviXEmu hides its blue target
 while that game-owned cursor is visible and restores the target in scenes that
 do not provide one.
 
-- `ttv_lotr`: hold right mouse for the upright broad-face defensive posture
+- 	tv_lotr`: hold right mouse for the upright broad-face defensive posture
   used to prepare Fire of Arnor. Ordinary mouse strokes remain attacks.
-- `ttv_sw` / `ttv_swj`: hold left mouse for the broadside defensive posture.
+- 	tv_sw` / 	tv_swj`: hold left mouse for the broadside defensive posture.
   The US program receives a one-pixel, one-frame moving-edge sample for an
   ordinary mouse stroke; this avoids confusing motion with a held defense.
   Hold Space for the lightsaber spin gesture; this rotates an elongated
   optical reflection through vertical, diagonal, and horizontal orientations.
 
-## `ttv_mx` and `tom_jump` (experimental)
+## 	tv_mx` and 	om_jump` (experimental)
 
 The original tilt controller reports four digital directions rather than an
 optical position. Move the mouse away from the centre of the game picture to
 tilt the virtual controller; a neutral region around the centre prevents small
-movements from steering. Keyboard directions take priority when held.
+movements from steering. Mouse distance and the PS/gamepad left analogue-stick
+deflection are converted to graduated digital pulses, so small movements make
+short corrections while near-full deflection holds the tilt switch. Keyboard
+directions take priority when held.
 
 - Mouse position or Up/Down/Left/Right or W/S/A/D: tilt direction.
 - Left mouse or Space: accelerator.
 - Right mouse or Ctrl: brake.
 - Middle mouse or P: pause.
+- PS/gamepad left analogue stick: proportional virtual tilt.
+- Configured Primary/Confirm, Secondary, and Special controller actions:
+  accelerator, brake, and pause respectively.
 
 Rendering and the hardware input path are under active verification. These
 mappings are usability controls and do not claim to reproduce the physical
 shape or travel of the original accessory.
+
+## Early XaviX racing boards (experimental)
+
+All seven profiles accept Up/Down/Left/Right or W/S/A/D, mouse position around
+the centre of the game picture, and the PS/gamepad left analogue stick. Mouse
+and analogue deflection use graduated digital pulses, so a small deflection
+makes short corrections instead of holding the original switch continuously.
+
+- `rad_mtrk`: Left/Right steers the original 20 Hz encoder; Up/Space/left mouse
+  or Primary is throttle-high, Down/Ctrl/right mouse or Secondary is
+  throttle-low, N/middle mouse/Special is nitro, R/Defense is reverse, and
+  Enter/H/Confirm is horn.
+- `rad_snow`, `rad_ssx`, `rad_sbw`: Left/Right controls board lean;
+  Up/Space/left mouse/Primary is forward/go, and Down/Ctrl/right mouse,
+  Enter, Secondary, or Confirm is select.
+- 	ak_gin`: four directions directly control the snowboard; Primary/Space or
+  left mouse also supplies forward/up.
+- 	carnavi`: Left/Right steers; Up/Space/left mouse/Primary accelerates;
+  Down/Ctrl/right mouse/Secondary brakes; C/middle mouse/Special is siren or
+  transform; R/Defense is reverse; Enter/K/Confirm is the key; L/Deflect is
+  lights; H/Two-hand is horn; V is wipers; M opens the menu.
+- 	omthr`: directions move and steer the rescue vehicle; Space/left mouse,
+  Enter, Primary, or Confirm is horn/select; Ctrl/right mouse, I, or Secondary
+  is ignition; M/middle mouse/Special is map; V/Defense is wipers; L/Deflect is
+  headlights; Q/Two-hand supplies the microphone input.
+
+These mappings reproduce the observed firmware input bits and encoder timing;
+physical accessory travel and later gameplay still require hardware testing.
+## 	ak_chq` (experimental)
+
+The original set has a separate steering-wheel grip for each player. The grip
+contains accelerator, brake, and rear command buttons.
+
+- Left/Right or A/D: progressively turn the player-one wheel; short taps make
+  small corrections, and releasing the keys smoothly returns it to centre.
+- Hold left mouse (accelerator) or right mouse (brake) and drag left/right for
+  relative steering. Releasing the button lets the wheel return to centre;
+  absolute cursor position no longer pins the wheel at a screen edge.
+- PS/gamepad left analog X: player-one wheel; right analog X: player-two wheel.
+  The centre is deliberately fine-grained and full stick reaches the game's
+  verified useful wheel range instead of overdriving the wheel counter.
+- Up, W, Space, left mouse, or Primary/Confirm: accelerator and menu confirm.
+- Down, S, Ctrl, right mouse, or Secondary: brake and menu cancel.
+- C, middle mouse, or Special: command button / item use.
+
+The wheel uses the game's wrapping ANPORT2/ANPORT3 counters, whose untouched
+centre is `$ff`, while the three buttons use the verified active-high P0 bits
+`$20/$10/$80`. The game draws its own menu and race presentation, so no host
+target is overlaid.
 
 ## `epo_ebox` (experimental)
 
@@ -124,6 +189,42 @@ it does not use the optical-sensor or ANPORT models.
 Bits `$04` and `$08` are intentionally unbound. The game draws its own menu
 selection graphics, so XaviXEmu does not overlay the blue target. Gameplay and
 control feel remain experimental.
+
+## `epo_dtcj` (experimental)
+
+The original Doraemon Take-copter is a head-mounted tilt controller. Its
+receiver reports a 4-by-4 forward/back/left/right grid through the game's own
+infrared interrupt and filtering code.
+
+- Up/Down/Left/Right or W/S/A/D: tilt the virtual Take-copter.
+- Left mouse or Enter: hold a filtered forward tilt long enough to start or
+  confirm a screen.
+- Mouse: hold the right button and drag left/right for head roll or up/down for
+  backward/forward tilt. Releasing the right button returns to neutral, so one
+  menu gesture cannot remain held and overlap the following selection.
+- PS/gamepad: the analogue stick chosen in Controller settings supplies direct
+  head tilt and naturally returns to neutral when released.
+- A Wii pointer outside the central neutral area supplies the same tilt.
+- No host centre marker is drawn: the physical head-mounted controller is not
+  a screen pointer. Tilt remains active through keyboard, mouse and controller.
+- Diagonal positions combine one horizontal and one vertical direction.
+- Middle mouse or Space: synthesize the filtered quick backward-to-forward
+  acceleration gesture. Continuous mouse, analogue-stick and Wii motion is
+  passed through directly, so crossing the centre cannot replace the player's
+  steering with a prerecorded gesture.
+- The per-game controller page exposes forward, backward, left, right, upright
+  and boost as separate bindable actions. The selected PS analogue stick still
+  supplies continuous direct tilt.
+- On the verified opening exercise, hold Left for about one second until its
+  gauge completes, then release back to the centre. This advances through the
+  game's own state machine.
+- Later prompts consume the same filtered directions. Return the pointer to the
+  middle whenever the physical controller is expected to be upright.
+
+The native 27-bit packet decoder, opening exercise, clean transition, changing
+scene graphics, and continued PCM output are verified. Later activities and a
+complete play-through remain experimental. F5/F7 runtime states and the
+separate 24C04 EEPROM file are available.
 
 ## XaviX 2 wrist-reflector games (experimental)
 
@@ -202,7 +303,7 @@ firmware's real I/O-event and serial receive path.
 The remaining motion fields and complete activities are still experimental.
 F5/F7 runtime states are available.
 
-## `tvpc_dor` (experimental)
+## 	vpc_dor` (experimental)
 
 - Mouse movement: update the two cumulative hardware mouse counters. The game
   draws its own cursor, so XaviXEmu does not overlay the blue target.
@@ -211,10 +312,43 @@ F5/F7 runtime states are available.
 - Vertical mouse movement: emit short Up/Down cursor-key pulses. Alternating
   upward and downward motion operates the take-copter flight exercise in the
   supplied diagnostic checkpoint.
-- Escape: the TV-PC Escape key while windowed; when fullscreen it first leaves
-  fullscreen as usual.
+- Escape is reserved for the emulator pause/exit confirmation.
 
 The title, main menu, keyboard scan path, and take-copter input are verified.
 F5/F7 runtime states are available, and the game keeps a separate 24C16 EEPROM
 save under the local `save` directory. Most text keys and complete program paths remain
 unknown.
+
+## 	om_dpgm` (experimental)
+
+Disney Princess uses the standard optical-wand path. The game draws its own
+wand, so XaviXEmu does not add a blue host target.
+
+- Mouse movement or the configured analog reflector: move the wand.
+- Left mouse / Primary action: broad, face-on reflection.
+- Right mouse / Secondary action: forward-pointing reflection.
+- Circular and sweeping motion are sent continuously rather than as digital
+  button taps; the heart-alignment tutorial responds to this path.
+
+F5/F7 runtime states and a separate 24C08 EEPROM save are available.
+
+## 	vpc_hk` (experimental)
+
+Hello Kitty uses the original TV-PC cumulative mouse counters and full 8x8
+external keyboard matrix. The game draws its own bow cursor, so XaviXEmu does
+not add a blue host target.
+
+- Mouse movement: move the game-owned cursor; left mouse is its single mouse
+  button. Double-click by clicking twice normally.
+- Number, QWERTY, and punctuation keys: the corresponding printed TV-PC keys.
+  Unlike Doraemon, W/A/S/D remain printable letters.
+- Up/Down/Left/Right: the first cursor-key cluster.
+- Numpad 8/2/4/6: the second cursor-key cluster.
+- Escape, Backspace, Enter, left/right Shift, and Space: their matching keys.
+- Tab: the TV-PC Input Mode key.
+- F2: the Family Mail shortcut.
+- Right Ctrl: fallback for the extra Japanese `] / む` key that is absent from
+  most US keyboards.
+
+F5/F7 runtime states are available, and Hello Kitty keeps a separate 24C16
+EEPROM save under the local `save` directory.

@@ -34,17 +34,167 @@ typedef struct io_probe
 	unsigned external_read_logs;
 	unsigned tvpc_key_read_logs;
 	int trace_tvpc_keyboard;
+	unsigned current_frame;
+	unsigned video_trace_start;
+	unsigned video_trace_end;
+	unsigned video_trace_logs;
 	io_probe_counter counters[24];
 	io_probe_counter writes[18];
 } io_probe;
+
+static unsigned ram_write_watch = UINT_MAX;
+static unsigned ram_write_watch_logs;
+static unsigned ram_write_watch_start;
+static unsigned ram_read_watch = UINT_MAX;
+static unsigned ram_read_watch_logs;
+static unsigned ram_read_watch_start;
+
+static int video_trace_enabled(const io_probe *probe)
+{
+	return probe->video_trace_start &&
+		probe->current_frame >= probe->video_trace_start &&
+		probe->current_frame <= probe->video_trace_end &&
+		probe->video_trace_logs < 8192;
+}
+
+static uint32_t fragment_hash(const uint8_t *fragment)
+{
+	uint32_t hash = UINT32_C(2166136261);
+	unsigned offset;
+	for (offset = 0; offset < XAVIX_FRAGMENT_RAM_SIZE; ++offset)
+	{
+		hash ^= fragment[offset];
+		hash *= UINT32_C(16777619);
+	}
+	return hash;
+}
+
+static unsigned fragment_nonzero(const uint8_t *fragment)
+{
+	unsigned count = 0;
+	unsigned offset;
+	for (offset = 0; offset < XAVIX_FRAGMENT_RAM_SIZE; ++offset)
+		count += fragment[offset] != 0;
+	return count;
+}
+
+static uint8_t video_register_value(const xavix_machine_state *state,
+	uint16_t address)
+{
+	if (address >= 0x6800 && address < 0x6900)
+		return state->palette_sh[address & 0xff];
+	if (address >= 0x6900 && address < 0x6a00)
+		return state->palette_l[address & 0xff];
+	if (address >= 0x6a00 && address < 0x6a20)
+		return state->segment_regs[address & 0x1f];
+	if (address >= 0x6fc8 && address < 0x6fd0)
+		return state->tile_regs[0][address & 7];
+	if (address >= 0x6fd0 && address < 0x6fd8)
+		return state->tile_regs[1][address & 7];
+	if (address == 0x6fd8)
+		return state->sprite_reg;
+	if (address >= 0x6fe1 && address <= 0x6fe2)
+		return state->sprite_dma_param1[address - 0x6fe1];
+	if (address >= 0x6fe5 && address <= 0x6fe6)
+		return state->sprite_dma_param2[address - 0x6fe5];
+	if (address == 0x6fe8)
+		return state->arena_start;
+	if (address == 0x6fe9)
+		return state->arena_end;
+	if (address == 0x6fea)
+		return state->arena_control;
+	if (address == 0x6ff0)
+		return state->colmix_sh;
+	if (address == 0x6ff1)
+		return state->colmix_l;
+	if (address == 0x6ff2)
+		return state->colmix_control;
+	if (address == 0x6ff8)
+		return state->video_control;
+	if (address == 0x6ffa)
+		return state->position_irq_x;
+	if (address == 0x6ffb)
+		return state->position_irq_y;
+	return 0xff;
+}
+
+static void video_trace_position(const io_probe *probe, unsigned *x, unsigned *y)
+{
+	uint32_t position = 0;
+	if (probe->core->audio_frame_cycles)
+		position = (uint32_t)(((uint64_t)
+			probe->core->machine.state.frame_cycles * UINT64_C(0x10000)) /
+			probe->core->audio_frame_cycles);
+	if (position > 0xffffU)
+		position = 0xffffU;
+	*x = position & 0xffU;
+	*y = position >> 8;
+}
 
 static void probe_cpu_write(void *opaque, xavix_cpu_bus_t bus,
 	uint32_t address, uint8_t data)
 {
 	io_probe *probe = (io_probe *)opaque;
+	int trace_video = 0;
+	uint8_t dma_before[XAVIX_FRAGMENT_RAM_SIZE];
+	unsigned raster_x = 0;
+	unsigned raster_y = 0;
 	if (bus == XAVIX_CPU_BUS_LOW)
 	{
 		unsigned index;
+		if (ram_write_watch != UINT_MAX &&
+			(address == ram_write_watch || address == ram_write_watch + 1) &&
+			probe->core->machine.state.main_ram[address & 0x3fff] != data &&
+			probe->current_frame >= ram_write_watch_start &&
+			ram_write_watch_logs < 128)
+		{
+			const uint32_t pc = xavix_cpu_linear_pc(&probe->core->cpu);
+			printf("ram-write frame=%u pc=%06lX address=%04lX old=%02X data=%02X a=%02X x=%02X y=%02X p=%02X banks=%02X/%02X zp82-91=%02X/%02X/%02X/%02X/%02X/%02X/%02X/%02X/%02X/%02X/%02X/%02X/%02X/%02X/%02X/%02X\n",
+				probe->current_frame, (unsigned long)pc,
+				(unsigned long)address,
+				probe->core->machine.state.main_ram[address & 0x3fff], data,
+				probe->core->cpu.a, probe->core->cpu.x, probe->core->cpu.y,
+				probe->core->cpu.p, probe->core->cpu.code_bank,
+				probe->core->cpu.data_bank,
+				probe->core->machine.state.main_ram[0x82],
+				probe->core->machine.state.main_ram[0x83],
+				probe->core->machine.state.main_ram[0x84],
+				probe->core->machine.state.main_ram[0x85],
+				probe->core->machine.state.main_ram[0x86],
+				probe->core->machine.state.main_ram[0x87],
+				probe->core->machine.state.main_ram[0x88],
+				probe->core->machine.state.main_ram[0x89],
+				probe->core->machine.state.main_ram[0x8a],
+				probe->core->machine.state.main_ram[0x8b],
+				probe->core->machine.state.main_ram[0x8c],
+				probe->core->machine.state.main_ram[0x8d],
+				probe->core->machine.state.main_ram[0x8e],
+				probe->core->machine.state.main_ram[0x8f],
+				probe->core->machine.state.main_ram[0x90],
+				probe->core->machine.state.main_ram[0x91]);
+			++ram_write_watch_logs;
+		}
+		trace_video = video_trace_enabled(probe) &&
+			((address >= 0x6800 && address < 0x6a20) ||
+			(address >= 0x6fc8 && address <= 0x6ffb));
+		if (trace_video)
+		{
+			video_trace_position(probe, &raster_x, &raster_y);
+			if (address == 0x6fe0)
+				memcpy(dma_before, probe->core->machine.state.fragment_ram,
+					sizeof(dma_before));
+			else
+			{
+				printf("video-write frame=%u raster=%02X/%02X cycles=%lu pc=%06lX address=%04lX old=%02X data=%02X\n",
+					probe->current_frame, raster_x, raster_y,
+					(unsigned long)probe->core->machine.state.frame_cycles,
+					(unsigned long)xavix_cpu_linear_pc(&probe->core->cpu),
+					(unsigned long)address,
+					video_register_value(&probe->core->machine.state,
+						(uint16_t)address), data);
+				++probe->video_trace_logs;
+			}
+		}
 		for (index = 0; index < sizeof(probe->writes) /
 			sizeof(probe->writes[0]); ++index)
 		{
@@ -66,6 +216,47 @@ static void probe_cpu_write(void *opaque, xavix_cpu_bus_t bus,
 		}
 	}
 	probe->original_write(probe->original_opaque, bus, address, data);
+	if (trace_video && address == 0x6fe0)
+	{
+		const xavix_machine_state *state = &probe->core->machine.state;
+		unsigned changed = 0;
+		unsigned offset;
+		for (offset = 0; offset < sizeof(dma_before); ++offset)
+			changed += dma_before[offset] != state->fragment_ram[offset];
+		printf("video-dma frame=%u raster=%02X/%02X cycles=%lu pc=%06lX trigger=%02X src=%02X%02X dst=%02X00 block=%02X changed=%u hash=%08lX nonzero=%u\n",
+			probe->current_frame, raster_x, raster_y,
+			(unsigned long)state->frame_cycles,
+			(unsigned long)xavix_cpu_linear_pc(&probe->core->cpu), data,
+			state->sprite_dma_param1[1], state->sprite_dma_param1[0],
+			state->sprite_dma_param2[0], state->sprite_dma_param2[1], changed,
+			(unsigned long)fragment_hash(state->fragment_ram),
+			fragment_nonzero(state->fragment_ram));
+		++probe->video_trace_logs;
+	}
+}
+
+static void print_video_frame_state(const io_probe *probe)
+{
+	const xavix_machine_state *state = &probe->core->machine.state;
+	if (!probe->video_trace_start ||
+		probe->current_frame < probe->video_trace_start ||
+		probe->current_frame > probe->video_trace_end)
+		return;
+	printf("video-frame frame=%u tile0=%02X/%02X/%02X/%02X/%02X/%02X/%02X/%02X tile1=%02X/%02X/%02X/%02X/%02X/%02X/%02X/%02X sprite=%02X arena=%02X/%02X/%02X colmix=%02X/%02X/%02X pos=%02X/%02X fragment=%08lX/%u\n",
+		probe->current_frame,
+		state->tile_regs[0][0], state->tile_regs[0][1],
+		state->tile_regs[0][2], state->tile_regs[0][3],
+		state->tile_regs[0][4], state->tile_regs[0][5],
+		state->tile_regs[0][6], state->tile_regs[0][7],
+		state->tile_regs[1][0], state->tile_regs[1][1],
+		state->tile_regs[1][2], state->tile_regs[1][3],
+		state->tile_regs[1][4], state->tile_regs[1][5],
+		state->tile_regs[1][6], state->tile_regs[1][7],
+		state->sprite_reg, state->arena_start, state->arena_end,
+		state->arena_control, state->colmix_sh, state->colmix_l,
+		state->colmix_control, state->position_irq_x, state->position_irq_y,
+		(unsigned long)fragment_hash(state->fragment_ram),
+		fragment_nonzero(state->fragment_ram));
 }
 
 static uint8_t probe_cpu_read(void *opaque, xavix_cpu_bus_t bus,
@@ -87,6 +278,16 @@ static uint8_t probe_cpu_read(void *opaque, xavix_cpu_bus_t bus,
 	if (bus == XAVIX_CPU_BUS_LOW)
 	{
 		unsigned index;
+		if (ram_read_watch != UINT_MAX && address == ram_read_watch &&
+			probe->current_frame >= ram_read_watch_start &&
+			ram_read_watch_logs < 128)
+		{
+			printf("ram-read frame=%u pc=%06lX address=%04lX value=%02X\n",
+				probe->current_frame,
+				(unsigned long)xavix_cpu_linear_pc(&probe->core->cpu),
+				(unsigned long)address, value);
+			++ram_read_watch_logs;
+		}
 		if (probe->trace_tvpc_keyboard &&
 			address >= 0x00ac && address <= 0x00b0 && value &&
 			(xavix_cpu_linear_pc(&probe->core->cpu) < 0x028000 ||
@@ -158,7 +359,8 @@ static int uses_glove_sensor(enum drgqst_rom_kind kind)
 {
 	return kind == DRGQST_ROM_BAN_ONEP || kind == DRGQST_ROM_BAN_OMT ||
 		kind == DRGQST_ROM_TTV_LOTR || kind == DRGQST_ROM_TTV_SW ||
-		kind == DRGQST_ROM_TTV_SWJ || kind == DRGQST_ROM_TOM_DPGM;
+		kind == DRGQST_ROM_TTV_SWJ || kind == DRGQST_ROM_TOM_DPGM ||
+		kind == DRGQST_ROM_DUELMAST || kind == DRGQST_ROM_EPO_GOLF;
 }
 
 static int uses_parallel_nvram(enum drgqst_rom_kind kind)
@@ -341,6 +543,26 @@ static int persistence_profile(enum drgqst_rom_kind rom_kind,
 		0x98, 0x72, 0x18, 0xb6, 0x79, 0x91, 0x95, 0xba, 0x15, 0xad,
 		0xf3, 0x98, 0x85, 0xc1, 0xd1, 0x77, 0xc3, 0x81, 0xec, 0x26
 	};
+	static const uint8_t crok_sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+	{
+		0xe6, 0xe4, 0x23, 0x5d, 0xc7, 0xc7, 0xdb, 0x30, 0x73, 0x73,
+		0x7b, 0x10, 0xba, 0x4b, 0xc5, 0xb0, 0x0d, 0xec, 0xa2, 0xc3
+	};
+	static const uint8_t zuba_sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+	{
+		0xba, 0x68, 0x7f, 0xc9, 0x55, 0x03, 0x22, 0x3d, 0xd4, 0x84,
+		0xed, 0x95, 0x33, 0xdc, 0xb0, 0x97, 0xec, 0xfe, 0xa0, 0x0d
+	};
+	static const uint8_t duel_sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+	{
+		0xd8, 0x84, 0x9c, 0x74, 0x83, 0x3e, 0x77, 0xb8, 0xb3, 0x09,
+		0xe8, 0x45, 0x52, 0x3f, 0x2c, 0xdc, 0x7a, 0xc6, 0x80, 0x54
+	};
+	static const uint8_t golf_sha1[DRGQST_PERSISTENCE_ROM_SHA1_SIZE] =
+	{
+		0x94, 0x21, 0x83, 0x6a, 0x6b, 0xc4, 0xaf, 0x9e, 0xe1, 0xfc,
+		0x7a, 0x40, 0x2d, 0x62, 0xb2, 0xfb, 0x4d, 0xbc, 0xde, 0xfc
+	};
 
 	*eeprom_kind = DRGQST_PERSISTENCE_EEPROM;
 	*eeprom_size = DRGQST_PERSISTENCE_EEPROM_SIZE;
@@ -443,6 +665,30 @@ static int persistence_profile(enum drgqst_rom_kind rom_kind,
 		*eeprom_kind = DRGQST_PERSISTENCE_EPO_MINI_EEPROM;
 		*state_kind = DRGQST_PERSISTENCE_EPO_MINI_RUNTIME_STATE;
 		return 1;
+	case DRGQST_ROM_EPO_CROK:
+		*sha1 = crok_sha1;
+		*eeprom_kind = DRGQST_PERSISTENCE_EPO_CROK_EEPROM;
+		*state_kind = DRGQST_PERSISTENCE_EPO_CROK_RUNTIME_STATE;
+		*eeprom_size = DRGQST_PERSISTENCE_EEPROM24C04_SIZE;
+		return 1;
+	case DRGQST_ROM_TAK_ZUBA:
+		*sha1 = zuba_sha1;
+		*eeprom_kind = DRGQST_PERSISTENCE_TAK_ZUBA_EEPROM;
+		*state_kind = DRGQST_PERSISTENCE_TAK_ZUBA_RUNTIME_STATE;
+		*eeprom_size = DRGQST_PERSISTENCE_EEPROM24C02_SIZE;
+		return 1;
+	case DRGQST_ROM_DUELMAST:
+		*sha1 = duel_sha1;
+		*eeprom_kind = DRGQST_PERSISTENCE_DUELMAST_EEPROM;
+		*state_kind = DRGQST_PERSISTENCE_DUELMAST_RUNTIME_STATE;
+		*eeprom_size = DRGQST_PERSISTENCE_EEPROM24C04_SIZE;
+		return 1;
+	case DRGQST_ROM_EPO_GOLF:
+		*sha1 = golf_sha1;
+		*eeprom_kind = DRGQST_PERSISTENCE_EPO_GOLF_EEPROM;
+		*state_kind = DRGQST_PERSISTENCE_EPO_GOLF_RUNTIME_STATE;
+		*eeprom_size = DRGQST_PERSISTENCE_EEPROM24C04_SIZE;
+		return 1;
 	default:
 		return 0;
 	}
@@ -457,10 +703,12 @@ int main(int argc, char **argv)
 	unsigned frames;
 	unsigned frame;
 	unsigned input_bit = 0;
+	unsigned input1_bit = 0;
 	unsigned punch_mask = 0;
 	unsigned sync_period = 0;
 	unsigned trajectory = 0;
 	unsigned trajectory_start = 10;
+	unsigned input_offset = 0;
 	unsigned load_state = 1;
 	unsigned fixed_x = UINT_MAX;
 	unsigned fixed_y = UINT_MAX;
@@ -482,7 +730,7 @@ int main(int argc, char **argv)
 	const uint32_t *pixels = NULL;
 	io_probe io_trace =
 	{
-		NULL, NULL, NULL, NULL, 0, 0, 0, 0,
+		NULL, NULL, NULL, NULL, 0, 0, 0, 0, 0, 0, 0, 0,
 		{
 			{ .address = 0x7a00 }, { .address = 0x7a01 },
 			{ .address = 0x7a02 }, { .address = 0x7a03 },
@@ -493,9 +741,9 @@ int main(int argc, char **argv)
 			{ .address = 0x0037 }, { .address = 0x003e },
 			{ .address = 0x003f }, { .address = 0x0040 },
 			{ .address = 0x0041 }, { .address = 0x0044 },
-			{ .address = 0x0048 }, { .address = 0x00ac },
-			{ .address = 0x00ad }, { .address = 0x00ae },
-			{ .address = 0x00af }, { .address = 0x00b0 }
+			{ .address = 0x0048 }, { .address = 0x00d0 },
+			{ .address = 0x00d1 }, { .address = 0x0209 },
+			{ .address = 0x020a }, { .address = 0x021e }
 		},
 		{
 			{ .address = 0x00a4 }, { .address = 0x00a5 },
@@ -503,9 +751,9 @@ int main(int argc, char **argv)
 			{ .address = 0x0037 }, { .address = 0x003e },
 			{ .address = 0x003f }, { .address = 0x0040 },
 			{ .address = 0x0041 }, { .address = 0x0044 },
-			{ .address = 0x0048 }, { .address = 0x00ac },
-			{ .address = 0x00ad }, { .address = 0x00ae },
-			{ .address = 0x00af }, { .address = 0x00b0 },
+			{ .address = 0x0048 }, { .address = 0x00d0 },
+			{ .address = 0x00d1 }, { .address = 0x0209 },
+			{ .address = 0x020a }, { .address = 0x021e },
 			{ .address = 0x009e }, { .address = 0x009f }
 		}
 	};
@@ -513,7 +761,7 @@ int main(int argc, char **argv)
 	if (argc < 3 || !MultiByteToWideChar(CP_ACP, 0, argv[1], -1, path,
 		(int)(sizeof(path) / sizeof(path[0]))))
 	{
-		fprintf(stderr, "usage: drgqst-frame-probe <rom.zip> <frames> [output.bmp] [save-dir] [input-bit] [punch-mask] [sync-period] [trajectory] [trajectory-start] [load-state] [fixed-x] [fixed-y] [input-pulses] [guard-hold] [trajectory-interval] [sdb-p1-x] [sdb-p1-y] [sdb-p2-x] [sdb-p2-y]\n");
+		fprintf(stderr, "usage: drgqst-frame-probe <rom.zip> <frames> [output.bmp] [save-dir] [input-bit] [punch-mask] [sync-period] [trajectory] [trajectory-start] [load-state] [fixed-x] [fixed-y] [input-pulses] [guard-hold] [trajectory-interval] [sdb-p1-x] [sdb-p1-y] [sdb-p2-x] [sdb-p2-y] [video-trace-start] [video-trace-end]\n");
 		return 2;
 	}
 	frames = (unsigned)strtoul(argv[2], NULL, 0);
@@ -548,6 +796,13 @@ int main(int argc, char **argv)
 		image.kind == DRGQST_ROM_EPO_MINI ?
 			DRGQST_CORE_TOM_DPGM_SENSOR_24C08 :
 		image.kind == DRGQST_ROM_EPO_HAMD ? DRGQST_CORE_XAVIX_BASE :
+		image.kind == DRGQST_ROM_EPO_CROK ? DRGQST_CORE_XAVIX_I2C_24C04 :
+		image.kind == DRGQST_ROM_TAK_ZUBA ? DRGQST_CORE_XAVIX_I2C_24C02 :
+		image.kind == DRGQST_ROM_DUELMAST ? DRGQST_CORE_DUELMAST_24C04 :
+		image.kind == DRGQST_ROM_EPO_GOLF ? DRGQST_CORE_XAVIX2000_SENSOR_24C04 :
+		image.kind == DRGQST_ROM_TOMTHR ? DRGQST_CORE_XAVIX_43MHZ_PLAIN :
+		(image.kind >= DRGQST_ROM_RAD_MTRK &&
+		 image.kind < DRGQST_ROM_TOMTHR) ? DRGQST_CORE_XAVIX_PLAIN :
 		drgqst_rom_is_tvpc(image.kind) ? DRGQST_CORE_XAVIX_I2C_24C16 :
 		DRGQST_CORE_DRAGON_QUEST))
 	{
@@ -555,9 +810,17 @@ int main(int argc, char **argv)
 		drgqst_rom_release(&image);
 		return 2;
 	}
-	eeprom_size = (image.kind == DRGQST_ROM_EPO_HAMD ||
+	eeprom_size = image.kind == DRGQST_ROM_TAK_ZUBA ?
+		DRGQST_PERSISTENCE_EEPROM24C02_SIZE :
+		(image.kind == DRGQST_ROM_EPO_CROK ||
+		 image.kind == DRGQST_ROM_DUELMAST ||
+		 image.kind == DRGQST_ROM_EPO_GOLF) ?
+		DRGQST_PERSISTENCE_EEPROM24C04_SIZE :
+		(image.kind == DRGQST_ROM_EPO_HAMD ||
 		image.kind == DRGQST_ROM_EPO_ES2J ||
-		image.kind == DRGQST_ROM_EPO_HAMC) ? 0 :
+		image.kind == DRGQST_ROM_EPO_HAMC ||
+		(image.kind >= DRGQST_ROM_RAD_MTRK &&
+		 image.kind <= DRGQST_ROM_TOMTHR)) ? 0 :
 		uses_parallel_nvram(image.kind) ?
 		DRGQST_PERSISTENCE_PARALLEL_NVRAM_SIZE :
 		drgqst_rom_is_tvpc(image.kind) ?
@@ -602,6 +865,44 @@ int main(int argc, char **argv)
 		sdb_p2_x = (unsigned)strtoul(argv[18], NULL, 0) & 0xff;
 	if (argc >= 20)
 		sdb_p2_y = (unsigned)strtoul(argv[19], NULL, 0) & 0xff;
+	if (argc >= 21)
+		io_trace.video_trace_start = (unsigned)strtoul(argv[20], NULL, 0);
+	if (argc >= 22)
+		io_trace.video_trace_end = (unsigned)strtoul(argv[21], NULL, 0);
+	else
+		io_trace.video_trace_end = io_trace.video_trace_start;
+	if (!io_trace.video_trace_start)
+	{
+		const char *trace_start = getenv("XAVIX_VIDEO_TRACE_START");
+		const char *trace_end = getenv("XAVIX_VIDEO_TRACE_END");
+		if (trace_start)
+			io_trace.video_trace_start =
+				(unsigned)strtoul(trace_start, NULL, 0);
+		if (trace_end)
+			io_trace.video_trace_end = (unsigned)strtoul(trace_end, NULL, 0);
+		else
+			io_trace.video_trace_end = io_trace.video_trace_start;
+	}
+	{
+		const char *watch = getenv("XAVIX_RAM_WRITE_WATCH");
+		const char *watch_start = getenv("XAVIX_RAM_WRITE_WATCH_START");
+		const char *read_watch = getenv("XAVIX_RAM_READ_WATCH");
+		const char *read_watch_start = getenv("XAVIX_RAM_READ_WATCH_START");
+		const char *input1 = getenv("XAVIX_INPUT1_BIT");
+		const char *offset = getenv("XAVIX_INPUT_OFFSET");
+		if (watch)
+			ram_write_watch = (unsigned)strtoul(watch, NULL, 0) & 0xffff;
+		if (watch_start)
+			ram_write_watch_start = (unsigned)strtoul(watch_start, NULL, 0);
+		if (read_watch)
+			ram_read_watch = (unsigned)strtoul(read_watch, NULL, 0) & 0xffff;
+		if (read_watch_start)
+			ram_read_watch_start = (unsigned)strtoul(read_watch_start, NULL, 0);
+		if (input1)
+			input1_bit = (unsigned)strtoul(input1, NULL, 0) & 0xff;
+		if (offset)
+			input_offset = (unsigned)strtoul(offset, NULL, 0);
+	}
 	io_trace.trace_tvpc_keyboard = drgqst_rom_is_tvpc(image.kind) &&
 		trajectory == 25;
 	if (argc >= 5 && strcmp(argv[4], "-"))
@@ -685,7 +986,37 @@ int main(int argc, char **argv)
 			initial_eeprom, eeprom_size);
 	for (frame = 1; frame <= frames && !core->cpu.stopped; ++frame)
 	{
-		if (!uses_glove_sensor(image.kind) &&
+		io_trace.current_frame = frame;		if (image.kind == DRGQST_ROM_EPO_CROK ||
+			image.kind == DRGQST_ROM_TAK_ZUBA)
+		{
+			uint8_t channel5 = fixed_x == UINT_MAX ? 0x80 : (uint8_t)fixed_x;
+			uint8_t channel7 = fixed_y == UINT_MAX ? 0x80 : (uint8_t)fixed_y;
+			if (trajectory >= 31 && trajectory <= 37 &&
+				frame >= trajectory_start)
+			{
+				const unsigned half_period = trajectory_interval ?
+					trajectory_interval : 64U;
+				const unsigned elapsed = frame - trajectory_start;
+				const unsigned motion_phase = elapsed % (half_period * 2U);
+				uint8_t sample = motion_phase < half_period ? 0x10 : 0xf0;
+				if (trajectory >= 34)
+					sample = elapsed < half_period ?
+						(trajectory >= 36 ? 0xf0 : 0x10) : 0x80;
+				if (trajectory == 31 || trajectory == 32 ||
+					trajectory == 34 || trajectory == 36)
+					channel5 = sample;
+				if (trajectory == 31)
+					channel7 = (uint8_t)(0x100U - sample);
+				else if (trajectory == 33 || trajectory == 35 ||
+					trajectory == 37)
+					channel7 = sample;
+			}
+			drgqst_core_set_early_motion_input(core, channel5, channel7);
+			if (image.kind == DRGQST_ROM_TAK_ZUBA && trajectory == 38 &&
+				frame >= trajectory_start && sdb_p1_x != UINT_MAX)
+				core->machine.state.main_ram[0x466 + (sdb_p1_x & 1U)] =
+					(uint8_t)sdb_p1_x;
+		}		if (!uses_glove_sensor(image.kind) &&
 			image.kind != DRGQST_ROM_EPO_ES2J &&
 			!drgqst_rom_is_tvpc(image.kind) &&
 			image.kind != DRGQST_ROM_EPO_MINI)
@@ -693,7 +1024,9 @@ int main(int argc, char **argv)
 		if (image.kind == DRGQST_ROM_TAK_CHQ)
 		{
 			if (fixed_x != UINT_MAX)
-				core->machine.state.anport_regs[2] = (uint8_t)fixed_x;
+				core->machine.state.anport_regs[2] =
+					trajectory == 30 && frame < trajectory_start ?
+					0xff : (uint8_t)fixed_x;
 			if (fixed_y != UINT_MAX)
 				core->machine.state.anport_regs[3] = (uint8_t)fixed_y;
 			/* Diagnostic-only prelude: enter the car-select screen before a
@@ -705,6 +1038,17 @@ int main(int argc, char **argv)
 					core->machine.state.input0 |= 0x80;
 				else
 					core->machine.state.input0 &= (uint8_t)~0x80;
+			}
+			/* Enter a player race with a neutral wheel, then apply fixed_x at
+			 * trajectory_start.  This isolates the wheel counter from menu
+			 * selection and is diagnostic-only. */
+			if (trajectory == 30)
+			{
+				const unsigned offset = frame >= 1800 ? frame - 1800 : UINT_MAX;
+				if (offset != UINT_MAX && offset / 40 < 8 && offset % 40 < 4)
+					core->machine.state.input0 |= 0x20;
+				else
+					core->machine.state.input0 &= (uint8_t)~0x20;
 			}
 		}
 		if (drgqst_rom_is_tvpc(image.kind))
@@ -993,10 +1337,11 @@ int main(int argc, char **argv)
 		}
 		if (!uses_glove_sensor(image.kind) && input_bit)
 		{
-			const unsigned offset = frame >= trajectory_start ?
-				frame - trajectory_start : UINT_MAX;
-			if (guard_hold && frame >= trajectory_start &&
-				frame < trajectory_start + guard_hold)
+			const unsigned input_start = trajectory_start + input_offset;
+			const unsigned offset = frame >= input_start ?
+				frame - input_start : UINT_MAX;
+			if (guard_hold && frame >= input_start &&
+				frame < input_start + guard_hold)
 				core->machine.state.input0 |= (uint8_t)input_bit;
 			else if (offset != UINT_MAX && offset / 40 < input_pulses &&
 				offset % 40 < 4)
@@ -1004,7 +1349,20 @@ int main(int argc, char **argv)
 			else
 				core->machine.state.input0 &= (uint8_t)~input_bit;
 		}
-		if (image.kind == DRGQST_ROM_EPO_HAMD && trajectory == 21)
+		if (input1_bit)
+		{
+			const unsigned input_start = trajectory_start + input_offset;
+			const unsigned offset = frame >= input_start ?
+				frame - input_start : UINT_MAX;
+			if (guard_hold && frame >= input_start &&
+				frame < input_start + guard_hold)
+				core->machine.state.input1 |= (uint8_t)input1_bit;
+			else if (offset != UINT_MAX && offset / 40 < input_pulses &&
+				offset % 40 < 4)
+				core->machine.state.input1 |= (uint8_t)input1_bit;
+			else
+				core->machine.state.input1 &= (uint8_t)~input1_bit;
+		}		if (image.kind == DRGQST_ROM_EPO_HAMD && trajectory == 21)
 		{
 			static const uint8_t patterns[] =
 				{ 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x81 };
@@ -1060,6 +1418,7 @@ int main(int argc, char **argv)
 				drgqst_core_trigger_hamd_packet(core, second);
 		}
 		pixels = drgqst_core_run_frame(core);
+		print_video_frame_state(&io_trace);
 		if (tracks_pcm(image.kind))
 		{
 			const int16_t *audio = drgqst_core_frame_audio(core);
@@ -1138,16 +1497,51 @@ int main(int argc, char **argv)
 		if (frame <= 10 || frame % 60 == 0 || frame == frames)
 		{
 			const xavix_video_frame_report *report = xavix_video_last_report(&core->video);
-			printf("frame=%u pc=%06lX cycles=%llu irq=%02X vc=%02X hash=%016llX opaque=%lu reads=%lu edge=%02X/%02X old=%02X/%02X cursor=%u\n",
+			printf("frame=%u pc=%06lX cycles=%llu irq=%02X vc=%02X pos=%02X/%02X hash=%016llX opaque=%lu reads=%lu edge=%02X/%02X old=%02X/%02X cursor=%u\n",
 				frame, (unsigned long)xavix_cpu_linear_pc(&core->cpu),
 				(unsigned long long)core->cpu.total_cycles, core->machine.state.irq_source,
 				core->machine.state.video_control,
+				core->machine.state.position_irq_x,
+				core->machine.state.position_irq_y,
 				(unsigned long long)framebuffer_hash(pixels),
 				(unsigned long)report->opaque_pixels_drawn,
 				(unsigned long)report->memory_reads,
 				core->machine.state.main_ram[0xcb], core->machine.state.main_ram[0xcc],
 				core->machine.state.main_ram[0xcd], core->machine.state.main_ram[0xce],
 				drgqst_core_internal_cursor_visible(core));
+		}
+	}
+	{
+		const char *tail_steps_text = getenv("XAVIX_CPU_TAIL_STEPS");
+		unsigned tail_steps = tail_steps_text ?
+			(unsigned)strtoul(tail_steps_text, NULL, 0) : 0;
+		unsigned step;
+		for (step = 0; step < tail_steps && !core->cpu.stopped; ++step)
+		{
+			const uint32_t pc = xavix_cpu_linear_pc(&core->cpu);
+			const uint16_t next_pc = (uint16_t)(core->cpu.pc + 1U);
+			const int low_code = core->cpu.code_bank < 0x80U &&
+				core->cpu.pc < 0x8000U;
+			const int low_operand = core->cpu.code_bank < 0x80U &&
+				next_pc < 0x8000U;
+			const uint8_t opcode = low_code ?
+				xavix_machine_read_low(&core->machine, core->cpu.pc) :
+				core->cpu.read8(core->cpu.opaque, XAVIX_CPU_BUS_EXTERNAL,
+					pc & UINT32_C(0x7fffff));
+			const uint8_t operand = low_operand ?
+				xavix_machine_read_low(&core->machine, next_pc) :
+				core->cpu.read8(core->cpu.opaque, XAVIX_CPU_BUS_EXTERNAL,
+					(((uint32_t)core->cpu.code_bank << 16) | next_pc) &
+					UINT32_C(0x7fffff));
+			const uint8_t low_value = core->cpu.read8(core->cpu.opaque,
+				XAVIX_CPU_BUS_LOW, operand);
+			printf("cpu-tail step=%u pc=%06lX op=%02X arg=%02X low=%02X a=%02X x=%02X y=%02X p=%02X s=%02X jklm=%02X/%02X/%02X/%02X pa=%06lX pb=%06lX\n",
+				step, (unsigned long)pc, opcode, operand, low_value, core->cpu.a,
+				core->cpu.x, core->cpu.y, core->cpu.p, core->cpu.s,
+				core->cpu.j, core->cpu.k, core->cpu.l, core->cpu.m,
+				(unsigned long)core->cpu.pa,
+				(unsigned long)core->cpu.pb);
+			(void)drgqst_core_step(core);
 		}
 	}
 	if (argc >= 4 && pixels && !write_bmp(argv[3], pixels))
